@@ -119,7 +119,7 @@ test('original Mod reed override and restore preserve exact gates and restore ba
 // Regression for actual Windows477 action32: Mod closes before the second
 // Rust instrument check settles. These are real app handlers with modeled
 // backend replies and an untrusted action double, never native acceptance.
-for(const rejects of [false,true])test(`canonical native Play waits for post-Mod Rust target readiness; rejected=${rejects}`,async()=>{
+for(const rejects of [false,true])test(`canonical owned controls wait for post-Mod Rust target readiness; rejected=${rejects}`,async()=>{
  const {nativeScoreServer,nativeStorageApp,nativeResponse}=await import('./native-storage-app-fixtures.js');
  const {readPlaybackClock}=await import('../web/playback-clock-view.js');
  const original=canonicalPracticeFixture().score,server=await nativeScoreServer({scores:[original]}),app=await nativeStorageApp(server,{now:()=>1000});
@@ -155,16 +155,17 @@ async function canonicalPlayGeometryFixture(){
  const {document}=parseHTML('<html lang="en"><body data-screen="stage"><main id="workspace" class="piano-workspace"><div class="piano-lanes-shared"></div><div class="piano-keybed-shared"></div><div class="piano-transport"><button id="play-button">Play</button></div><section id="practice-gate" hidden></section></main></body></html>');
  const root=document.getElementById('workspace'),lane=root.querySelector('.piano-lanes-shared'),transport=root.querySelector('.piano-transport'),keyboard=root.querySelector('.piano-keybed-shared'),play=document.getElementById('play-button'),frames=new Map(),values=new Map();
  let serial=0,laneHeight=100,pendingChrome=60,notify,extraTargetOffset=0;
- Object.defineProperty(document.body,'style',{value:{getPropertyValue:key=>values.get(key)||'',setProperty(key,value){values.set(key,value);laneHeight=Math.round(parseFloat(value)*64)/64;},removeProperty:key=>values.delete(key)}});
+ Object.defineProperty(document.body,'style',{value:{getPropertyValue:key=>values.get(key)||'',setProperty(key,value){values.set(key,value);if(key==='--piano-available-lane-height')laneHeight=Math.round(parseFloat(value)*64)/64;},removeProperty:key=>values.delete(key)}});
  root.getBoundingClientRect=()=>({top:68});lane.getBoundingClientRect=()=>({width:986,height:laneHeight});keyboard.getBoundingClientRect=()=>({height:120});transport.getBoundingClientRect=()=>({height:52,bottom:528.92+pendingChrome+laneHeight});play.getBoundingClientRect=()=>({x:67,y:485.5+laneHeight+extraTargetOffset,width:105,height:36});
  const window={innerWidth:1024,innerHeight:689,getComputedStyle:node=>({height:node===lane?`${laneHeight}px`:'',paddingBottom:'16px'}),setTimeout,clearTimeout,requestAnimationFrame:fn=>(frames.set(++serial,fn),serial),cancelAnimationFrame:id=>frames.delete(id),addEventListener(){},removeEventListener(){},ResizeObserver:class{constructor(fn){notify=fn;}observe(){}disconnect(){}}};
  const flush=()=>{const pending=[...frames.values()];frames.clear();for(const fn of pending)fn();};
+ document.elementFromPoint=()=>play;
  const view=observePianoViewportBudget({document,window});flush();pendingChrome=0;
- const source=readFileSync(new URL('../crates/desktop-shell/canonical-practice-acceptance.js',import.meta.url),'utf8'),prepare=runInNewContext(source.split('(() => {')[0]+'\nprepareCanonicalPracticePlayTarget;');
- const samples=[];return{document,window,view,frames,flush,play,samples,notify:()=>notify(),moveTarget:amount=>{extraTargetOffset=amount;},prepare:()=>prepare({document,window,onSample:value=>samples.push(value)})};
+ const source=readFileSync(new URL('../crates/desktop-shell/canonical-practice-acceptance.js',import.meta.url),'utf8'),prepare=runInNewContext(source.split('(() => {')[0]+'\nprepareCanonicalPracticeTarget;');
+ const samples=[];return{document,window,view,frames,flush,play,samples,notify:()=>notify(),moveTarget:amount=>{extraTargetOffset=amount;},setChrome:amount=>{pendingChrome=amount;},prepare:()=>prepare({document,window,onSample:value=>samples.push(value)})};
 }
 
-test('canonical native Play waits through two equal stale rectangles and the actual delayed viewport commit',async()=>{
+test('canonical owned controls wait through two equal stale rectangles and the actual delayed viewport commit',async()=>{
  const env=await canonicalPlayGeometryFixture();
  try{
   const pending=env.prepare();assert.equal(env.samples[0].target.y+18,603.5);
@@ -176,7 +177,7 @@ test('canonical native Play waits through two equal stale rectangles and the act
  }finally{env.view.destroy();}
 });
 
-test('canonical native Play fails with retained samples when the production viewport observer never commits',async()=>{
+test('canonical owned controls fail with retained samples when the production viewport observer never commits',async()=>{
  const env=await canonicalPlayGeometryFixture();
  try{
   const pending=env.prepare(),rejected=assert.rejects(pending,/geometry did not settle within four rendered frames.*"committed":100.*"expected":144.08/);
@@ -185,7 +186,7 @@ test('canonical native Play fails with retained samples when the production view
  }finally{env.view.destroy();}
 });
 
-test('canonical native Play rejects a still-moving target even with a committed viewport capacity',async()=>{
+test('canonical owned controls reject a still-moving target even with a committed viewport capacity',async()=>{
  const env=await canonicalPlayGeometryFixture();
  try{
   env.notify();env.flush();const pending=env.prepare(),rejected=assert.rejects(pending,/geometry did not settle within four rendered frames/);
@@ -194,12 +195,97 @@ test('canonical native Play rejects a still-moving target even with a committed 
  }finally{env.view.destroy();}
 });
 
-test('canonical native Play proves its exact trusted click before audio acknowledgement and rejects duplicates',async()=>{
- const source=readFileSync(new URL('../crates/desktop-shell/canonical-practice-acceptance.js',import.meta.url),'utf8'),observe=runInNewContext(source.split('(() => {')[0]+'\nobserveCanonicalPracticePlayClick;');
- const event={sequence:62,id:'play-button',type:'click',trusted:true},trusted=[event,{...event,sequence:61},{...event,id:'stage-title'},{...event,trusted:false}];
- let checks=0;const until=async(condition,label)=>{assert.equal(label,'trusted Play click for action 62');assert.equal(await condition(),false);checks++;trusted.push(event);assert.equal(await condition(),true);};
- assert.equal(await observe({until,trusted,sequence:62,eventStart:1}),event);assert.equal(checks,1);
- await assert.rejects(observe({until:async condition=>condition(),trusted:[event,event],sequence:62,eventStart:0}),/Duplicate trusted canonical Play click for action 62/);
- await assert.rejects(observe({until:async condition=>{assert.equal(await condition(),false);throw Error('Missing exact trusted click');},trusted:[],sequence:62,eventStart:0}),/Missing exact trusted click/);
- assert.ok(source.indexOf('playAction.trustedClick=await observeCanonicalPracticePlayClick')<source.indexOf("async function play(){await dispatchCanonicalPracticePlay"));
+test('canonical owned controls require the exact trusted target before action completion and reject neighbors',async()=>{
+ const source=readFileSync(new URL('../crates/desktop-shell/canonical-practice-acceptance.js',import.meta.url),'utf8'),requireClick=runInNewContext(source.split('(() => {')[0]+'\nrequireCanonicalPracticeOwnedClick;');
+ const event={sequence:55,id:'edit-song-mod',owned:true,trusted:true},events=[{...event,sequence:54},{...event,trusted:false}];
+ let checks=0;const until=async(condition,label)=>{assert.equal(label,'trusted owned edit-song-mod click for action 55');assert.equal(await condition(),false);checks++;events.push(event);assert.equal(await condition(),true);};
+ const result=await requireClick({until,events,sequence:55,id:'edit-song-mod',kind:'click'});assert.equal(result[0],event);assert.equal(checks,1);
+ await assert.rejects(requireClick({until:async condition=>condition(),events:[event,event],sequence:55,id:'edit-song-mod',kind:'click'}),/Duplicate trusted canonical click for action 55/);
+ await assert.rejects(requireClick({until:async condition=>condition(),events:[{...event,id:'song-mod-stage-summary',owned:false}],sequence:55,id:'edit-song-mod',kind:'click'}),/missed owned edit-song-mod.*song-mod-stage-summary/);
+ await assert.rejects(requireClick({until:async condition=>{assert.equal(await condition(),false);throw Error('Missing exact trusted click');},events:[],sequence:55,id:'edit-song-mod',kind:'click'}),/Missing exact trusted click/);
+ assert.ok(source.indexOf('await requireCanonicalPracticeOwnedClick')<source.indexOf("async function play(){await dispatchCanonicalPracticePlay"));
+});
+
+test('one native geometry contract follows the actual delayed viewport commit for Mod, Results, Reset and stage samples',async()=>{
+ for(const id of ['edit-song-mod','results-button','reset-button','stage-title']){
+  const env=await canonicalPlayGeometryFixture();
+  try{
+   env.play.id=id;const node=env.play;let shifted=false;node.getBoundingClientRect=()=>({x:shifted?18:515.171875,y:124.796875,width:83.890625,height:40});
+   const source=readFileSync(new URL('../crates/desktop-shell/canonical-practice-acceptance.js',import.meta.url),'utf8'),prepare=runInNewContext(source.split('(() => {')[0]+'\nprepareCanonicalPracticeTarget;');
+   const pending=prepare({document:env.document,window:env.window,node,onSample:row=>env.samples.push(row)});env.flush();env.notify();env.flush();
+   assert.equal(env.samples.at(-1).target.x+41.9453125,557.1171875);shifted=true;env.flush();env.flush();const target=await pending;
+   assert.equal(target.target.x+target.target.width/2,59.9453125);assert.equal(env.samples.length,5);assert.equal(env.frames.size,0);
+  }finally{env.view.destroy();}
+ }
+});
+
+test('canonical completed source waits for its delayed assessment and the later public HUD draw before another control',async()=>{
+ const {canonicalPracticeApp}=await import('./canonical-practice-fixtures.js'),{readPlaybackClock}=await import('../web/playback-clock-view.js'),{nativeResponse}=await import('./native-storage-app-fixtures.js');
+ const f=await canonicalPracticeApp(),{app,score}=f,source=readFileSync(new URL('../crates/desktop-shell/canonical-practice-acceptance.js',import.meta.url),'utf8');
+ const waitControl=runInNewContext(source.split('(() => {')[0]+'\nwaitCanonicalPracticeControl;');let release,pending,admitted=false;
+ try{
+  app.$('count-in').checked=false;await app.click('start-complete-practice');for(const box of app.$('complete-practice-parts').querySelectorAll('input'))box.checked=box.value===score.parts[0].id;
+  await app.click('complete-practice-apply');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');
+  f.setRoute(({path,body})=>path==='/api/assess'?new Promise(resolve=>{release=()=>resolve(nativeResponse({hits:[],misses:body.timeline.notes.map(note=>note.id),extras:[],accuracy_percent:0,mean_abs_error_ms:null,summary:{expected_notes:body.timeline.notes.length,coverage_percent:0,timing_bias_ms:null,timing_stddev_ms:null,advice:[]},pitch_breakdown:[],grade_counts:{perfect:0,good:0,early:0,late:0,missed:body.timeline.notes.length,extra:0},onset_completion:{total:body.timeline.notes.length,complete:0,longest_complete_sequence:0}}));}):undefined);
+  const zero=app.sourceStartWall();f.time(zero+4300);await app.tick();app.frame();await app.until(()=>Boolean(release)&&readPlaybackClock(app.document).completed);
+  const status=app.document.querySelector('.performance-status');assert.equal(status.dataset.phase,'pending');assert.equal(app.$('edit-song-mod').disabled,false,'Mod remains a valid user action while the completed take is being assessed');
+  pending=waitControl({document:app.document,node:app.$('edit-song-mod'),until:app.until,readClock:()=>readPlaybackClock(app.document)}).then(()=>{admitted=true;});pending.catch(()=>{});
+  await app.tick();await app.tick();assert.equal(admitted,false,'Source completion does not prove UI completion');
+  release();await app.until(()=>!app.$('play-button').disabled);assert.equal(status.dataset.phase,'pending','Enabled controls do not prove the later HUD draw has run');
+  await app.tick();assert.equal(admitted,false);f.time(zero+4501);app.frame();assert.equal(status.dataset.phase,'assessed');await pending;assert.equal(admitted,true);
+  await app.click('edit-song-mod');assert.equal(app.$('song-mod-dialog').open,true);
+ }finally{release?.();await pending?.catch(()=>{});await app.close();}
+});
+
+
+test('canonical controls wait for a late real status commit even when viewport capacity and target already match',async()=>{
+ const env=await canonicalPlayGeometryFixture(),{observePianoStatusBudget}=await import('../web/performance-view.js');let stop;
+ try{
+  env.notify();env.flush();const status=env.document.createElement('div');status.className='performance-status';env.document.getElementById('workspace').append(status);let height=49;
+  status.getBoundingClientRect=()=>({width:986,height});stop=observePianoStatusBudget({document:env.document,status,window:env.window});env.flush();height=68;
+  const pending=env.prepare();env.flush();assert.equal(env.samples.length,2);assert.ok(env.samples.every(row=>row.committed===row.expected&&row.status.committed===49&&row.status.expected===68));
+  env.notify();env.flush();env.flush();await pending;
+  assert.equal(env.samples.at(-1).status.committed,68);assert.equal(env.frames.size,0);
+ }finally{stop?.();env.view.destroy();}
+});
+
+test('canonical control geometry observes a pending notice commit without hiding or dismissing it',async()=>{
+ const env=await canonicalPlayGeometryFixture(),{observePianoNoticeBudget}=await import('../web/piano-stage-view.js');let stop;
+ try{
+  env.notify();env.flush();const notice=env.document.createElement('div');notice.id='notice';env.document.body.prepend(notice);let height=36;
+  notice.getBoundingClientRect=()=>({width:976,height});stop=observePianoNoticeBudget({document:env.document,window:env.window});env.flush();height=52;
+  const pending=env.prepare();env.flush();assert.ok(env.samples.every(row=>row.notice.committed===36&&row.notice.expected===52));
+  env.notify();env.flush();env.flush();await pending;assert.equal(env.samples.at(-1).notice.committed,52);assert.equal(notice.hidden,false);assert.equal(env.frames.size,0);
+ }finally{stop?.();env.view.destroy();}
+});
+
+test('scoped canonical click observation preserves actual ownership and trust, then removes its listener',async()=>{
+ const {parseHTML}=await import('linkedom'),{document,window}=parseHTML('<html><body><button id="owned"><span id="owned-child"></span></button><span id="neighbor"></span></body></html>');
+ const source=readFileSync(new URL('../crates/desktop-shell/canonical-practice-acceptance.js',import.meta.url),'utf8'),observe=runInNewContext(source.split('(() => {')[0]+'\nobserveCanonicalPracticeOwnedClick;'),node=document.getElementById('owned'),observer=observe({document,node,sequence:55});
+ for(const id of ['owned-child','neighbor'])document.getElementById(id).dispatchEvent(new window.Event('click',{bubbles:true}));
+ assert.deepEqual([...observer.events].map(row=>row.id),['owned-child','neighbor']);assert.deepEqual([...observer.events].map(row=>row.owned),[true,false]);assert.ok(observer.events.every(row=>row.trusted===false&&row.sequence===55),'DOM doubles cannot produce trusted native evidence');
+ observer.restore();node.dispatchEvent(new window.Event('click',{bubbles:true}));assert.equal(observer.events.length,2);
+});
+
+
+test('actual Settings to Transposition keeps both dialogs open and admits only the painted top-modal target',async()=>{
+ const {canonicalPracticeApp}=await import('./canonical-practice-fixtures.js'),{readPlaybackClock}=await import('../web/playback-clock-view.js'),f=await canonicalPracticeApp(),{app}=f;
+ const source=readFileSync(new URL('../crates/desktop-shell/canonical-practice-acceptance.js',import.meta.url),'utf8'),helpers=runInNewContext(source.split('(() => {')[0]+'\n({waitCanonicalPracticeControl,prepareCanonicalPracticeTarget});');
+ const frames=new Map();let serial=0;const window={innerWidth:1024,innerHeight:689,setTimeout,clearTimeout,requestAnimationFrame:callback=>(frames.set(++serial,callback),serial),cancelAnimationFrame:id=>frames.delete(id)},flush=()=>{const pending=[...frames.values()];frames.clear();for(const callback of pending)callback();};
+ try{
+  await app.click('start-listen');await app.until(()=>app.document.body.dataset.screen==='stage'&&!app.$('play-button').disabled);await app.click('reset-button');
+  await app.click('settings-button');const instrument=app.$('instrument-settings');if(!instrument.open)app.emit(instrument.querySelector('summary'),'click');await app.click('transposition-button');
+  assert.equal(app.$('settings-dialog').open,true);assert.equal(app.$('transposition-dialog').open,true);assert.equal(app.document.querySelector('dialog[open]').id,'settings-dialog');
+  const preview=app.$('transposition-preview'),parentControl=app.$('transposition-button'),stageControl=app.$('settings-button');
+  for(const control of [preview,parentControl,stageControl])control.getBoundingClientRect=()=>({x:100,y:100,width:120,height:40});
+  app.document.elementFromPoint=()=>app.$('transposition-dialog').open?preview:parentControl;
+  const readiness=await helpers.waitCanonicalPracticeControl({document:app.document,node:preview,until:app.until,readClock:()=>readPlaybackClock(app.document)});assert.equal(readiness.screen,'stage');
+  const samples=[],prepared=helpers.prepareCanonicalPracticeTarget({document:app.document,window,node:preview,onSample:row=>samples.push(row)});flush();await prepared;
+  assert.ok(samples.every(row=>row.modalOwner==='transposition-dialog'&&row.hitId==='transposition-preview'&&row.hitOwned));
+  let backgroundAllowed;await helpers.waitCanonicalPracticeControl({document:app.document,node:stageControl,readClock:()=>readPlaybackClock(app.document),until:async condition=>{backgroundAllowed=await condition();}});assert.equal(backgroundAllowed,false,'An open modal continues to block stage controls');
+  const covered=[],blocked=helpers.prepareCanonicalPracticeTarget({document:app.document,window,node:parentControl,onSample:row=>covered.push(row)}),rejected=assert.rejects(blocked,/control geometry did not settle/);
+  for(let n=0;n<4;n++)flush();await rejected;assert.ok(covered.every(row=>row.modalOwner==='settings-dialog'&&row.hitOwned===false&&row.hitId==='transposition-preview'));
+  await app.click('transposition-close');assert.equal(app.$('transposition-dialog').open,false);assert.equal(app.$('settings-dialog').open,true);
+  await helpers.waitCanonicalPracticeControl({document:app.document,node:parentControl,until:app.until,readClock:()=>readPlaybackClock(app.document)});const restored=helpers.prepareCanonicalPracticeTarget({document:app.document,window,node:parentControl});flush();await restored;assert.equal(frames.size,0);
+ }finally{await app.close();}
 });
