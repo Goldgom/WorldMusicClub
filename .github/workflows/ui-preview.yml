@@ -28,7 +28,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p ui-preview
-          node --test --test-reporter=tap --test-name-pattern='^(real free piano fills desktop|original grand staff and Jianpu follow|game menu and audible song preview|normal and free piano share|original falling bars visibly cross|real D768 lobby and compact performance fit|short-landscape following reveals|real guitar current and next six-note|real initial compact guide stays|real compact 88-key and custom extreme guides|real piano hands preserve merged ties|real short-landscape guitar keeps a complete labelled row and transport beside notation|real home menu keeps its hitbox stable at the hover boundary|real unmuted live worklet verifies finite silence through (settings|authoring) after (keyup|navigation)$|real skin UI import preserves paused input and finite live worklet silence$|real skin selection survives closing and reopening the same browser profile$)' tests/full-app-browser.test.js | tee ui-preview/tests.tap
+          node --test --test-reporter=tap --test-name-pattern='^(real free piano fills desktop|original grand staff and Jianpu follow|game menu and audible song preview|normal and free piano share|original falling bars visibly cross|real D768 lobby and compact performance fit|short-landscape following reveals|real guitar current and next six-note|real initial compact guide stays|real compact 88-key and custom extreme guides|real piano hands preserve merged ties|real short-landscape guitar keeps a complete labelled row and transport beside notation|real home menu keeps its hitbox stable at the hover boundary|real unmuted live worklet verifies finite silence through (settings|authoring) after (keyup|navigation)$|real skin UI import preserves paused input and finite live worklet silence$|real skin selection survives closing and reopening the same browser profile$|real home cards stay reachable without footer overlap at native, compact and long-label sizes$)' tests/full-app-browser.test.js | tee ui-preview/tests.tap
       - name: Verify preview provenance, required screenshots and finite live-audio evidence
         run: node scripts/verify-ui-preview.mjs ui-preview
       - name: Retain compact failure pixels and geometry before the full preview
@@ -48,6 +48,8 @@ jobs:
             ui-preview/worldmusichub-skin-*.png
             ui-preview/worldmusichub-home-hover-boundary*.json
             ui-preview/worldmusichub-home-hover-boundary*.png
+            ui-preview/worldmusichub-home-layout.json
+            ui-preview/worldmusichub-home-layout-*.png
             ui-preview/worldmusichub-live-guitar-render-*.json
             ui-preview/worldmusichub-live-guitar-render-*.png
             ui-preview/worldmusichub-live-simultaneous-844x390-guitar*.json

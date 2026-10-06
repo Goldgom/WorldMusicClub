@@ -175,7 +175,10 @@ html[data-theme=dark]:not([data-theme-mode=custom]) .rhythm-shell {
 
 /* Main menu is a real screen; the library gets the entire half-screen below it. */
 .rhythm-shell .game-home {flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:24px;width:100%;max-width:1600px;margin:auto;padding:36px 48px}
-.rhythm-shell .rhythm-home-intro {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:48px;flex:1;min-height:340px;align-items:center}
+/* Size this flex item from its grid contents. Shrinking it below the menu's
+   natural height paints Settings beneath Free Practice; the home screen owns
+   scrolling when the full menu and footer do not fit in the viewport. */
+.rhythm-shell .rhythm-home-intro {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:48px;flex:1 0 auto;min-height:340px;align-items:center}
 .rhythm-shell .game-home .rhythm-hero {min-height:340px;align-self:stretch;align-items:flex-start;padding:34px 0}
 .rhythm-shell .game-home .rhythm-hero-copy {max-width:100%;position:relative}
 .rhythm-shell .game-home .rhythm-kicker {letter-spacing:2px;font-weight:650;font-size:12px;margin-bottom:22px}
@@ -192,7 +195,7 @@ html[data-theme=dark]:not([data-theme-mode=custom]) .rhythm-shell {
   .rhythm-shell .game-mode:not(:disabled):hover>:is(.game-mode-icon,.game-mode-copy,.game-mode-arrow) {transform:translateY(-2px)}
 }
 .rhythm-shell .game-mode-icon {flex:none;font-size:25px;line-height:1;width:38px;text-align:center;color:var(--green)}
-.rhythm-shell .game-mode-copy {display:flex;flex-direction:column;min-width:0;gap:7px}
+.rhythm-shell .game-mode-copy {display:flex;flex-direction:column;min-width:0;gap:7px;overflow-wrap:anywhere}
 .rhythm-shell .game-mode-copy strong {font-size:18px;font-weight:650;line-height:1.25}
 .rhythm-shell .game-mode-copy small {font-size:11px;color:var(--muted);line-height:1.5}
 .rhythm-shell .game-mode-arrow {margin-left:auto;color:var(--green);font-size:23px}
@@ -200,7 +203,8 @@ html[data-theme=dark]:not([data-theme-mode=custom]) .rhythm-shell {
 .rhythm-shell #home-single-player .game-mode-icon,.rhythm-shell #home-single-player .game-mode-arrow,.rhythm-shell #home-single-player small {color:var(--accent-ink)}
 .rhythm-shell #home-single-player strong {font-size:27px}
 .rhythm-shell #home-single-player .game-mode-icon {font-size:33px;width:50px}
-.rhythm-shell .game-mode:disabled {opacity:1;cursor:default;background:var(--surface);box-shadow:none}
+/* Wrapped labels must start below the planned badge, including at text zoom. */
+.rhythm-shell .game-mode:disabled {opacity:1;cursor:default;background:var(--surface);box-shadow:none;padding-top:38px}
 .rhythm-shell .game-mode:disabled .game-mode-icon {color:var(--muted)}
 .rhythm-shell .game-mode-badge {position:absolute;top:11px;right:12px;font-size:9px;letter-spacing:1px;color:var(--muted);border:1px solid var(--border);padding:3px 6px;border-radius:20px}
 .rhythm-shell .game-home .rhythm-free-entry {display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:18px;align-items:center;padding:20px 24px;flex:none}

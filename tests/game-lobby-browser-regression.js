@@ -74,7 +74,12 @@ export function registerGameLobbyBrowserRegressions({test,getPage,ui,closeShellP
           modes:[...document.querySelectorAll('.game-mode')].map(node=>({id:node.id,...rect(node)})),free:rect(document.querySelector('#start-free-practice')),audio:window.audioObservation};
       });
       assert.equal(home.screen,'home');assert.ok(home.scrollWidth<=viewport.width+1);assert.equal(home.audio.construct,0);
-      for(const control of [...home.modes,home.free]) {assert.ok(control.width>=44&&control.height>=40);assert.ok(control.bottom<=viewport.height+1);assert.ok(control.right<=viewport.width+1);}
+      for(const control of [...home.modes,home.free]) {
+        assert.ok(control.width>=44&&control.height>=40);assert.ok(control.right<=viewport.width+1);
+        const target=page.locator(`#${control.id||'start-free-practice'}`);await target.scrollIntoViewIfNeeded();
+        assert.equal(await target.evaluate(node=>{const r=node.getBoundingClientRect(),home=document.querySelector('#game-home').getBoundingClientRect();return r.top>=home.top-1&&r.bottom<=Math.min(home.bottom,innerHeight)+1;}),true,'Every home route is fully reachable in the home scroller');
+      }
+      await page.locator('#game-home').evaluate(node=>{node.scrollTop=0;});
       await page.screenshot({path:join(artifactDirectory,`worldmusichub-game-home-${viewport.width}x${viewport.height}.png`),fullPage:true});
       await page.locator('#home-single-player').click();await page.locator('#lobby-preview-play:not([disabled])').waitFor();await configureSongMod(page,{performers:'none'});
       const visibleLabels={

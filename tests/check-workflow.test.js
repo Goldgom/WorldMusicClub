@@ -1,4 +1,5 @@
 import {SKIN_BROWSER_CASES} from '../scripts/ui-preview-skin.mjs';
+import {HOME_LAYOUT_PREVIEW_CASE} from '../scripts/ui-preview-home.mjs';
 import assert from 'node:assert/strict';
 import {mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -351,4 +352,30 @@ test('UI preview CLI refuses an omitted, skipped, failed, TODO or renamed finite
     const result=spawnSync(process.execPath,['scripts/verify-ui-preview.mjs',directory],{cwd:root,encoding:'utf8'});assert.notEqual(result.status,0);assert.match(result.stderr,/Missing executed passing (?:live-silence )?preview case: real unmuted live worklet/);
   }
   writeFileSync(join(directory,'tests.tap'),[...previous,...liveSilencePreviewCases.map((name,index)=>`ok ${index+17} - ${name}`),...SKIN_BROWSER_CASES.map((row,i)=>`ok ${i+21} - ${row.name}`)].join('\n')+'\n');const missing=spawnSync(process.execPath,['scripts/verify-ui-preview.mjs',directory],{cwd:root,encoding:'utf8'});assert.notEqual(missing.status,0);assert.match(missing.stderr,/worldmusichub-live-silence-settings-keyup.json/);
+});
+
+function validateHomeLayoutPreview(document) {
+  validateLiveSilencePreview(document);
+  const steps=document.jobs['ui-preview'].steps,run=steps.find(row=>row.run?.includes('tests/full-app-browser.test.js'));
+  const selected=new RegExp(run.run.match(/--test-name-pattern='([^']+)'/)[1]);
+  const previous=[...priorPreviewCases,noticePreviewCase,guitarNotationPreviewCase,homeHoverPreviewCase,...liveSilencePreviewCases,...SKIN_BROWSER_CASES.map(row=>row.name)];
+  assert.equal(previous.length,22);
+  for (const name of [...previous,HOME_LAYOUT_PREVIEW_CASE]) assert.ok(selected.test(name),`Missing selected preview case: ${name}`);
+  assert.equal(selected.test(HOME_LAYOUT_PREVIEW_CASE+' extra'),false,'Home layout selection requires the complete case name');
+  const retained=steps.find(row=>row.with?.name==='game-ui-failures-${{ github.sha }}').with.path.split('\n');
+  for (const path of ['ui-preview/worldmusichub-home-layout.json','ui-preview/worldmusichub-home-layout-*.png']) assert.ok(retained.includes(path),`Missing compact home failure evidence: ${path}`);
+}
+
+test('UI preview appends the home layout case without dropping any of the existing22 cases or masking finite-live and skin failures',()=>{
+  const parsed=spawnSync(python,['scripts/check-authoring-workflow.py','.github/workflows/ui-preview.yml','--json'],{cwd:root,encoding:'utf8'});assert.equal(parsed.status,0,parsed.stderr);
+  const preview=JSON.parse(parsed.stdout);validateHomeLayoutPreview(preview);
+  for (const mutate of [
+    document=>{const run=document.jobs['ui-preview'].steps.find(row=>row.run?.includes('tests/full-app-browser.test.js'));run.run=run.run.replace(HOME_LAYOUT_PREVIEW_CASE,'unselected home case');},
+    document=>{const failure=document.jobs['ui-preview'].steps.find(row=>row.with?.name==='game-ui-failures-${{ github.sha }}');failure.with.path=failure.with.path.replace('ui-preview/worldmusichub-home-layout.json','');},
+    document=>{const failure=document.jobs['ui-preview'].steps.find(row=>row.with?.name==='game-ui-failures-${{ github.sha }}');failure.with.path=failure.with.path.replace('ui-preview/worldmusichub-home-layout-*.png','');},
+  ]) {const changed=structuredClone(preview);mutate(changed);assert.throws(()=>validateHomeLayoutPreview(changed));}
+  const verifier=readFileSync(new URL('../scripts/verify-ui-preview.mjs',import.meta.url),'utf8');
+  const previousGates=verifier.indexOf('const files=[...verifyUiPreviewLiveSilence(directory,tap),...verifyUiPreviewSkin(directory,tap)];');
+  const homeGate=verifier.indexOf('files.push(...verifyUiPreviewHome(directory,tap));names.push(HOME_LAYOUT_PREVIEW_CASE);');
+  assert.ok(previousGates>=0&&homeGate>previousGates,'Retained home proof must follow the mandatory finite-live and skin gates');
 });

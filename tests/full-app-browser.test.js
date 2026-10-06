@@ -3,6 +3,7 @@ import {originalPaneRevealStudy,choosePaneRevealTarget,paneRevealSourceIdsAt} fr
 import {configureSongMod, openSongMod} from '../scripts/hosted-song-mod-controls.mjs';
 import {readPlaybackClock, installPlaybackClockReader, waitForPlaybackClock, waitForPlaybackClockAdvance} from './browser-playback-clock.js';
 import {registerGameLobbyBrowserRegressions} from './game-lobby-browser-regression.js';
+import {registerHomeLayoutBrowserRegressions} from './home-layout-browser-regression.js';
 import {assertLocaleRoundTrip,registerLocaleBrowserRegressions} from './locale-browser-regression.js';
 import {registerBeginnerBrowserRegressions} from './beginner-browser-regression.js';
 import {registerStaffRegisterBrowserRegressions} from './staff-register-browser-regression.js';
@@ -2670,6 +2671,7 @@ registerFreePianoBrowserRegressions({test,getPage:()=>page,closeShellPanels,arti
 registerLocaleBrowserRegressions({test,getPage:()=>page,ui,closeShellPanels,waitForEngraving,readyForTitle,exportScore,getRequests:getRequestsForLocale});
 
 registerGameLobbyBrowserRegressions({test,getPage:()=>page,ui,closeShellPanels,exportScore,exportTakeData,artifactDirectory});
+registerHomeLayoutBrowserRegressions({test,getPage:()=>page,ui,closeShellPanels,artifactDirectory});
 
 registerSharedPianoStageBrowserRegressions({test,getPage:()=>page,ui,setSessionMode,readyForTitle,closeShellPanels,artifactDirectory,exportScore,exportTakeData,waitForEngraving});
 
