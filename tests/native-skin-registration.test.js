@@ -31,7 +31,8 @@ test('optional skin workflow uses only its frozen preview branch or dispatch and
 test('skin renderer composition includes existing read-only observers and geometry helpers without starting their runners',()=>{
   assert.match(rust,/pub const SKIN_PHASES: \[&str; 3\] = \["skin-seed", "skin-restart", "skin-default-restart"\]/);
   assert.match(rust,/\.chain\(SKIN_PHASES\)/);assert.match(rust,/if SKIN_PHASES.contains\(&self.phase\) \{\s*&skin/);
-  const prefix=rust.slice(rust.indexOf('let skin ='),rust.indexOf('let performance ='));
+  const prefix=rust.match(/let skin = if SKIN_PHASES\.contains\(&self\.phase\) \{[\s\S]*?\n        \};/)?.[0];
+  assert.ok(prefix,'The complete skin injection block must be present');
   for(const name of ['vsq-song-acceptance.js','canonical-practice-acceptance.js','skin-acceptance.js'])assert.ok(prefix.includes(name));
   assert.equal((prefix.match(/\.split_once/g)||[]).length,2);
   const script=[read('crates/desktop-shell/acceptance-wait.js'),read('crates/desktop-shell/reference-acceptance.js'),read('crates/desktop-shell/live-tone-acceptance.js'),read('crates/desktop-shell/vsq-song-acceptance.js').split('(() => {')[0],read('crates/desktop-shell/canonical-practice-acceptance.js').split('(() => {')[0],read('crates/desktop-shell/skin-acceptance.js')].join('\n');

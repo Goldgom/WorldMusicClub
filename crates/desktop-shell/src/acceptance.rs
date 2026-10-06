@@ -141,6 +141,14 @@ impl Acceptance {
         } else {
             String::new()
         };
+        let vsq = if VSQ_PHASES.contains(&self.phase) {
+            let (controls, _) = include_str!("../canonical-practice-acceptance.js")
+                .split_once("(() => {")
+                .expect("Canonical control helpers must precede their runner");
+            format!("{controls}\n{}", include_str!("../vsq-song-acceptance.js"))
+        } else {
+            String::new()
+        };
         let performance = if PERFORMANCE_PHASES.contains(&self.phase)
             || PITCH_BEND_PHASES.contains(&self.phase)
             || AUTHORING_PHASES.contains(&self.phase)
@@ -215,7 +223,7 @@ impl Acceptance {
             } else if CATALOG_PHASES.contains(&self.phase) {
                 include_str!("../library-catalog-acceptance.js")
             } else if VSQ_PHASES.contains(&self.phase) {
-                include_str!("../vsq-song-acceptance.js")
+                &vsq
             } else if CLEAN_PHASES.contains(&self.phase) {
                 include_str!("../clean-song-acceptance.js")
             } else if BULK_PHASES.contains(&self.phase) {
@@ -2411,6 +2419,29 @@ mod tests {
         }
         for phase in ["basic-key-any", "basic-key-seed-extra", "../basic-key-seed"] {
             assert!(Acceptance::new(Evidence::new().0.clone(), phase).is_err());
+        }
+    }
+
+    #[test]
+    fn vsq_pointer_controls_inject_shared_helpers_without_the_canonical_runner() {
+        let (helpers, runner) = include_str!("../canonical-practice-acceptance.js")
+            .split_once("(() => {")
+            .unwrap();
+        for phase in VSQ_PHASES {
+            let evidence = Evidence::new();
+            let script = Acceptance::new(evidence.0.clone(), phase).unwrap().script();
+            assert!(script.contains(helpers));
+            assert!(!script.contains(runner));
+            for helper in [
+                "waitCanonicalPracticeControl",
+                "prepareCanonicalPracticeTarget",
+                "observeCanonicalPracticeOwnedClick",
+                "requireCanonicalPracticeOwnedClick",
+            ] {
+                assert!(script.contains(helper));
+            }
+            assert!(script.contains("VSQ original control changed before dispatch"));
+            assert!(script.contains("no trusted owned click received before host completion"));
         }
     }
 
