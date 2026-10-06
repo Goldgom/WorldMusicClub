@@ -64,6 +64,7 @@ import {setupImageReview} from './image-review.js';
 import {setupThemes} from './themes.js';
 import {createSkinRuntime,paintSkinNote} from './skin-runtime.js';
 import {setupSkinSettings} from './skin-settings.js';
+import {setupBuildDiagnosticsView} from './build-diagnostics-view.js';
 import {PIANO_RANGES, beat, midiName, pitchMidi, keyboardGeometry, transposeTempo, fretPositions, scoreSummary, renderNotation, notationPageCount, notationLayout, keyAt, keyTonic} from './music.js';
 import {Transport, Synth, TimelineIndex} from './transport.js';
 import {notationAudioAdmission} from './engraving-render-scheduler.js';
@@ -1812,4 +1813,5 @@ activeMedia=createCleanSongMedia({loadAsset:loadCleanAsset,background:cleanView.
 window.addEventListener('pagehide',()=>{canonicalSession.destroy();cleanPlayer.destroy();performanceListening.stop({revokePolicy:true});previewMedia.destroy();activeMedia.destroy();});
 
 setupSkinSettings({document,i18n,runtime:skinRuntime,onChange:()=>drawFrame(true)});
+setupBuildDiagnosticsView({document,i18n});
 renderKeyboard(); renderFretboard(); updateButtons(); requestAnimationFrame(animate); void scoreStorage.start(); loadCatalog();
