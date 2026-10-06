@@ -146,3 +146,23 @@ test('complete practice shares a flexible toolbar row without shrinking fixed ac
  const laptop=rules.find(rule=>rule.media?.mediaText==='(min-width:651px) and (max-width:1050px)');assert.ok(laptop);assert.ok([...laptop.cssRules].some(rule=>rule.selectorText.includes('nav .button')&&rule.style['font-size']==='11px'&&rule.style['padding-left']==='7px'));
  const mobile=rules.find(rule=>rule.media?.mediaText==='(max-width:650px)');assert.equal([...mobile.cssRules].find(rule=>rule.selectorText==='.performance-layout .stage-hud>.complete-practice-controls').style['flex-basis'],'100%');
 });
+
+
+test('visible Mod inherits the legacy laptop toolbar budget without changing other viewport layouts',async()=>{
+ // Responsive ownership only. Real text dimensions and pixels remain a hosted
+ // Windows gate with the unchanged 110/140/80/30 px bounds.
+ const css=await readFile(new URL('../web/clean-song.css',import.meta.url),'utf8'),{document}=parseHTML(`<style>${css}</style><main class="performance-layout"><div class="stage-hud"><div class="stage-heading"></div><section class="complete-practice-controls" hidden></section><section class="song-mod-stage"><button class="button"></button><span></span></section><details id="song-parts-tools"><summary id="song-parts-summary"></summary></details><nav><button id="library-button" class="button"></button></nav></div></main>`);
+ const rules=[...document.querySelector('style').sheet.cssRules],modRules=[...rules.find(rule=>rule.media?.mediaText==='(min-width:651px) and (max-width:1279px) and (min-height:601px)').cssRules];
+ for(const rule of modRules){
+  const legacySelector=rule.selectorText.replaceAll('.song-mod-stage','.complete-practice-controls').replace('>.complete-practice-controls>span','>.complete-practice-controls>p').replace('.complete-practice-controls>span','.complete-practice-controls>p');
+  const legacy=rules.find(rule=>rule.selectorText?.split(',').includes(legacySelector))||rules.find(rule=>rule.selectorText===legacySelector)||rules.find(rule=>legacySelector==='.performance-layout .complete-practice-controls>.button'&&rule.selectorText?.startsWith(legacySelector+','));
+  assert.ok(legacy,`Original layout rule exists for ${rule.selectorText}`);
+  assert.equal(rule.style.cssText,legacy.style.cssText,'Mod gets the same established width, wrap and summary budget');
+  assert.ok(document.querySelector(rule.selectorText),'The Mod rules must match while the legacy controls are hidden');
+ }
+ const hudRule=modRules[0],mod=document.querySelector('.song-mod-stage');mod.hidden=true;
+ assert.equal(document.querySelector(hudRule.selectorText),null,'Hidden Mod does not activate its layout');
+ const compact=rules.find(rule=>rule.media?.mediaText==='(min-width:651px) and (max-width:1050px) and (min-height:601px)');
+ assert.equal(compact.cssRules.length,2);
+ assert.equal(compact.cssRules[1].style['font-size'],'11px');assert.equal(compact.cssRules[1].style['padding-left'],'7px');
+});

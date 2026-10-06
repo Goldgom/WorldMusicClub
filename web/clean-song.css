@@ -39,3 +39,22 @@
  .performance-layout .stage-hud:has(.complete-practice-controls:not([hidden])) :is(nav .button,.complete-practice-controls>.button){font-size:11px;padding-left:7px;padding-right:7px}
  .performance-layout .complete-practice-controls>label{font-size:11px}
 }
+
+/* Mod replaces the legacy selection editor. Reuse its bounded laptop rows
+   while preserving the existing portrait, short-landscape and wide layouts. */
+@media(min-width:651px) and (max-width:1279px) and (min-height:601px){
+ .performance-layout .stage-hud:has(.song-mod-stage:not([hidden])){flex-wrap:wrap!important;row-gap:6px}
+ .performance-layout .stage-hud:has(.song-mod-stage:not([hidden])) .stage-heading{flex:1 1 14rem;min-width:14rem}
+ .performance-layout .stage-hud:has(.song-mod-stage:not([hidden]))>nav{flex:0 0 auto}
+ .performance-layout .stage-hud:has(.song-mod-stage:not([hidden]))>.button,.performance-layout .stage-hud:has(.song-mod-stage:not([hidden])) nav .button{flex:none;white-space:nowrap}
+ .performance-layout .stage-hud:has(.song-mod-stage:not([hidden])) nav #library-button{max-width:none;white-space:nowrap}
+ .performance-layout .stage-hud>.song-mod-stage{order:10;flex:1 1 20rem;min-width:0;padding:0;flex-wrap:nowrap;gap:8px}
+ .performance-layout .song-mod-stage>.button{flex:none;white-space:nowrap}
+ .performance-layout .song-mod-stage>span{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}
+ .performance-layout .stage-hud:has(.song-mod-stage:not([hidden]))>#song-parts-tools{flex:0 1 10rem;min-width:6rem;max-width:10rem}
+ .performance-layout .stage-hud:has(.song-mod-stage:not([hidden])) #song-parts-summary{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+}
+@media(min-width:651px) and (max-width:1050px) and (min-height:601px){
+ .performance-layout .stage-hud:has(.song-mod-stage:not([hidden]))>nav{gap:3px}
+ .performance-layout .stage-hud:has(.song-mod-stage:not([hidden])) :is(nav .button,.song-mod-stage>.button){font-size:11px;padding-left:7px;padding-right:7px}
+}

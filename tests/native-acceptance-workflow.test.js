@@ -660,3 +660,17 @@ test('canonical evidence uploads preserve original proof and score bytes after f
   assert.match(ignore, /^\/desktop-canonical-practice\/$/m);
   assert.doesNotMatch(ignore, /^\/desktop-\*\/?$/m);
 });
+
+
+test('Basic-key Windows diagnostics keep the full evidence and every existing scenario gate',()=>{
+  const block=jobBlock('native-feature-acceptance'),jobSteps=steps(block);
+  const upload=jobSteps.find(step=>step.includes('name: basic-key-windows-diagnostics-${{ github.sha }}'));
+  assert.ok(upload);assert.match(upload,/if: always\(\)/);assert.match(upload,/if-no-files-found: error/);
+  const collect=jobSteps[jobSteps.indexOf(upload)-1];
+  assert.match(collect,/if: always\(\)/);
+  assert.match(collect,/python scripts\/collect-basic-key-diagnostics\.py\s+desktop-basic-key "\$\{\{ runner\.temp \}\}\/basic-key-windows-diagnostics"\s+--source-sha "\$\{\{ github\.sha \}\}"/);
+  const full=jobSteps.find(step=>step.includes('name: native-feature-evidence-${{ github.sha }}'));
+  assert.match(full,/desktop-basic-key\/\*\.json/);assert.match(full,/desktop-basic-key\/\*\.png/);
+  assert.ok(jobSteps.indexOf(full)<jobSteps.indexOf(collect));
+  assertIndependentNativeScenarios(block);
+});
