@@ -1,6 +1,8 @@
 import {LibraryCatalogModel} from './library-catalog-model.js';
 import {exportSelectedLibraryEditions, selectedExportFilename} from './library-selected-export.js';
-const errors = {catalog_pack_name: 'packName', catalog_current_song: 'currentSong', catalog_unavailable: 'unavailable', catalog_invalid_response: 'invalid', catalog_stale: 'stale', catalog_conflict: 'stale', catalog_recovery_required: 'recovery', catalog_capacity: 'capacity', library_operation_storage: 'storage', catalog_pending_operation: 'pending', catalog_invalid_request: 'query'};
+const membershipOperations = ['remove_memberships', 'move_memberships', 'undo_memberships'];
+const organizationOperations = ['create_pack', 'rename_pack', 'add_memberships', ...membershipOperations];
+const errors = {catalog_in_trash: 'stale', catalog_pack_name: 'packName', catalog_current_song: 'currentSong', catalog_unavailable: 'unavailable', catalog_invalid_response: 'invalid', catalog_stale: 'stale', catalog_conflict: 'stale', catalog_recovery_required: 'recovery', catalog_capacity: 'capacity', library_operation_storage: 'storage', catalog_pending_operation: 'pending', catalog_invalid_request: 'query'};
 export function setupLibraryCatalogView({document, i18n, getStorage, getProtectedSong, onCommitted, transport, download, model = new LibraryCatalogModel({getStorage, getProtectedSong, onCommitted})} = {}) {
   const make = (tag, className) => { const node = document.createElement(tag); if (className) node.className = className; return node; };
   const t = (key, params = {}) => i18n.t(`management.catalog.${key}`, params);
@@ -10,8 +12,8 @@ export function setupLibraryCatalogView({document, i18n, getStorage, getProtecte
     <section id="management-catalog-initialize" hidden><p data-catalog-text="initializeHelp"></p><button id="management-catalog-initialize-preview" type="button" class="button secondary" data-catalog-text="initializePreview"></button></section>
     <section id="management-catalog-browser" hidden><form id="management-catalog-search-form" class="management-search"><label for="management-catalog-search" data-catalog-text="search"></label><input id="management-catalog-search" type="search" maxlength="256"><button type="submit" class="button secondary" data-catalog-text="submit"></button></form><label id="management-catalog-filter-label" for="management-catalog-filter"><span data-catalog-text="filterPack"></span><select id="management-catalog-filter"></select></label>
     <details id="management-catalog-organize" hidden><summary data-catalog-text="organize"></summary><p data-catalog-text="organizeHelp"></p><form id="management-catalog-create-form" class="management-search"><label for="management-catalog-create-name" data-catalog-text="newName"></label><input id="management-catalog-create-name" type="text" maxlength="256"><button id="management-catalog-create-preview" type="submit" class="button secondary" data-catalog-text="createPreview"></button></form><form id="management-catalog-rename-form" class="management-search"><label for="management-catalog-rename-target" data-catalog-text="customPack"></label><select id="management-catalog-rename-target"></select><label for="management-catalog-rename-name" data-catalog-text="renameName"></label><input id="management-catalog-rename-name" type="text" maxlength="256"><button id="management-catalog-rename-preview" type="submit" class="button secondary" data-catalog-text="renamePreview"></button></form></details>
-    <p id="management-catalog-summary"></p><p id="management-catalog-freshness" class="muted"></p><p id="management-catalog-trash-help" data-catalog-text="trashHelp" hidden></p><div class="management-actions"><label id="management-catalog-select-page-label"><input id="management-catalog-select-page" type="checkbox"><span data-catalog-text="selectPage"></span></label><button id="management-catalog-clear" type="button" class="button ghost" data-catalog-text="clear"></button><button id="management-catalog-preview" type="button" class="button secondary"></button><button id="management-catalog-sync-preview" type="button" class="button secondary" data-catalog-text="syncPreview"></button></div><div id="management-catalog-add" class="management-actions" hidden><label for="management-catalog-add-target" data-catalog-text="addTarget"></label><select id="management-catalog-add-target"></select><button id="management-catalog-add-preview" type="button" class="button secondary" data-catalog-text="addPreview"></button></div><div id="management-catalog-export" class="management-actions"><button id="management-catalog-export-legacy" type="button" class="button secondary"></button><button id="management-catalog-export-clean" type="button" class="button secondary"></button></div><p id="management-catalog-export-help"></p><p id="management-catalog-export-status" role="status" aria-live="polite"></p><p id="management-catalog-selection"></p><ul id="management-catalog-rows" class="management-rows"></ul><p id="management-catalog-empty" data-catalog-text="empty" hidden></p><div class="management-actions"><button id="management-catalog-previous" type="button" class="button secondary" data-catalog-text="previous"></button><p id="management-catalog-page"></p><button id="management-catalog-next" type="button" class="button secondary" data-catalog-text="next"></button></div></section>
-    <section id="management-catalog-review" class="management-operation" aria-labelledby="management-catalog-review-title" hidden><h3 id="management-catalog-review-title" tabindex="-1"></h3><div id="management-catalog-review-content"></div><p data-catalog-text="cancelHelp"></p><div class="management-actions"><button id="management-catalog-confirm" type="button" class="button primary"></button><button id="management-catalog-cancel" type="button" class="button secondary" data-catalog-text="cancel"></button></div></section>
+    <p id="management-catalog-summary"></p><p id="management-catalog-freshness" class="muted"></p><p id="management-catalog-trash-help" data-catalog-text="trashHelp" hidden></p><div class="management-actions"><label id="management-catalog-select-page-label"><input id="management-catalog-select-page" type="checkbox"><span data-catalog-text="selectPage"></span></label><button id="management-catalog-clear" type="button" class="button ghost" data-catalog-text="clear"></button><button id="management-catalog-preview" type="button" class="button secondary"></button><button id="management-catalog-sync-preview" type="button" class="button secondary" data-catalog-text="syncPreview"></button></div><div id="management-catalog-add" class="management-actions" hidden><label for="management-catalog-add-target" data-catalog-text="addTarget"></label><select id="management-catalog-add-target"></select><button id="management-catalog-add-preview" type="button" class="button secondary" data-catalog-text="addPreview"></button></div><section id="management-catalog-memberships" hidden><p id="management-catalog-membership-scope"></p><p data-catalog-text="membershipHelp"></p><div id="management-catalog-membership-actions" class="management-actions"><button id="management-catalog-remove-preview" type="button" class="button secondary" data-catalog-text="removePreview"></button><label for="management-catalog-move-target" data-catalog-text="moveTarget"></label><select id="management-catalog-move-target"></select><button id="management-catalog-move-preview" type="button" class="button secondary" data-catalog-text="movePreview"></button></div></section><div id="management-catalog-export" class="management-actions"><button id="management-catalog-export-legacy" type="button" class="button secondary"></button><button id="management-catalog-export-clean" type="button" class="button secondary"></button></div><p id="management-catalog-export-help"></p><p id="management-catalog-export-status" role="status" aria-live="polite"></p><p id="management-catalog-selection"></p><ul id="management-catalog-rows" class="management-rows"></ul><p id="management-catalog-empty" data-catalog-text="empty" hidden></p><div class="management-actions"><button id="management-catalog-previous" type="button" class="button secondary" data-catalog-text="previous"></button><p id="management-catalog-page"></p><button id="management-catalog-next" type="button" class="button secondary" data-catalog-text="next"></button></div></section>
+    <section id="management-catalog-undo" class="management-operation" hidden><p id="management-catalog-undo-summary"></p><p id="management-catalog-undo-id" class="management-identity"></p><p id="management-catalog-undo-blocked" data-catalog-text="undoBlocked" hidden></p><button id="management-catalog-undo-preview" type="button" class="button secondary" data-catalog-text="undoPreview"></button></section><section id="management-catalog-review" class="management-operation" aria-labelledby="management-catalog-review-title" hidden><h3 id="management-catalog-review-title" tabindex="-1"></h3><div id="management-catalog-review-content"></div><p data-catalog-text="cancelHelp"></p><div class="management-actions"><button id="management-catalog-confirm" type="button" class="button primary"></button><button id="management-catalog-cancel" type="button" class="button secondary" data-catalog-text="cancel"></button></div></section>
     <section id="management-catalog-operation" class="management-operation" aria-labelledby="management-catalog-operation-title" hidden><h3 id="management-catalog-operation-title" data-catalog-text="operationTitle"></h3><p id="management-catalog-operation-status" role="status" aria-live="polite" aria-atomic="true"></p><p id="management-catalog-operation-id" class="management-identity"></p><p id="management-catalog-operation-help" data-catalog-text="operationHelp"></p><div id="management-catalog-operation-content"></div><div id="management-catalog-operation-error" role="alert" hidden></div><p id="management-catalog-refresh-error" data-catalog-text="refreshError" hidden></p><p id="management-catalog-recovery-warning" data-catalog-text="recoveryWarning" hidden></p><div class="management-actions"><button id="management-catalog-check" type="button" class="button secondary" data-catalog-text="check"></button><button id="management-catalog-retry" type="button" class="button secondary" data-catalog-text="retry" hidden></button><button id="management-catalog-dismiss" type="button" class="button secondary" data-catalog-text="dismiss" hidden></button></div></section>`;
   const $ = id => host.querySelector(`#management-catalog-${id}`);
   let state = model.snapshot(), rowsSignature = null, reviewSignature = null, operationSignature = null, packsSignature = null, exporting = false, exportGeneration = 0, exportController = null, exportState = null, exportError = null, destroyed = false, reviewInvoker = null, focusedReview = null;
@@ -34,7 +36,13 @@ export function setupLibraryCatalogView({document, i18n, getStorage, getProtecte
       paragraph(parent, 'retained', {payload: p.retained_payload_bytes, sources: p.retained_source_bytes});
     } else {
       if (record.kind === 'sync_imports') paragraph(parent, 'syncImpact', {songs: summary.changed_song_count, memberships: effects.added_memberships.length, packs: (effects.adopted_packs || []).length});
-      else if (['create_pack', 'rename_pack', 'add_memberships'].includes(record.kind)) {
+      else if (membershipOperations.includes(record.kind)) {
+        paragraph(parent, 'membershipImpact', {selected: summary.selected_count, added: summary.added_membership_count, removed: summary.removed_membership_count, unchanged: summary.unchanged_membership_count, shared: summary.shared_song_count, unfiled: effects.newly_unfiled_songs.length});
+        if (summary.source_pack) paragraph(parent, 'reviewSource', {name: summary.source_pack.name, id: summary.source_pack.collection_id});
+        if (summary.target_pack && summary.target_pack.collection_id !== summary.source_pack?.collection_id) paragraph(parent, 'reviewTarget', {name: summary.target_pack.name, id: summary.target_pack.collection_id});
+        if (record.kind === 'undo_memberships' && summary.destination_pack) paragraph(parent, 'reviewDestination', {name: summary.destination_pack.name, id: summary.destination_pack.collection_id});
+        if (record.kind === 'undo_memberships') paragraph(parent, 'reviewUndo', {id: p.request.action.membership_operation_id});
+      } else if (['create_pack', 'rename_pack', 'add_memberships'].includes(record.kind)) {
         paragraph(parent, 'organizationImpact', {created: summary.created_pack_count, renamed: summary.renamed_pack_count, added: summary.added_membership_count, unchanged: summary.unchanged_membership_count});
         const action = p.request.action;
         paragraph(parent, 'reviewTarget', {name: summary.target_pack.name, id: action.pack_id});
@@ -52,7 +60,7 @@ export function setupLibraryCatalogView({document, i18n, getStorage, getProtecte
         parent.append(blocked);
       }
     }
-    paragraph(parent, record.kind === 'trash_songs' ? 'trashImpact' : record.kind === 'restore_songs' ? 'restoreImpact' : record.kind === 'sync_imports' ? 'syncHelp' : ['create_pack', 'rename_pack', 'add_memberships'].includes(record.kind) ? 'organizationEffect' : 'initializeEffect');
+    paragraph(parent, record.kind === 'trash_songs' ? 'trashImpact' : record.kind === 'restore_songs' ? 'restoreImpact' : record.kind === 'sync_imports' ? 'syncHelp' : membershipOperations.includes(record.kind) ? 'membershipEffect' : ['create_pack', 'rename_pack', 'add_memberships'].includes(record.kind) ? 'organizationEffect' : 'initializeEffect');
   }
   function renderRows() {
     const signature = JSON.stringify([state.response, i18n.locale, model.protectedEdition()]); if (signature === rowsSignature) return;
@@ -81,12 +89,12 @@ export function setupLibraryCatalogView({document, i18n, getStorage, getProtecte
     }
   }
   function renderPackOptions() {
-    const signature = JSON.stringify([state.packs, i18n.locale]); if (signature === packsSignature) return;
+    const signature = JSON.stringify([state.packs, state.query.collection_id, i18n.locale]); if (signature === packsSignature) return;
     packsSignature = signature;
-    for (const id of ['filter', 'add-target', 'rename-target']) {
+    for (const id of ['filter', 'add-target', 'rename-target', 'move-target']) {
       const node = $(id), previous = node.value; node.replaceChildren();
       const placeholder = make('option'); placeholder.value = ''; placeholder.textContent = t(id === 'filter' ? 'allPacks' : 'choosePack'); node.append(placeholder);
-      for (const pack of state.packs || []) if (id === 'filter' || pack.kind === 'custom') { const option = make('option'); option.value = pack.collection_id; option.textContent = `${pack.name} · ${pack.collection_id}`; node.append(option); }
+      for (const pack of state.packs || []) if (id === 'filter' || pack.kind === 'custom' && (id !== 'move-target' || pack.collection_id !== state.query.collection_id)) { const option = make('option'); option.value = pack.collection_id; option.textContent = `${pack.name} · ${pack.collection_id}`; node.append(option); }
       node.value = [...node.options].some(option => option.value === previous) ? previous : '';
     }
   }
@@ -105,6 +113,13 @@ export function setupLibraryCatalogView({document, i18n, getStorage, getProtecte
     for (const id of ['create-name', 'create-preview', 'rename-target', 'rename-name']) $(id).disabled = !enabled;
     $('rename-preview').disabled = !enabled || !$('rename-target').value;
     $('add').hidden = !organization || state.query.view !== 'active'; $('add-target').disabled = !enabled; $('add-preview').disabled = !enabled || !state.selected.length || !$('add-target').value;
+    const source = model.membershipSource();
+    $('memberships').hidden = !model.supportsMembershipChanges() || state.query.view !== 'active';
+    $('membership-scope').textContent = source ? t(source.kind === 'custom' ? 'membershipScope' : 'membershipReadonly', {name: source.name, id: source.collection_id}) : t('membershipChooseSource');
+    $('membership-actions').hidden = source?.kind !== 'custom';
+    $('move-target').disabled = !enabled;
+    $('remove-preview').disabled = !enabled || source?.kind !== 'custom' || !selectedMemberships();
+    $('move-preview').disabled = $('remove-preview').disabled || !$('move-target').value;
     $('initialize-preview').disabled = busy || Boolean(pending);
     const response = state.response;
     $('summary').textContent = response ? t('summary', {active: response.counts.active_songs, trash: response.counts.trashed_songs, managed: response.counts.managed_songs}) : '';
@@ -127,9 +142,16 @@ export function setupLibraryCatalogView({document, i18n, getStorage, getProtecte
     const reviewId = preview?.preview?.request?.operation_id || preview?.preview?.operation_id;
     if (preview && reviewId !== focusedReview) { focusedReview = reviewId; $('review-title').focus({preventScroll: true}); $('review-title').scrollIntoView?.({block: 'start', inline: 'nearest'}); }
     $('confirm').textContent = t(`confirm.${preview?.kind || 'trash_songs'}`); $('confirm').disabled = busy || state.stale || Boolean(pending) || model.recordProtected(preview); $('cancel').disabled = state.phase === 'submitting';
+    const undo = state.status?.membership_undo; $('undo').hidden = !undo;
+    if (undo) {
+      $('undo-summary').textContent = t(undo.action === 'move_memberships' ? 'undoMoveSummary' : 'undoRemoveSummary', {count: undo.selected_count, source: undo.source_pack.name, ...(undo.destination_pack ? {destination: undo.destination_pack.name} : {})});
+      $('undo-id').textContent = t('reviewUndo', {id: undo.operation_id});
+      $('undo-blocked').hidden = undo.can_undo;
+    }
+    $('undo-preview').disabled = !enabled || !model.canUndoMemberships();
     const op = state.operation; $('operation').hidden = !op;
     if (op) {
-      $('operation-status').textContent = t(op.phase === 'committed' && ['create_pack', 'rename_pack', 'add_memberships'].includes(op.kind) ? 'organizationCommitted' : `outcome.${op.phase}`, op.phase === 'committed' && !['create_pack', 'rename_pack', 'add_memberships'].includes(op.kind) ? {count: op.kind === 'initialize' ? op.preview.counts.managed_songs : op.summary.changed_song_count} : {});
+      $('operation-status').textContent = t(op.phase === 'committed' && organizationOperations.includes(op.kind) ? 'organizationCommitted' : `outcome.${op.phase}`, op.phase === 'committed' && !organizationOperations.includes(op.kind) ? {count: op.kind === 'initialize' ? op.preview.counts.managed_songs : op.summary.changed_song_count} : {});
       $('operation-id').textContent = t('operationId', {id: op.operation_id, library: op.library_id});
       const signature = JSON.stringify([op, i18n.locale]); if (signature !== operationSignature) { operationSignature = signature; impact($('operation-content'), op); }
       $('operation-help').hidden = op.phase === 'committed'; $('check').disabled = state.phase === 'submitting' || state.checking; $('retry').hidden = op.phase !== 'not_committed' || op.dismissed; $('retry').disabled = Boolean(state.checking);
@@ -137,6 +159,7 @@ export function setupLibraryCatalogView({document, i18n, getStorage, getProtecte
     }
     problem($('operation-error'), state.operationError); $('refresh-error').hidden = !state.refreshError; $('recovery-warning').hidden = !state.recoveryWarning;
   }
+  function selectedMemberships() { return state.selected.length > 0 && state.selected.every(row => row.packs?.some(pack => pack.collection_id === state.query.collection_id)); }
   function cancelExport() { exportGeneration++; exportController?.abort(); exportController = null; exporting = false; exportState = null; exportError = null; }
   function changeView(patch) { cancelExport(); $('search').value = patch.search ?? $('search').value; return model.setView(patch); }
   async function exportSelection(kind) {
@@ -157,6 +180,10 @@ export function setupLibraryCatalogView({document, i18n, getStorage, getProtecte
   $('create-form').addEventListener('submit', event => { event.preventDefault(); beginReview(formInvoker(event, $('create-preview')), () => model.previewOrganization('create_pack', {name: $('create-name').value})); });
   $('rename-form').addEventListener('submit', event => { event.preventDefault(); beginReview(formInvoker(event, $('rename-preview')), () => model.previewOrganization('rename_pack', {name: $('rename-name').value, collectionId: $('rename-target').value})); });
   $('add-preview').addEventListener('click', () => beginReview($('add-preview'), () => model.previewOrganization('add_memberships', {collectionId: $('add-target').value})));
+  $('remove-preview').addEventListener('click', () => beginReview($('remove-preview'), () => model.previewMemberships('remove_memberships')));
+  $('move-preview').addEventListener('click', () => beginReview($('move-preview'), () => model.previewMemberships('move_memberships', {destinationCollectionId: $('move-target').value})));
+  $('undo-preview').addEventListener('click', () => beginReview($('undo-preview'), () => model.previewUndoMemberships()));
+  $('move-target').addEventListener('change', () => { model.cancelPreview(); render(); });
   $('rename-target').addEventListener('change', () => { model.cancelPreview(); $('rename-name').value = state.packs?.find(pack => pack.collection_id === $('rename-target').value)?.name || ''; render(); });
   $('add-target').addEventListener('change', () => { model.cancelPreview(); render(); });
   for (const id of ['create-name', 'rename-name']) $(id).addEventListener('input', () => { if (state.preview || state.phase === 'previewing') model.cancelPreview(); });

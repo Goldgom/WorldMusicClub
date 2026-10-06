@@ -34,11 +34,40 @@ IDs; parsing the opaque ID syntax here is not secure ID generation.
    body fails. Editing a returned preview fails; a changed generation fails.
 
 The actions are inventory adoption, create/rename pack, add/move/remove membership,
-Trash songs, Trash pack, and Restore. An optional pack cascade names exact exclusive song IDs;
+scoped membership Undo, Trash songs, Trash pack, and Restore. An optional pack cascade names exact exclusive song IDs;
 shared songs or nonmembers reject the whole action. No-op transitions also get a
 new generation and receipt so their IDs cannot later acquire a different meaning.
 Selection order is part of the typed body; it also supplies append order for new
 memberships. Effects and graph serialization use stable ordering.
+
+## Membership Undo semantics
+
+Changed move/remove transitions retain their exact removed edges in the optional
+`effects.removed_membership_snapshots` array. Empty arrays are omitted, so every
+previously exposed native product action keeps its historical serialized bytes.
+`UndoMemberships { membership_operation_id }` names one original changed
+move/remove receipt. It restores only captured removed edges with their original
+position/timestamp and the new transition revision, and removes only destination
+edges that this move added. Existing destination edges and other pack references
+are untouched. Equal restored positions use the existing identity tie-break.
+
+Undo checks retained later receipts and rejects any mutation of its changed
+edges, including a remove/re-add cycle, or Trash/restore of their songs/packs.
+It also verifies current source absence and original destination-edge revision.
+Unrelated renames and edits to other memberships remain allowed and preserved.
+Changes to a preexisting destination edge are unrelated because the move never
+changed it. An all-noop original and a second new-ID Undo conflict. Its own inverse
+is not undoable. The exact same-ID request still reconciles its original result
+without rewinding subsequent work. `can_undo_memberships` supports bounded native
+status discovery; full preview still binds the current complete snapshot.
+
+Membership snapshots share the 65,536 captured-edge budget with Trash records,
+and every Undo must fit the existing request/state/history/changed-edge limits.
+The native journal publishes the complete inverse as one ordinary transition,
+with the same backup decision, recovery and receipt lookup as the forward edit.
+New membership evidence and Undo actions require an updated reader. Old native
+product histories need no migration; older applications fail closed on new
+membership history and must never reset or strip it to downgrade.
 
 `AdoptInventory { inventory: Seed }` accepts a bounded, host-verified delta after
 bootstrap. New song, pack and source IDs must not collide with any existing

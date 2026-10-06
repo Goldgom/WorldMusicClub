@@ -1,4 +1,4 @@
-# Recoverable song management UI
+# Custom-pack organization and recoverable song management UI
 
 The existing native management dialog offers **Organize packs and recover songs / 整理曲包与乐曲恢复** only
 when health advertises `library_catalog_version: 1`. Its catalog v1 adapter is
@@ -6,11 +6,13 @@ separate from query v1: existing imported groups and duplicate evidence keep the
 strict `import-*` identities. Catalog references carry a typed kind, collection ID and nullable imported-group
 ID. Custom packs never use fabricated import IDs. No browser-store fallback is
 exposed. The create/rename/add controls additionally require the corresponding
-explicit native supported_operations capabilities. Unfiltered query requests omit
+explicit native supported_operations capabilities. Membership remove/move/Undo
+controls separately require all three membership capabilities. Unfiltered query requests omit
 the new optional collection_id field, preserving old-host v1 request compatibility.
 
 The user-pack view lists imported and custom packs, including empty custom packs.
-Only custom packs are rename/add destinations; source groups remain read-only.
+Only custom packs are rename/add destinations and membership remove/move sources;
+move destinations must be different custom packs. Imported source groups remain read-only.
 Filtering opens exact active members, with separate active, available and shared
 counts. Missing payloads remain counted but unselectable. Every combined read
 checks the library, generation, digest and snapshot across all pack pages before
@@ -22,8 +24,36 @@ leave an empty pack. The preview names the exact target, including all-noop adds
 and distinguishes changed names, new memberships and already-present memberships.
 A 256 UTF-8 byte name bound is enforced by the host and adapter. Changing a name
 or target cancels an earlier preview. Selected export uses the existing separate
-legacy-score and clean-song formats, preserving their original scope. No move,
-unlink, pack Trash, cascade, permanent deletion or historical Undo is exposed.
+legacy-score and clean-song formats, preserving their original scope.
+
+Opening a custom-pack filter exposes **Review removal from this custom pack** and
+**Review exact membership move** beside an explicitly named source and destination
+choice. These are membership operations: editions remain active even when their
+last membership is removed. Song Trash remains separately labelled. The frozen
+review names exact source/destination collections, every selected storage-qualified
+edition, added/removed references, preexisting destination references, shared songs,
+and newly unfiled editions. Imported groups cannot be edited through these controls.
+Moving retains any existing destination membership; it does not duplicate songs.
+Changing the destination, search, source, or selection invalidates the old review.
+Pack Trash, cascade and permanent deletion are not exposed.
+
+**Review Undo of this membership edit** is discovered from the native status
+`membership_undo` descriptor, independently of the renderer recovery pointer.
+The latest changed, non-undone remove/move edit is offered after restart even if
+browser storage is empty or an unrelated rename/add replaced the last local
+receipt. The descriptor includes exact source/destination identity, operation ID,
+count and `can_undo`; conflicted history remains visible with Undo disabled.
+Undo previews are bound to this verified descriptor and the current catalog
+version. The backend supplies every selected edition ID and exact inverse effects;
+the renderer crosschecks counts, memberships and retained removal snapshots before
+confirmation. Undo restores removed source memberships and removes only destination
+memberships created by that move. Preexisting destination memberships remain.
+It never undoes create/rename/add or restores global song Trash. It is a new,
+explicitly reviewed operation with its own durable operation ID; lost replies use
+lookup and same-ID retry exactly like other catalog writes. A later affected-edge
+edit or trashed dependency prevents exact Undo rather than silently replacing it.
+The status descriptor is read with pack/song metadata and must share the same
+library, generation and digest before controls become actionable.
 
 Opening the panel reads status. A never-managed library needs a separately
 reviewed initialization with exact native operation ID, inventory/seed digests,
@@ -80,7 +110,7 @@ restore makes the same save a normal duplicate again. ZIP reimports continue to
 record physical duplicate receipts while preserving the original Trash state.
 
 The current native Basic complete song requires later pages from the saved source.
-Its exact clean edition remains selectable for membership addition and export,
+Its exact clean edition remains selectable for custom-pack membership changes and export,
 but its global Trash action is blocked while it is loaded for
 Listen, Practice or inspection, including while paused in the library. Ownership
 matches the actual storage adapter that admitted the object and its complete
@@ -109,6 +139,13 @@ review/cancel/error, mixed formats/shared packs, exact preview/stale conflicts,
 late reads, lost responses, wrong-operation errors, close/reopen and restart
 reconciliation, same-ID retry, selected restore, explicit sync, bilingual copy,
 paused sessions, legitimate pending assessment and already admitted media.
+The focused `library-pack-membership-contract`, `library-pack-membership` and
+`frontend-library-pack-membership` tests add scope/tamper checks, source-only removal,
+move destination duplicates, unfiled songs, restart without renderer recovery data,
+late/canceled previews, lost move/Undo replies, exact same-ID retries, unrelated
+receipt replacement, status/query disagreement, bilingual copy and retained paused
+score/takes. Fixtures are original deterministic contract examples, not native
+persistence or acceptance evidence.
 
 These Node checks are development evidence. They do not launch a browser, HTTP
 server, native GUI or access a private user library. Exact-source Rust/native,

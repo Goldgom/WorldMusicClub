@@ -3,9 +3,10 @@
 The native host advertises `library_catalog_version: 1`. The bounded product API
 is separate from read-only query v1; its full wire contract is in
 [catalog-product-contract.json](catalog-product-contract.json). No browser-store
-fallback, pack move/unlink/cascade, permanent deletion, cleanup, or source rewrite
-is exposed. Custom user packs support separately reviewed create, rename and
-add-selected-edition operations. Imported source groups remain read-only.
+fallback, pack cascade, permanent deletion, cleanup, or source rewrite is exposed.
+Custom user packs support separately reviewed create, rename, add, remove and
+atomic move operations, with durable scoped Undo for remove/move. Imported source
+groups remain read-only.
 
 The host advertises `create_pack`, `rename_pack` and `add_memberships` through
 `supported_operations`; renderers must check these capabilities. Pack query uses
@@ -23,10 +24,43 @@ Add uses exact active managed edition IDs, at most 1024 per reviewed transaction
 and verifies payload availability again at commit. Existing memberships produce
 explicit already-present noops and retain their position, time and revision.
 Create followed by add is two transactions; a cancelled add leaves the empty pack.
-No membership move/removal, pack Trash, cascade or historical Undo is exposed.
+Remove affects only the selected custom-pack memberships; absent edges are
+explicit noops. Move requires every source membership, adds missing destination
+memberships and removes the source memberships atomically. Existing destination
+edges keep their original position, timestamp and revision. Moving to the same
+pack is an explicit noop. Both source and destination must be active custom packs.
+Pack Trash, cascade and generic historical rollback are not exposed.
 
-These actions already exist in the v1 core, so existing persisted catalogs need
-no migration and historical receipts retain their exact bytes and digests.
+`remove_memberships`, `move_memberships` and `undo_memberships` are independently
+advertised through `supported_operations`. Preview uses `collection_id` for the
+source, `destination_collection_id` for a move, and `membership_operation_id` plus
+empty `edition_ids` for Undo. All require the current generation and digest, and
+use the existing frozen-preview commit and operation-lookup routes. A move is
+bounded by 1024 total changed edges, so a move adding every destination edge can
+select at most 512 songs. Every rejected selection is atomic.
+
+Changed remove/move receipts retain exact removed membership metadata in
+`effects.removed_membership_snapshots`. Undo restores only those edges with their
+original positions/timestamps and a new revision, and removes only edges that
+the original move added. Preexisting destination references are never undone.
+An intervening change to any originally changed edge, or Trash/restore of its
+song/pack, blocks Undo even after a remove/re-add cycle. Unrelated renames and
+other-song membership changes survive. A same-ID replay returns its original
+receipt; an all-noop original or a second new-ID Undo is a conflict. Undo itself
+is not undoable. This deliberately scoped inverse never rewinds the catalog.
+
+Status returns `membership_undo`, reconstructed from durable receipts, for the
+latest non-undone changed remove/move. It includes source/destination, selected
+count and `can_undo`, which is false after conflicting work. It survives process
+restart and does not depend on browser storage. Actual Undo preview also verifies
+physical payloads, then exposes the exact changed edition IDs for review.
+
+Existing product catalogs need no migration and their historical receipt bytes
+and digests remain unchanged: new membership snapshots are omitted when empty.
+New remove/move receipt evidence and the new Undo action require this version or
+newer. Older readers reject these unknown fields/actions and fail closed; never
+reset, reseed or strip history to downgrade. Prior native product versions did
+not expose move/remove, so they did not create such operation histories.
 Older native hosts do not advertise these controls. Older renderers may reject
 custom references with a null import identity and fail closed; use a newer app
 instead of resetting or reseeding a catalog. This is preservation compatibility,
@@ -93,6 +127,28 @@ The journal still verifies its full chain on reads and writes. Large histories m
 be slow; this slice makes no responsiveness or Windows power-loss durability
 claim. Old binaries do not understand logical Trash and can display retained songs.
 Full repository/native/Windows acceptance is required before release promotion.
+
+## Membership operation development evidence
+
+Scoped checks pass 51 desktop catalog-related tests (the existing opt-in maximum
+inventory measurement is ignored), 40 pure catalog tests, and 13 existing native
+wire/user-pack contract Node tests. The final two membership product cases were
+rerun after adding explicit post-rename/add restart discovery assertions. Affected
+Rust formatting, scoped Clippy with warnings denied, and diff whitespace checks
+pass. These are development checks; full integrated workspace, renderer, browser
+and Windows/native acceptance remain required before promotion.
+
+Only authored fixtures are used. The new cases cover atomic mixed-destination
+moves, duplicate-destination metadata, source/destination equality, absent-member
+noops, missing/read-only targets, duplicate IDs, edited/stale previews, changed-ID
+conflicts, unrelated rename/add, touched-edge remove/re-add and Trash/restore,
+original ordinal restoration, durable candidate discovery and subprocess Undo.
+Remove/move and each inverse are interrupted before the backup decision, after
+the decision and before response, then reconciled after a process restart. Every
+source, payload, backup, authored practice-history sentinel and outside sentinel
+remains exact. `WMC_MEMBERSHIP_PACK_CONTRACT_OUT` on the native
+`membership_move_and_undo_survive_restart_preserve_duplicate_destination_and_later_edits`
+test writes its real request/response transcript for renderer contract checks.
 
 ## User-pack development evidence
 

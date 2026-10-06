@@ -1,5 +1,7 @@
 //! Authored metadata only. These tests never open a library or touch song files.
 use worldmusichub_desktop::catalog::*;
+#[path = "catalog/membership_undo.rs"]
+mod membership_undo;
 
 fn song_id(n: u32) -> SongId {
     SongId::parse(format!("legacy:song-{n:064x}")).unwrap()

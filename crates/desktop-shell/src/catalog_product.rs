@@ -58,7 +58,7 @@ fn core_error(error: catalog::Error) -> LibraryError {
         catalog::Error::NotFound => (
             404,
             "catalog_not_found",
-            "An edition or original Trash operation is not managed; refresh or sync new imports",
+            "A selected edition, pack, or original operation is not managed; refresh or sync new imports",
         ),
         catalog::Error::InTrash => (
             409,
@@ -620,6 +620,10 @@ struct Selection {
     #[serde(default)]
     collection_id: Option<PackId>,
     #[serde(default)]
+    destination_collection_id: Option<PackId>,
+    #[serde(default)]
+    membership_operation_id: Option<OperationId>,
+    #[serde(default)]
     name: Option<String>,
     expected_generation: u64,
     catalog_digest: String,
@@ -696,11 +700,69 @@ fn require_custom(catalog: &Catalog, id: &PackId) -> Result<()> {
     }
     Ok(())
 }
+fn membership_undo_status(catalog: &Catalog) -> Value {
+    let undone: BTreeSet<_> = catalog
+        .snapshot()
+        .receipts
+        .iter()
+        .filter_map(|receipt| {
+            if let Action::UndoMemberships {
+                membership_operation_id,
+            } = &receipt.preview.request.action
+            {
+                Some(membership_operation_id)
+            } else {
+                None
+            }
+        })
+        .collect();
+    for receipt in catalog.snapshot().receipts.iter().rev() {
+        let preview = &receipt.preview;
+        let id = &preview.request.operation_id;
+        if preview.effects.removed_membership_snapshots.is_empty() || undone.contains(id) {
+            continue;
+        }
+        let (action, source, destination) = match &preview.request.action {
+            Action::RemoveMemberships { pack_id, .. } => ("remove_memberships", pack_id, None),
+            Action::MoveMemberships {
+                from_pack, to_pack, ..
+            } => ("move_memberships", from_pack, Some(to_pack)),
+            _ => continue,
+        };
+        let selected: BTreeSet<_> = preview
+            .effects
+            .removed_memberships
+            .iter()
+            .chain(&preview.effects.added_memberships)
+            .map(|edge| &edge.song)
+            .collect();
+        return json!({"operation_id":id,"action":action,"selected_count":selected.len(),"source_pack":pack_ref(catalog,source),"destination_pack":destination.map(|pack|pack_ref(catalog,pack)),"can_undo":catalog.can_undo_memberships(id)});
+    }
+    Value::Null
+}
 fn summary(catalog: &Catalog, preview: &Preview) -> Value {
     let ids = match &preview.request.action {
-        Action::TrashSongs { song_ids } | Action::AddMemberships { song_ids, .. } => {
-            song_ids.clone()
-        }
+        Action::TrashSongs { song_ids }
+        | Action::AddMemberships { song_ids, .. }
+        | Action::RemoveMemberships { song_ids, .. }
+        | Action::MoveMemberships { song_ids, .. } => song_ids.clone(),
+        Action::UndoMemberships {
+            membership_operation_id,
+        } => catalog
+            .receipt(membership_operation_id)
+            .map(|receipt| {
+                receipt
+                    .preview
+                    .effects
+                    .removed_memberships
+                    .iter()
+                    .chain(&receipt.preview.effects.added_memberships)
+                    .map(|edge| edge.song.clone())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect()
+            })
+            .unwrap_or_default(),
         Action::Restore { entities, .. } => entities
             .iter()
             .filter_map(|e| {
@@ -777,6 +839,9 @@ fn summary(catalog: &Catalog, preview: &Preview) -> Value {
         }
         row["selected_song_count"] = json!(match &preview.request.action {
             Action::AddMemberships { pack_id, song_ids } if pack_id == id => song_ids.len(),
+            Action::MoveMemberships {
+                to_pack, song_ids, ..
+            } if to_pack == id => song_ids.len(),
             _ => edges
                 .iter()
                 .filter(|m| m.pack == *id && selected.contains(&m.song))
@@ -785,6 +850,11 @@ fn summary(catalog: &Catalog, preview: &Preview) -> Value {
         affected.push(row)
     }
     let mut value = json!({"selected_count":ids.len(),"changed_song_count":effects.trashed_songs.len()+effects.restored_songs.len()+effects.adopted_songs.len(),"created_pack_count":effects.created_packs.len(),"renamed_pack_count":effects.renamed_packs.len(),"added_membership_count":effects.added_memberships.len(),"unchanged_membership_count":effects.noops.iter().filter(|n|n.reason == catalog::NoopReason::AlreadyPresent).count(),"removed_membership_count":effects.removed_memberships.len(),"restored_membership_count":effects.added_memberships.len(),"shared_song_count":shared,"affected_packs":affected,"reclaimed_bytes":0});
+    value["noop_membership_count"] = json!(effects
+        .noops
+        .iter()
+        .filter(|noop| matches!(noop.target, catalog::Target::Membership(_)))
+        .count());
     // Keep the exact reviewed destination visible even for an all-noop add or rename.
     match &preview.request.action {
         Action::CreatePack { pack_id, name } | Action::RenamePack { pack_id, name } => {
@@ -792,7 +862,54 @@ fn summary(catalog: &Catalog, preview: &Preview) -> Value {
                 json!({"collection_id":pack_id,"kind":"custom","import_pack_id":null,"name":name});
         }
         Action::AddMemberships { pack_id, .. } => value["target_pack"] = pack_ref(catalog, pack_id),
+        Action::RemoveMemberships { pack_id, .. } => {
+            value["source_pack"] = pack_ref(catalog, pack_id);
+            value["target_pack"] = pack_ref(catalog, pack_id);
+            value["destination_pack"] = Value::Null;
+        }
+        Action::MoveMemberships {
+            from_pack, to_pack, ..
+        } => {
+            value["source_pack"] = pack_ref(catalog, from_pack);
+            value["destination_pack"] = pack_ref(catalog, to_pack);
+            value["target_pack"] = pack_ref(catalog, to_pack);
+        }
+        Action::UndoMemberships {
+            membership_operation_id,
+        } => {
+            let original = &catalog
+                .receipt(membership_operation_id)
+                .expect("validated membership undo")
+                .preview;
+            value["membership_operation_id"] = json!(membership_operation_id);
+            value["selected_edition_ids"] = json!(ids);
+            match &original.request.action {
+                Action::RemoveMemberships { pack_id, .. } => {
+                    value["source_pack"] = pack_ref(catalog, pack_id);
+                    value["target_pack"] = pack_ref(catalog, pack_id);
+                    value["destination_pack"] = Value::Null;
+                }
+                Action::MoveMemberships {
+                    from_pack, to_pack, ..
+                } => {
+                    value["source_pack"] = pack_ref(catalog, from_pack);
+                    value["destination_pack"] = pack_ref(catalog, to_pack);
+                    value["target_pack"] = pack_ref(catalog, from_pack);
+                }
+                _ => unreachable!("validated membership undo"),
+            }
+        }
         _ => (),
+    }
+    if matches!(
+        preview.request.action,
+        Action::RemoveMemberships { .. } | Action::MoveMemberships { .. }
+    ) {
+        value["undo_operation_id"] = if effects.removed_membership_snapshots.is_empty() {
+            Value::Null
+        } else {
+            json!(preview.request.operation_id)
+        };
     }
     value
 }
@@ -811,6 +928,13 @@ fn preview(library: &NativeLibrary, request: Selection) -> Result<Value> {
     )?;
     let verified = verified(library)?;
     require_physical(&loaded.catalog, &verified, &request.edition_ids)?;
+    if (request.destination_collection_id.is_some() && request.action != "move_memberships")
+        || (request.membership_operation_id.is_some() && request.action != "undo_memberships")
+    {
+        return Err(core_error(catalog::Error::Invalid(
+            "unexpected membership fields",
+        )));
+    }
     let action = match request.action.as_str() {
         "create_pack"
             if request.edition_ids.is_empty()
@@ -848,6 +972,37 @@ fn preview(library: &NativeLibrary, request: Selection) -> Result<Value> {
                     .collection_id
                     .ok_or_else(|| core_error(catalog::Error::Invalid("missing collection")))?,
                 song_ids: request.edition_ids,
+            }
+        }
+        "remove_memberships" if request.name.is_none() && request.trash_operation_id.is_none() => {
+            Action::RemoveMemberships {
+                pack_id: request
+                    .collection_id
+                    .ok_or_else(|| core_error(catalog::Error::Invalid("missing collection")))?,
+                song_ids: request.edition_ids,
+            }
+        }
+        "move_memberships" if request.name.is_none() && request.trash_operation_id.is_none() => {
+            Action::MoveMemberships {
+                from_pack: request
+                    .collection_id
+                    .ok_or_else(|| core_error(catalog::Error::Invalid("missing collection")))?,
+                to_pack: request
+                    .destination_collection_id
+                    .ok_or_else(|| core_error(catalog::Error::Invalid("missing destination")))?,
+                song_ids: request.edition_ids,
+            }
+        }
+        "undo_memberships"
+            if request.edition_ids.is_empty()
+                && request.collection_id.is_none()
+                && request.name.is_none()
+                && request.trash_operation_id.is_none() =>
+        {
+            Action::UndoMemberships {
+                membership_operation_id: request.membership_operation_id.ok_or_else(|| {
+                    core_error(catalog::Error::Invalid("missing membership operation"))
+                })?,
             }
         }
         "trash_songs"
@@ -958,9 +1113,49 @@ fn allowed_action(catalog: &Catalog, verified: &Verified, action: &Action) -> Re
     match action {
         Action::CreatePack { .. } => Ok(()),
         Action::RenamePack { pack_id, .. } => require_custom(catalog, pack_id),
-        Action::AddMemberships { pack_id, song_ids } if !song_ids.is_empty() => {
+        Action::AddMemberships { pack_id, song_ids }
+        | Action::RemoveMemberships { pack_id, song_ids }
+            if !song_ids.is_empty() =>
+        {
             require_custom(catalog, pack_id)?;
             require_physical(catalog, verified, song_ids)
+        }
+        Action::MoveMemberships {
+            from_pack,
+            to_pack,
+            song_ids,
+        } if !song_ids.is_empty() => {
+            require_custom(catalog, from_pack)?;
+            require_custom(catalog, to_pack)?;
+            require_physical(catalog, verified, song_ids)
+        }
+        Action::UndoMemberships {
+            membership_operation_id,
+        } => {
+            let original = catalog
+                .receipt(membership_operation_id)
+                .ok_or_else(|| core_error(catalog::Error::NotFound))?;
+            let ids: Vec<_> = original
+                .preview
+                .effects
+                .removed_memberships
+                .iter()
+                .chain(&original.preview.effects.added_memberships)
+                .map(|edge| edge.song.clone())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            match &original.preview.request.action {
+                Action::RemoveMemberships { pack_id, .. } => require_custom(catalog, pack_id)?,
+                Action::MoveMemberships {
+                    from_pack, to_pack, ..
+                } => {
+                    require_custom(catalog, from_pack)?;
+                    require_custom(catalog, to_pack)?;
+                }
+                _ => return Err(core_error(catalog::Error::Conflict)),
+            }
+            require_physical(catalog, verified, &ids)
         }
         Action::TrashSongs { song_ids } if !song_ids.is_empty() => {
             require_physical(catalog, verified, song_ids)
@@ -1459,8 +1654,15 @@ pub fn dispatch(
                 "sync_inventory",
                 "create_pack",
                 "rename_pack",
-                "add_memberships"
+                "add_memberships",
+                "remove_memberships",
+                "move_memberships",
+                "undo_memberships"
             ]);
+            value["membership_undo"] = loaded
+                .as_ref()
+                .map(|loaded| membership_undo_status(&loaded.catalog))
+                .unwrap_or(Value::Null);
             envelope(library, value)
         })(),
         ("POST", "/api/library/catalog/initialize/preview") => {

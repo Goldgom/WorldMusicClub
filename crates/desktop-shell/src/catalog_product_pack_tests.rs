@@ -330,13 +330,7 @@ fn user_pack_admission_rejects_imported_targets_edited_and_stale_plans_and_unbou
         )
         .0 >= 400
     );
-    for action in [
-        "move_memberships",
-        "remove_memberships",
-        "trash_pack",
-        "permanent_delete",
-        "undo",
-    ] {
+    for action in ["move_memberships", "trash_pack", "permanent_delete", "undo"] {
         assert_eq!(
             call(
                 &library,
@@ -389,6 +383,451 @@ fn user_pack_admission_rejects_imported_targets_edited_and_stale_plans_and_unbou
         "not_committed"
     );
     f.restart("check", 2, 0);
+}
+
+fn membership_request(
+    library: &NativeLibrary,
+    action: &str,
+    source: Value,
+    destination: Value,
+    ids: Vec<Value>,
+    operation: Value,
+) -> Value {
+    let mut request = pack_request(library, action, source, Value::Null, ids);
+    request["destination_collection_id"] = destination;
+    request["membership_operation_id"] = operation;
+    request
+}
+fn membership_plan(
+    library: &NativeLibrary,
+    action: &str,
+    source: Value,
+    destination: Value,
+    ids: Vec<Value>,
+    operation: Value,
+) -> Value {
+    ok(
+        library,
+        "preview",
+        membership_request(library, action, source, destination, ids, operation),
+    )
+}
+fn edge_rows(library: &NativeLibrary) -> Vec<catalog::Membership> {
+    journal::load(library)
+        .unwrap()
+        .unwrap()
+        .catalog
+        .snapshot()
+        .inventory
+        .memberships
+        .clone()
+}
+
+#[test]
+fn membership_move_and_undo_survive_restart_preserve_duplicate_destination_and_later_edits() {
+    NATIVE_CALLS.with(|calls| calls.borrow_mut().clear());
+    let f = Fixture::new();
+    let library = f.library();
+    song_pack::import(
+        &library,
+        "authored-memberships.zip",
+        &zip(vec![
+            ("first.json", score("original-membership-first")),
+            ("second.json", score("original-membership-second")),
+            ("later.json", score("original-membership-later")),
+        ]),
+        true,
+        false,
+        None,
+    )
+    .unwrap();
+    fs::write(
+        f.root.join("authored-practice-history"),
+        b"Keep all practice history",
+    )
+    .unwrap();
+    init(&library);
+    let rows = list(&library, "active")["rows"].as_array().unwrap().clone();
+    let ids: Vec<_> = rows
+        .iter()
+        .filter(|row| row["score_id"] != "original-membership-later")
+        .map(|row| row["edition_id"].clone())
+        .collect();
+    let later_id = rows
+        .iter()
+        .find(|row| row["score_id"] == "original-membership-later")
+        .unwrap()["edition_id"]
+        .clone();
+    let source = create(&library, "Original source pack");
+    let destination = create(&library, "Destination pack");
+    let other = create(&library, "Other references");
+    for (pack, selection) in [
+        (source.clone(), ids.clone()),
+        (destination.clone(), vec![ids[0].clone()]),
+        (other, ids.clone()),
+    ] {
+        let add = pack_plan(&library, "add_memberships", pack, Value::Null, selection);
+        ok(&library, "commit", commit_body(&add));
+    }
+    let original_edges = edge_rows(&library);
+    let original_files = files(&f.root);
+    let moved = membership_plan(
+        &library,
+        "move_memberships",
+        source.clone(),
+        destination.clone(),
+        ids.clone(),
+        Value::Null,
+    );
+    assert_eq!(moved["summary"]["selected_count"], 2);
+    assert_eq!(moved["summary"]["removed_membership_count"], 2);
+    assert_eq!(moved["summary"]["added_membership_count"], 1);
+    assert_eq!(moved["summary"]["unchanged_membership_count"], 1);
+    assert_eq!(moved["summary"]["shared_song_count"], 2);
+    assert_eq!(moved["summary"]["source_pack"]["collection_id"], source);
+    assert_eq!(
+        moved["summary"]["destination_pack"]["collection_id"],
+        destination
+    );
+    assert_eq!(
+        moved["preview"]["effects"]["removed_membership_snapshots"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let operation = moved["preview"]["request"]["operation_id"].clone();
+    assert_eq!(moved["summary"]["undo_operation_id"], operation);
+    ok(&library, "commit", commit_body(&moved));
+    f.restart("check", 7, 0);
+    let status = ok(&library, "status", json!({}));
+    assert_eq!(status["membership_undo"]["operation_id"], operation);
+    assert_eq!(status["membership_undo"]["can_undo"], true);
+    assert_eq!(in_pack(&library, "active", &source)["total"], 0);
+    assert_eq!(in_pack(&library, "active", &destination)["total"], 2);
+    assert_eq!(
+        ok(
+            &library,
+            "operation",
+            json!({"library_id":status["library_id"],"operation_id":operation})
+        )["receipt"]["preview"],
+        moved["preview"]
+    );
+    let rename = pack_plan(
+        &library,
+        "rename_pack",
+        source.clone(),
+        json!("Keep later name"),
+        vec![],
+    );
+    ok(&library, "commit", commit_body(&rename));
+    let add = pack_plan(
+        &library,
+        "add_memberships",
+        destination.clone(),
+        Value::Null,
+        vec![later_id.clone()],
+    );
+    ok(&library, "commit", commit_body(&add));
+    f.restart("check", 9, 0);
+    let status = ok(&library, "status", json!({}));
+    assert_eq!(status["membership_undo"]["operation_id"], operation);
+    assert_eq!(status["membership_undo"]["can_undo"], true);
+    let undo = membership_plan(
+        &library,
+        "undo_memberships",
+        Value::Null,
+        Value::Null,
+        vec![],
+        operation.clone(),
+    );
+    assert_eq!(undo["summary"]["selected_count"], 2);
+    assert_eq!(
+        undo["summary"]["selected_edition_ids"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(undo["summary"]["target_pack"]["name"], "Keep later name");
+    assert_eq!(undo["summary"]["removed_membership_count"], 1);
+    fs::write(
+        f.base.join("owned-request.json"),
+        serde_json::to_vec(&commit_body(&undo)).unwrap(),
+    )
+    .unwrap();
+    f.restart("restore", 10, 0);
+    let final_edges = edge_rows(&library);
+    for before in &original_edges {
+        let after = final_edges
+            .iter()
+            .find(|edge| edge.id == before.id)
+            .unwrap();
+        assert_eq!(after.position, before.position);
+        assert_eq!(after.added_at_unix_ms, before.added_at_unix_ms);
+        if before.id.pack.as_str() == source.as_str().unwrap() {
+            assert_eq!(after.revision, 10);
+        } else {
+            assert_eq!(after, before);
+        }
+    }
+    assert_eq!(final_edges.len(), original_edges.len() + 1);
+    assert_eq!(in_pack(&library, "active", &source)["total"], 2);
+    let destination_rows = in_pack(&library, "active", &destination);
+    assert_eq!(destination_rows["total"], 2);
+    assert!(destination_rows["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|row| row["edition_id"] == later_id));
+    assert!(ok(&library, "status", json!({}))["membership_undo"].is_null());
+    assert_eq!(ok(&library, "commit", commit_body(&undo))["replayed"], true);
+    assert_eq!(
+        ok(&library, "commit", commit_body(&moved))["generation"],
+        10
+    );
+    assert_eq!(files(&f.root), original_files);
+    assert_originals(&f.root, &original_files);
+    assert_eq!(
+        call(
+            &library,
+            "/api/library/catalog/preview",
+            membership_request(
+                &library,
+                "undo_memberships",
+                Value::Null,
+                Value::Null,
+                vec![],
+                operation
+            )
+        )
+        .1["code"],
+        "catalog_conflict"
+    );
+    if let Some(path) = std::env::var_os("WMC_MEMBERSHIP_PACK_CONTRACT_OUT") {
+        fs::write(
+            path,
+            serde_json::to_vec_pretty(
+                &json!({"native_calls":NATIVE_CALLS.with(|calls|calls.borrow().clone())}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn membership_admission_and_noops_reject_missing_imported_duplicate_stale_and_edited_selection() {
+    let f = Fixture::new();
+    let library = f.library();
+    song_pack::import(
+        &library,
+        "original-member.json",
+        &score("original-member"),
+        true,
+        false,
+        None,
+    )
+    .unwrap();
+    init(&library);
+    let row = list(&library, "active")["rows"][0].clone();
+    let id = row["edition_id"].clone();
+    let imported = row["packs"][0]["collection_id"].clone();
+    let source = create(&library, "Source");
+    let destination = create(&library, "Destination");
+    let absent = membership_plan(
+        &library,
+        "remove_memberships",
+        source.clone(),
+        Value::Null,
+        vec![id.clone()],
+        Value::Null,
+    );
+    assert_eq!(absent["summary"]["noop_membership_count"], 1);
+    assert!(absent["summary"]["undo_operation_id"].is_null());
+    ok(&library, "commit", commit_body(&absent));
+    assert!(ok(&library, "status", json!({}))["membership_undo"].is_null());
+    let add = pack_plan(
+        &library,
+        "add_memberships",
+        source.clone(),
+        Value::Null,
+        vec![id.clone()],
+    );
+    ok(&library, "commit", commit_body(&add));
+    let same = membership_plan(
+        &library,
+        "move_memberships",
+        source.clone(),
+        source.clone(),
+        vec![id.clone()],
+        Value::Null,
+    );
+    assert_eq!(
+        same["preview"]["effects"]["noops"][0]["reason"],
+        "same_pack"
+    );
+    ok(&library, "commit", commit_body(&same));
+    assert!(ok(&library, "status", json!({}))["membership_undo"].is_null());
+    for (action, from, to, selection, code) in [
+        (
+            "remove_memberships",
+            imported.clone(),
+            Value::Null,
+            vec![id.clone()],
+            "catalog_readonly_pack",
+        ),
+        (
+            "move_memberships",
+            imported.clone(),
+            destination.clone(),
+            vec![id.clone()],
+            "catalog_readonly_pack",
+        ),
+        (
+            "move_memberships",
+            source.clone(),
+            imported,
+            vec![id.clone()],
+            "catalog_readonly_pack",
+        ),
+        (
+            "move_memberships",
+            source.clone(),
+            Value::Null,
+            vec![id.clone()],
+            "catalog_invalid_request",
+        ),
+        (
+            "move_memberships",
+            source.clone(),
+            json!(format!("collection-{:032x}", 999)),
+            vec![id.clone()],
+            "catalog_not_found",
+        ),
+        (
+            "move_memberships",
+            destination.clone(),
+            source.clone(),
+            vec![id.clone()],
+            "catalog_not_found",
+        ),
+        (
+            "remove_memberships",
+            source.clone(),
+            Value::Null,
+            vec![id.clone(), id.clone()],
+            "catalog_invalid_request",
+        ),
+        (
+            "move_memberships",
+            source.clone(),
+            destination.clone(),
+            vec![id.clone(), id.clone()],
+            "catalog_invalid_request",
+        ),
+    ] {
+        assert_eq!(
+            call(
+                &library,
+                "/api/library/catalog/preview",
+                membership_request(&library, action, from, to, selection, Value::Null)
+            )
+            .1["code"],
+            code
+        );
+    }
+    let moved = membership_plan(
+        &library,
+        "move_memberships",
+        source.clone(),
+        destination.clone(),
+        vec![id.clone()],
+        Value::Null,
+    );
+    let mut edited = commit_body(&moved);
+    edited["preview"]["effects"]["removed_membership_snapshots"][0]["position"] = json!(999);
+    assert_eq!(
+        call(&library, "/api/library/catalog/commit", edited).1["code"],
+        "catalog_conflict"
+    );
+    let rename = pack_plan(
+        &library,
+        "rename_pack",
+        destination.clone(),
+        json!("Later"),
+        vec![],
+    );
+    ok(&library, "commit", commit_body(&rename));
+    assert_eq!(
+        call(&library, "/api/library/catalog/commit", commit_body(&moved)).1["code"],
+        "catalog_stale"
+    );
+    assert_eq!(in_pack(&library, "active", &source)["total"], 1);
+    assert_eq!(in_pack(&library, "active", &destination)["total"], 0);
+    let removed = membership_plan(
+        &library,
+        "remove_memberships",
+        source.clone(),
+        Value::Null,
+        vec![id.clone()],
+        Value::Null,
+    );
+    ok(&library, "commit", commit_body(&removed));
+    let undo = membership_plan(
+        &library,
+        "undo_memberships",
+        Value::Null,
+        Value::Null,
+        vec![],
+        removed["summary"]["undo_operation_id"].clone(),
+    );
+    ok(&library, "commit", commit_body(&undo));
+    assert_eq!(in_pack(&library, "active", &source)["total"], 1);
+    let moved = membership_plan(
+        &library,
+        "move_memberships",
+        source.clone(),
+        destination,
+        vec![id.clone()],
+        Value::Null,
+    );
+    ok(&library, "commit", commit_body(&moved));
+    let add_back = pack_plan(
+        &library,
+        "add_memberships",
+        source.clone(),
+        Value::Null,
+        vec![id],
+    );
+    ok(&library, "commit", commit_body(&add_back));
+    assert_eq!(
+        ok(&library, "status", json!({}))["membership_undo"]["can_undo"],
+        false
+    );
+    assert_eq!(
+        call(
+            &library,
+            "/api/library/catalog/preview",
+            membership_request(
+                &library,
+                "undo_memberships",
+                Value::Null,
+                Value::Null,
+                vec![],
+                moved["summary"]["undo_operation_id"].clone()
+            )
+        )
+        .1["code"],
+        "catalog_conflict"
+    );
+    let mut conflict = commit_body(&moved);
+    conflict["preview"]["request"]["action"]["from_pack"] = source;
+    conflict["preview"]["request"]["at_unix_ms"] = json!(0);
+    assert_eq!(
+        call(&library, "/api/library/catalog/commit", conflict).1["code"],
+        "catalog_conflict"
+    );
 }
 
 #[test]

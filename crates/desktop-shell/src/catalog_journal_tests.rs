@@ -381,6 +381,120 @@ fn durable_receipt_replay_never_rewinds_later_work() {
     assert_eq!(reinitialized.catalog, later.catalog);
     f.restart(2, 2);
 }
+
+#[test]
+fn membership_move_remove_and_undo_are_atomic_at_backup_decision_and_restart() {
+    for kind in ["remove", "move", "undo_remove", "undo_move"] {
+        for boundary in [
+            Boundary::BeforeBackupRename,
+            Boundary::AfterBackupRename,
+            Boundary::BeforeResponse,
+        ] {
+            let f = Fixture::new();
+            let mut inventory = seed().snapshot().inventory.clone();
+            inventory.memberships.retain(|edge| {
+                edge.id
+                    != MembershipId {
+                        pack: pack(2),
+                        song: song(1),
+                    }
+            });
+            let initial = Catalog::from_seed(inventory).unwrap();
+            let original = initial
+                .snapshot()
+                .inventory
+                .memberships
+                .iter()
+                .find(|edge| {
+                    edge.id
+                        == MembershipId {
+                            pack: pack(1),
+                            song: song(1),
+                        }
+                })
+                .unwrap()
+                .clone();
+            initialize(&f.library(), initial.clone(), op(0)).unwrap();
+            let edit = if kind.ends_with("move") {
+                Action::MoveMemberships {
+                    from_pack: pack(1),
+                    to_pack: pack(2),
+                    song_ids: vec![song(1)],
+                }
+            } else {
+                Action::RemoveMemberships {
+                    pack_id: pack(1),
+                    song_ids: vec![song(1)],
+                }
+            };
+            let first = plan(&initial, 1, edit);
+            let (before, preview) = if kind.starts_with("undo") {
+                let committed = commit(&f.library(), &first).unwrap();
+                f.restart(1, 0);
+                let undo = plan(
+                    &committed.catalog,
+                    2,
+                    Action::UndoMemberships {
+                        membership_operation_id: op(1),
+                    },
+                );
+                (committed.catalog, undo)
+            } else {
+                (initial, first)
+            };
+            let error = commit_with(&f.library(), &preview, &mut fail_at(boundary, 1)).unwrap_err();
+            let decided = boundary != Boundary::BeforeBackupRename;
+            assert_eq!(
+                error.outcome,
+                if decided {
+                    Outcome::CommitUncertain
+                } else {
+                    Outcome::NotCommitted
+                }
+            );
+            let generation = before.snapshot().generation + u64::from(decided);
+            f.restart(generation, 0);
+            let looked_up = lookup(&f.library(), &preview.request.operation_id).unwrap();
+            assert_eq!(looked_up.is_some(), decided);
+            let current = load(&f.library()).unwrap().unwrap().catalog;
+            let expected = if decided {
+                before.apply(&preview).unwrap().catalog
+            } else {
+                before.clone()
+            };
+            assert_eq!(current, expected);
+            let retry = commit(&f.library(), &preview).unwrap();
+            assert_eq!(retry.replayed, decided);
+            assert_eq!(retry.receipt.preview, preview);
+            f.restart(before.snapshot().generation + 1, 0);
+            if kind.starts_with("undo") {
+                let restored = retry
+                    .catalog
+                    .snapshot()
+                    .inventory
+                    .memberships
+                    .iter()
+                    .find(|edge| edge.id == original.id)
+                    .unwrap();
+                assert_eq!(restored.position, original.position);
+                assert_eq!(restored.added_at_unix_ms, original.added_at_unix_ms);
+                assert!(!retry
+                    .catalog
+                    .snapshot()
+                    .inventory
+                    .memberships
+                    .iter()
+                    .any(|edge| edge.id
+                        == MembershipId {
+                            pack: pack(2),
+                            song: song(1)
+                        }));
+            }
+            assert_eq!(retry.receipt.preview.effects.reclaimed_bytes, 0);
+            f.unchanged();
+        }
+    }
+}
 fn paths(f: &Fixture, area: &str) -> Vec<PathBuf> {
     children(&f.root.join(area).join("commits"), MAX_GENERATIONS).unwrap()
 }

@@ -5,7 +5,7 @@
   "capability": {
     "health_field": "library_catalog_version",
     "value": 1,
-    "scope": "Explicit initialization, exact selected-song Trash/restore, inventory sync, and custom user pack create/rename/add; no unlink/move/cascade/purge"
+    "scope": "Explicit initialization, exact selected-song Trash/restore, inventory sync, custom pack create/rename/add/remove/move, and scoped membership Undo; no pack cascade/purge"
   },
   "envelope": {
     "format": "worldmusichub-catalog",
@@ -29,8 +29,12 @@
           "sync_inventory",
           "create_pack",
           "rename_pack",
-          "add_memberships"
-        ]
+          "add_memberships",
+          "remove_memberships",
+          "move_memberships",
+          "undo_memberships"
+        ],
+        "membership_undo": "null | {operation_id,action:remove_memberships|move_memberships,selected_count,source_pack:pack_ref,destination_pack:null|pack_ref,can_undo:boolean}; newest non-undone changed membership operation; retained after restart"
       }
     },
     "initialize_preview": {
@@ -101,14 +105,16 @@
       "method": "POST",
       "path": "/api/library/catalog/preview",
       "request": {
-        "action": "trash_songs | restore_songs | create_pack | rename_pack | add_memberships",
-        "edition_ids": "nonempty exact edition ID array <=1024 for song actions and add_memberships; empty for create_pack/rename_pack",
+        "action": "trash_songs | restore_songs | create_pack | rename_pack | add_memberships | remove_memberships | move_memberships | undo_memberships",
+        "edition_ids": "nonempty exact edition ID array <=1024 for song/add/remove/move actions; empty for create/rename/undo. Total added+removed edges <=1024; moves adding every destination edge allow <=512 songs",
         "trash_operation_id": "null/absent except required original operation-32hex for restore_songs",
         "expected_generation": "uint",
         "catalog_digest": "sha256",
         "library_id": "exact status/preview library_id",
-        "collection_id": "optional null; required exact active custom collection ID for rename_pack/add_memberships",
-        "name": "optional null; required 1..256 UTF-8 bytes, nonblank, no control characters for create_pack/rename_pack"
+        "collection_id": "optional null; exact active custom pack ID for rename/add/remove, custom source for move; absent/null for Undo",
+        "name": "optional null; required 1..256 UTF-8 bytes, nonblank, no control characters for create_pack/rename_pack",
+        "destination_collection_id": "optional null; exact active custom destination required only for move_memberships",
+        "membership_operation_id": "optional null; required original changed remove/move operation ID only for undo_memberships"
       },
       "response": {
         "preview": "core_preview",
@@ -184,7 +190,7 @@
       "operation_id": "operation-32hex",
       "expected_generation": "uint",
       "at_unix_ms": "uint",
-      "action": "{type:trash_songs,song_ids:[edition_id]} OR {type:restore,trash_operation_id:operation_id,entities:[{kind:song,id:edition_id}],memberships:[]} OR {type:adopt_inventory,inventory:<host delta; resend unchanged>} OR {type:create_pack,pack_id:<host allocated collection ID>,name} OR {type:rename_pack,pack_id,name} OR {type:add_memberships,pack_id,song_ids:[edition_id]}"
+      "action": "{type:trash_songs,song_ids:[edition_id]} OR {type:restore,trash_operation_id:operation_id,entities:[{kind:song,id:edition_id}],memberships:[]} OR {type:adopt_inventory,inventory:<host delta; resend unchanged>} OR {type:create_pack,pack_id:<host allocated collection ID>,name} OR {type:rename_pack,pack_id,name} OR {type:add_memberships,pack_id,song_ids:[edition_id]} OR {type:remove_memberships,pack_id,song_ids:[edition_id]} OR {type:move_memberships,from_pack,to_pack,song_ids:[edition_id]} OR {type:undo_memberships,membership_operation_id:operation_id}"
     },
     "request_digest": "sha256",
     "base_digest": "sha256",
@@ -207,17 +213,18 @@
       "reclaimed_bytes": 0,
       "adopted_songs": "edition_id[]; omitted when empty",
       "adopted_packs": "collection_id[]; omitted when empty",
-      "adopted_sources": "pack-64hex[]; omitted when empty"
+      "adopted_sources": "pack-64hex[]; omitted when empty",
+      "removed_membership_snapshots": "[{id:{pack:collection-id,song:edition-id},position:uint,added_at_unix_ms:uint,revision:uint}]; sorted exact removed before-edges for remove/move only, omitted when empty; resend unchanged"
     },
     "plan_digest": "sha256"
   },
   "effect_summary": {
-    "selected_count": "uint",
+    "selected_count": "uint; Undo counts only unique originally changed songs",
     "changed_song_count": "uint",
     "removed_membership_count": "uint",
     "restored_membership_count": "uint",
     "shared_song_count": "uint",
-    "affected_packs": "[{...pack_ref,selected_song_count}]; changed name for rename; empty for unchanged-name/all-already-present noops",
+    "affected_packs": "[{...pack_ref,selected_song_count}]; source counts pretransition selected members, add/move destination counts selected input; undo source may be zero before its edges are restored",
     "reclaimed_bytes": 0,
     "remaining_song_count": "uint; present for sync only",
     "remaining_source_count": "uint; present for sync only",
@@ -225,7 +232,13 @@
     "renamed_pack_count": "uint",
     "added_membership_count": "uint",
     "unchanged_membership_count": "uint, already-present membership noops",
-    "target_pack": "pack_ref, present for create/rename/add including noops; desired name for create/rename"
+    "target_pack": "pack_ref for create/rename/add/remove/move/undo including noops; destination for move, original source for undo",
+    "noop_membership_count": "uint; every membership noop including already_absent and same_pack",
+    "source_pack": "pack_ref for remove/move/undo; original source with current name",
+    "destination_pack": "pack_ref for move or undo-move; explicit null for remove or undo-remove",
+    "undo_operation_id": "original operation_id for changed remove/move; explicit null for their noops; absent on other actions",
+    "membership_operation_id": "original membership operation ID for Undo only",
+    "selected_edition_ids": "exact sorted unique songs in original changed-edge union for Undo only; does not include originally no-op absent members"
   },
   "error": {
     "code": "catalog_invalid_request | catalog_not_initialized | catalog_already_initialized | catalog_stale | catalog_conflict | catalog_in_trash | catalog_not_found | catalog_recovery_required | catalog_capacity | library_busy | library_io | catalog_random_unavailable | catalog_readonly_pack",
@@ -245,12 +258,17 @@
     "V1 /manage/query retains its import-* IDs; catalog routes separately return collection_id and explicit import_pack_id mapping. No v1 rows acquire collection IDs.",
     "New physical editions created after initialization remain active and catalog_managed:false in this bounded slice. Explicit sync/preview then the ordinary commit adopts only verified new IDs; afterwards they are eligible for Trash. Existing catalog identities remain stable; exact reimport of a trashed edition stays in Trash.",
     "Trash retains every original, payload, backup and history; reclaimed_bytes is zero. Current admitted performance/media remains usable; newly loading a trashed edition requires restore.",
-    "No route accepts paths or calls open_default. Only create/rename/add to custom packs are exposed. Imported/source groups are read-only; move/unlink/pack Trash/cascade/history Undo/permanent delete/payload cleanup/browser-store fallback are not supported.",
+    "No route accepts paths or calls open_default. Custom create/rename/add/remove/move and scoped remove/move Undo are exposed. Imported/source groups are read-only; pack Trash/cascade/generic rollback/permanent delete/payload cleanup/browser-store fallback are not supported.",
     "Sync adopts at most32 new source groups and32 new editions per explicitly reviewed batch, bounded to1024 affected memberships. New editions wait until all proved source dependencies are admitted. Summary remaining_song_count/remaining_source_count are present only for sync. Refresh and explicitly preview/confirm the next batch until both are zero; never automatically commit the remainder.",
     "Create and add are separately reviewed transactions, never an implied atomic combined request. Create IDs are host allocated with operating-system randomness and collision checks against every retained pack. Duplicate add preserves original edge metadata and reports noops.",
     "The pack projection shares snapshot_id with active/trash. Count all active members, including unavailable physical editions; available_song_count alone counts present verified payloads. Empty custom packs remain visible. Read-only import-group counts are not organizational counts.",
-    "Persisted catalog/journal remain v1 without migration because custom actions and PackKind already exist in that core. New UI gates on supported_operations; historical source references and receipt bytes remain unchanged. Older renderers may reject custom refs (null import_pack_id), fail closed and require a newer app. Do not reset, reseed or rewrite a managed catalog to downgrade.",
-    "Omit collection_id from query wire bodies when null so older v1 hosts with deny_unknown_fields still accept unfiltered reads. Send an explicit collection_id only when the new organization capabilities are advertised."
+    "Existing supported product catalog/journal histories remain v1 without migration; membership Undo adds a new action and optional receipt evidence. New UI gates on supported_operations; historical source references and receipt bytes remain unchanged. Older renderers may reject custom refs (null import_pack_id), fail closed and require a newer app. Do not reset, reseed or rewrite a managed catalog to downgrade.",
+    "Omit collection_id from query wire bodies when null so older v1 hosts with deny_unknown_fields still accept unfiltered reads. Send an explicit collection_id only when the new organization capabilities are advertised.",
+    "Remove changes only selected custom-pack edges. Absent members are already_absent noops. Move requires every selected source edge, adds only missing destination edges, then removes source edges in one journal generation. Same source/destination is an explicit same_pack noop. Existing destination edges retain their exact metadata; all other pack references remain unchanged.",
+    "Undo names one original changed remove/move operation. It restores only captured removed edges with original position/timestamp and a new revision, and removes only destination edges actually added by that move. The inverse is not itself undoable; all-noop originals and a second new-ID Undo conflict. Same-ID replay still returns its original receipt.",
+    "Undo rejects intervening mutations to originally changed membership edges, including remove/re-add cycles, and intervening Trash/restore of their songs/packs. Unrelated pack rename, other-song add/removal, and changes to preexisting destination edges that the original move never changed are preserved. Preview/commit still bind the current complete generation/digest and verify physical availability.",
+    "Status exposes only the latest non-undone changed remove/move, including can_undo:false after conflicting work. It is reconstructed from durable receipts; absence of browser state does not erase it. can_undo reflects catalog dependencies, while preview also verifies physical payload availability.",
+    "Prior supported product receipt bytes remain unchanged: the new removed_membership_snapshots field is omitted when empty. New remove/move history and undo_memberships require this application or newer; older readers fail closed on unknown evidence/action. Preserve catalog and backups, upgrade the app, and never reset/reseed/rewrite history to downgrade."
   ],
   "pack_ref": {
     "collection_id": "collection-32hex",

@@ -1,4 +1,4 @@
-import {catalogQuery, checkedRecoveryRecord} from './library-catalog-contract.js';
+import {catalogQuery, checkedRecoveryRecord, sameCatalogValue} from './library-catalog-contract.js';
 import {LibraryOperationStore} from './library-operation-store.js';
 const failure = error => ({code: error?.code || 'library_transport', message: error?.message || String(error)});
 /** Owns metadata and operation recovery; never owns a score, recorder or player. */
@@ -44,6 +44,9 @@ export class LibraryCatalogModel {
   }
   destroy() { this.close(); this.destroyed = true; this.listeners.clear(); }
   supportsOrganization() { return ['create_pack', 'rename_pack', 'add_memberships'].every(action => this.state.status?.supported_operations?.includes(action)); }
+  supportsMembershipChanges() { return ['remove_memberships', 'move_memberships', 'undo_memberships'].every(action => this.state.status?.supported_operations?.includes(action)); }
+  membershipSource() { return this.state.query.view === 'active' ? this.state.packs?.find(pack => pack.collection_id === this.state.query.collection_id) || null : null; }
+  canUndoMemberships() { return this.supportsMembershipChanges() && this.state.status?.membership_undo?.can_undo === true; }
   async readPacks(storage, response, signal) {
     const packs = [], seenCursors = new Set(); let cursor = null;
     do {
@@ -63,10 +66,12 @@ export class LibraryCatalogModel {
       const storage = await this.storage(), response = await storage.queryCatalog({...this.state.query, refresh, cursor: this.cursors[page], libraryId: this.state.status.library_id, signal: read.signal});
       if (!read.owns()) return false;
       const packs = this.supportsOrganization() ? await this.readPacks(storage, response, read.signal) : null;
+      const status = this.supportsMembershipChanges() ? await storage.catalogStatus({signal: read.signal}) : this.state.status;
+      if (this.supportsMembershipChanges() && ['library_id', 'generation', 'catalog_digest'].some(key => status[key] !== response[key])) throw Object.assign(new Error('Undo and song metadata do not share a verified catalog. Refresh before continuing.'), {code: 'catalog_stale'});
       if (!read.owns()) return false;
       if (page > 0 && response.snapshot_id !== this.state.response?.snapshot_id) throw Object.assign(new Error('The catalog snapshot changed. Refresh and review the exact selection again.'), {code: 'catalog_stale'});
       if (this.state.response && response.snapshot_id !== this.state.response.snapshot_id) this.selected.clear();
-      this.publish({phase: 'ready', response, packs, page, stale: invalidation !== this.invalidationVersion || (!refresh && this.state.stale)}); return true;
+      this.publish({phase: 'ready', status, response, packs, page, stale: invalidation !== this.invalidationVersion || (!refresh && this.state.stale)}); return true;
     } catch (error) { if (read.owns()) { this.selected.clear(); this.publish({phase: 'error', response: null, packs: null, preview: null, error: failure(error), stale: true}); } return false; }
   }
   refresh() { this.cursors = [null]; this.selected.clear(); this.publish({preview: null}); return this.read({refresh: true, page: 0}); }
@@ -134,6 +139,30 @@ export class LibraryCatalogModel {
       const value = await (await this.storage()).previewCatalog({...request, signal: read.signal});
       if (read.owns()) this.publish({phase: 'ready', preview: {kind, preview: value.preview, summary: value.summary, selected}});
     } catch (error) { if (read.owns()) this.publish({phase: 'ready', preview: null, error: failure(error), stale: this.state.stale || ['catalog_stale', 'catalog_conflict'].includes(error.code)}); }
+  }
+  async previewMemberships(kind, {destinationCollectionId = null} = {}) {
+    if (!['remove_memberships', 'move_memberships'].includes(kind) || !this.supportsMembershipChanges() || this.state.phase !== 'ready' || this.state.stale || this.pending() || this.writing) return;
+    const source = this.membershipSource(), selected = structuredClone([...this.selected.values()]);
+    if (source?.kind !== 'custom' || !selected.length || selected.some(row => !this.selectable(row) || !row.packs.some(pack => pack.collection_id === source.collection_id))) { this.publish({preview: null, error: {code: 'catalog_invalid_request', message: 'Select exact members of a verified custom pack.'}}); return; }
+    if (kind === 'move_memberships' && (destinationCollectionId === source.collection_id || this.state.packs?.find(pack => pack.collection_id === destinationCollectionId)?.kind !== 'custom')) { this.publish({preview: null, error: {code: 'catalog_invalid_request', message: 'Choose a different verified custom destination pack.'}}); return; }
+    const response = this.state.response, request = {action: kind, edition_ids: selected.map(row => row.edition_id), collection_id: source.collection_id, ...(kind === 'move_memberships' ? {destination_collection_id: destinationCollectionId} : {}), expected_generation: response.generation, catalog_digest: response.catalog_digest, library_id: response.library_id};
+    await this.previewMembershipRequest(request, selected);
+  }
+  async previewUndoMemberships() {
+    if (!this.canUndoMemberships() || this.state.phase !== 'ready' || this.state.stale || this.pending() || this.writing) return;
+    const response = this.state.response, request = {action: 'undo_memberships', edition_ids: [], membership_operation_id: this.state.status.membership_undo.operation_id, expected_generation: response.generation, catalog_digest: response.catalog_digest, library_id: response.library_id};
+    await this.previewMembershipRequest(request, null, structuredClone(this.state.status.membership_undo));
+  }
+  async previewMembershipRequest(request, selected = null, undo = null) {
+    const read = this.startRead('previewing');
+    try {
+      const value = await (await this.storage()).previewCatalog({...request, signal: read.signal});
+      if (read.owns()) {
+        if (undo && (!sameCatalogValue(value.summary.source_pack, undo.source_pack) || !sameCatalogValue(value.summary.destination_pack, undo.destination_pack) || value.summary.selected_count !== undo.selected_count)) throw Object.assign(new Error('The Undo preview does not match the verified native operation.'), {code: 'catalog_invalid_response'});
+        selected ||= value.summary.selected_edition_ids.map(edition_id => ({edition_id, title: this.state.response?.rows.find(row => row.edition_id === edition_id)?.title || edition_id}));
+        this.publish({phase: 'ready', preview: {kind: request.action, preview: value.preview, summary: value.summary, selected}});
+      }
+    } catch (error) { if (read.owns()) this.publish({phase: 'ready', preview: null, error: failure(error), stale: this.state.stale || ['catalog_stale', 'catalog_conflict', 'catalog_in_trash'].includes(error.code)}); }
   }
   async previewSync() {
     if (this.state.phase !== 'ready' || this.state.stale || this.pending() || this.writing || !this.state.status?.supported_operations?.includes('sync_inventory')) return;

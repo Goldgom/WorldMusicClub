@@ -268,6 +268,11 @@ pub enum Action {
         pack_id: PackId,
         song_ids: Vec<SongId>,
     },
+    /// Reverse one recorded remove/move, only while its changed edges have not
+    /// been edited again. This is not a catalog rollback or a generic Undo.
+    UndoMemberships {
+        membership_operation_id: OperationId,
+    },
     TrashSongs {
         song_ids: Vec<SongId>,
     },
@@ -329,6 +334,10 @@ pub struct BlockedMembership {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Effects {
+    /// Original order/timestamp for membership-only remove/move Undo. Omitted
+    /// for older product operations, preserving their serialized receipt bytes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed_membership_snapshots: Vec<Membership>,
     // Omit empty additions so existing serialized receipts keep their digests.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub adopted_songs: Vec<SongId>,
@@ -545,6 +554,7 @@ impl Request {
             | Action::MoveMemberships { song_ids, .. }
             | Action::RemoveMemberships { song_ids, .. }
             | Action::TrashSongs { song_ids } => selection(song_ids, false),
+            Action::UndoMemberships { .. } => Ok(()),
             Action::TrashPack {
                 exclusive_song_ids, ..
             } => selection(exclusive_song_ids, true),
@@ -615,6 +625,9 @@ impl Catalog {
             .receipts
             .iter()
             .find(|receipt| &receipt.preview.request.operation_id == id)
+    }
+    pub fn can_undo_memberships(&self, id: &OperationId) -> bool {
+        membership_undo_record(&self.state, id).is_ok()
     }
     pub fn preview(&self, request: Request) -> Result<Preview> {
         request.validate()?;
@@ -988,6 +1001,74 @@ fn restore(
     state.trash[index] = record;
     Ok(())
 }
+fn membership_undo_record<'a>(state: &'a Snapshot, id: &OperationId) -> Result<&'a Preview> {
+    let original = &state
+        .receipts
+        .iter()
+        .find(|receipt| &receipt.preview.request.operation_id == id)
+        .ok_or(Error::NotFound)?
+        .preview;
+    if !matches!(
+        original.request.action,
+        Action::RemoveMemberships { .. } | Action::MoveMemberships { .. }
+    ) || original.effects.removed_membership_snapshots.is_empty()
+    {
+        return Err(Error::Conflict);
+    }
+    let touched: BTreeSet<_> = original
+        .effects
+        .added_memberships
+        .iter()
+        .chain(&original.effects.removed_memberships)
+        .collect();
+    // History is retained. A remove/re-add cycle cannot hide an intervening edit,
+    // even when the resulting graph happens to look like the original poststate.
+    for receipt in state
+        .receipts
+        .iter()
+        .skip(original.next_generation as usize)
+    {
+        let later = &receipt.preview;
+        if matches!(&later.request.action, Action::UndoMemberships { membership_operation_id } if membership_operation_id == id)
+            || later
+                .effects
+                .added_memberships
+                .iter()
+                .chain(&later.effects.removed_memberships)
+                .any(|edge| touched.contains(edge))
+            || later
+                .effects
+                .trashed_songs
+                .iter()
+                .chain(&later.effects.restored_songs)
+                .any(|song| touched.iter().any(|edge| &edge.song == song))
+            || later
+                .effects
+                .trashed_packs
+                .iter()
+                .chain(&later.effects.restored_packs)
+                .any(|pack| touched.iter().any(|edge| &edge.pack == pack))
+        {
+            return Err(Error::Conflict);
+        }
+    }
+    for id in &touched {
+        active_song(state, &id.song)?;
+        active_pack(state, &id.pack)?;
+    }
+    for edge in &original.effects.removed_membership_snapshots {
+        if membership(state, &edge.id).is_some() {
+            return Err(Error::Conflict);
+        }
+    }
+    for id in &original.effects.added_memberships {
+        if membership(state, id).is_none_or(|edge| edge.revision != original.next_generation) {
+            return Err(Error::Conflict);
+        }
+    }
+    Ok(original)
+}
+
 fn transition(before: &Snapshot, request: &Request, revision: u64) -> Result<(Snapshot, Effects)> {
     let mut state = before.clone();
     let mut effects = Effects::default();
@@ -1133,6 +1214,20 @@ fn transition(before: &Snapshot, request: &Request, revision: u64) -> Result<(Sn
                 }
             }
         }
+        Action::UndoMemberships {
+            membership_operation_id,
+        } => {
+            let original = membership_undo_record(before, membership_operation_id)?;
+            for id in &original.effects.added_memberships {
+                remove_edge(&mut state, id, &mut effects);
+            }
+            for edge in &original.effects.removed_membership_snapshots {
+                let mut restored = edge.clone();
+                restored.revision = revision;
+                state.inventory.memberships.push(restored);
+                effects.added_memberships.push(edge.id.clone());
+            }
+        }
         Action::TrashSongs { song_ids } => trash_entities(
             &mut state,
             song_ids.iter().cloned().map(Entity::Song).collect(),
@@ -1182,6 +1277,18 @@ fn transition(before: &Snapshot, request: &Request, revision: u64) -> Result<(Sn
             revision,
             &mut effects,
         )?,
+    }
+    if matches!(
+        request.action,
+        Action::RemoveMemberships { .. } | Action::MoveMemberships { .. }
+    ) {
+        effects.removed_membership_snapshots = before
+            .inventory
+            .memberships
+            .iter()
+            .filter(|edge| effects.removed_memberships.contains(&edge.id))
+            .cloned()
+            .collect();
     }
     state.generation = revision;
     finish_effects(before, &state, &mut effects)?;
@@ -1257,6 +1364,9 @@ fn finish_effects(before: &Snapshot, after: &Snapshot, effects: &mut Effects) ->
     effects.renamed_packs.sort();
     effects.added_memberships.sort();
     effects.removed_memberships.sort();
+    effects
+        .removed_membership_snapshots
+        .sort_by(|a, b| a.id.cmp(&b.id));
     effects.trashed_songs.sort();
     effects.trashed_packs.sort();
     effects.restored_songs.sort();
@@ -1284,7 +1394,12 @@ fn validate_state(state: &Snapshot) -> Result<()> {
             .trash
             .iter()
             .map(|record| record.memberships.len())
-            .sum(),
+            .sum::<usize>()
+            + state
+                .receipts
+                .iter()
+                .map(|receipt| receipt.preview.effects.removed_membership_snapshots.len())
+                .sum::<usize>(),
         MAX_CAPTURED_EDGES,
         "captured memberships",
     )?;
@@ -1370,6 +1485,7 @@ fn validate_state(state: &Snapshot) -> Result<()> {
     let mut adopted_songs = BTreeSet::new();
     let mut adopted_packs = BTreeSet::new();
     let mut adopted_sources = BTreeSet::new();
+    let mut undone_memberships = BTreeSet::new();
     // Earlier receipts retain the physical-byte totals observed at their own
     // generation. Walk backward, removing only recorded immutable additions.
     for (index, receipt) in state.receipts.iter().enumerate().rev() {
@@ -1387,6 +1503,29 @@ fn validate_state(state: &Snapshot) -> Result<()> {
             return Err(Error::Invalid("receipt integrity"));
         }
         match &preview.request.action {
+            Action::UndoMemberships {
+                membership_operation_id,
+            } => {
+                let original = state.receipts[..index]
+                    .iter()
+                    .find(|receipt| {
+                        &receipt.preview.request.operation_id == membership_operation_id
+                    })
+                    .ok_or(Error::Invalid("missing membership undo history"))?;
+                if !undone_memberships.insert(membership_operation_id)
+                    || original
+                        .preview
+                        .effects
+                        .removed_membership_snapshots
+                        .is_empty()
+                    || preview.effects.added_memberships
+                        != original.preview.effects.removed_memberships
+                    || preview.effects.removed_memberships
+                        != original.preview.effects.added_memberships
+                {
+                    return Err(Error::Invalid("membership undo effects"));
+                }
+            }
             Action::AdoptInventory { inventory: delta } => {
                 let mut songs: Vec<_> = delta.songs.iter().map(|song| song.id.clone()).collect();
                 let mut packs: Vec<_> = delta.packs.iter().map(|pack| pack.id.clone()).collect();
@@ -1472,6 +1611,32 @@ fn validate_state(state: &Snapshot) -> Result<()> {
                 return Err(Error::Invalid("missing restore history"));
             }
             _ => {}
+        }
+        if !preview.effects.removed_membership_snapshots.is_empty() {
+            if !matches!(
+                preview.request.action,
+                Action::RemoveMemberships { .. } | Action::MoveMemberships { .. }
+            ) || preview
+                .effects
+                .removed_membership_snapshots
+                .iter()
+                .map(|edge| &edge.id)
+                .collect::<Vec<_>>()
+                != preview
+                    .effects
+                    .removed_memberships
+                    .iter()
+                    .collect::<Vec<_>>()
+            {
+                return Err(Error::Invalid("membership undo capture"));
+            }
+            for edge in &preview.effects.removed_membership_snapshots {
+                song(state, &edge.id.song)?;
+                pack(state, &edge.id.pack)?;
+                if edge.revision >= preview.next_generation {
+                    return Err(Error::Invalid("membership undo capture revision"));
+                }
+            }
         }
         if !matches!(preview.request.action, Action::AdoptInventory { .. })
             && (!preview.effects.adopted_songs.is_empty()
