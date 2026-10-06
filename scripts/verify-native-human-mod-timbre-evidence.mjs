@@ -14,6 +14,7 @@ import {validateOwnedPickerGestures} from './verify-native-vsq-song-evidence.mjs
 import {validateSongMod,songModIdentity,SongModStore,SONG_MOD_LEGACY_STORAGE_PREFIX} from '../web/song-mod.js';
 
 export const HUMAN_MOD_TIMBRE_PHASES=Object.freeze(['human-timbre-seed','human-timbre-migrate','human-timbre-restart']);
+export const HUMAN_MOD_TIMBRE_SOURCE_LIMIT=160;
 export const HUMAN_MOD_TIMBRE_SOURCE_FILES=Object.freeze([...new Set([...CANONICAL_PRACTICE_SOURCE_FILES,
  'scripts/prepare-human-mod-timbre-fixtures.mjs','scripts/prepare-live-tone-navigation-fixtures.mjs','scripts/human-mod-live-tone-proof.mjs','scripts/verify-native-human-mod-timbre-evidence.mjs',
  'scripts/windows-live-tone-navigation.cs','crates/desktop-shell/live-tone-navigation-acceptance.js','crates/desktop-shell/human-mod-timbre-acceptance.js',
@@ -21,7 +22,7 @@ export const HUMAN_MOD_TIMBRE_SOURCE_FILES=Object.freeze([...new Set([...CANONIC
 ])].sort());
 const rootDefault=fileURLToPath(new URL('../',import.meta.url)),sha=bytes=>createHash('sha256').update(bytes).digest('hex'),parse=bytes=>JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes).replace(/^\uFEFF/,'')),positive=n=>Number.isSafeInteger(n)&&n>0;
 export async function humanModTimbreSourceBinding(root=rootDefault){
- assert.ok(HUMAN_MOD_TIMBRE_SOURCE_FILES.length<=128,'Keep the established bounded source inventory');const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8'}).trim(),source_sha=git('rev-parse','HEAD'),source_tree=git('rev-parse','HEAD^{tree}'),source_hashes={};
+ assert.ok(HUMAN_MOD_TIMBRE_SOURCE_FILES.length<=HUMAN_MOD_TIMBRE_SOURCE_LIMIT,'Keep the complete bounded source inventory');const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8'}).trim(),source_sha=git('rev-parse','HEAD'),source_tree=git('rev-parse','HEAD^{tree}'),source_hashes={};
  for(const name of HUMAN_MOD_TIMBRE_SOURCE_FILES){let file=root;for(const part of name.split('/')){file=join(file,part);assert.equal((await lstat(file)).isSymbolicLink(),false);}const stat=await lstat(file);assert.ok(stat.isFile()&&stat.size>0&&stat.size<=4*1024*1024);const bytes=await readFile(file);assert.deepEqual(bytes,execFileSync('git',['show',`${source_sha}:${name}`],{cwd:root,maxBuffer:4*1024*1024}),`Source differs from frozen commit: ${name}`);source_hashes[name]=sha(bytes);}
  return{source_sha,source_tree,source_hashes};
 }

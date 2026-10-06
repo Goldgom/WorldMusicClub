@@ -39,7 +39,7 @@ SCENARIOS = (
     'desktop-bulk-import', 'desktop-clean-song', 'desktop-vsq-song',
     'desktop-performance-song', 'desktop-pitch-bend', 'desktop-authoring',
     'desktop-vsq-authoring', 'desktop-basic-key', 'desktop-complete-practice',
-    'desktop-canonical-practice',
+    'desktop-canonical-practice', 'desktop-build-diagnostics',
 )
 CATALOG = 'library-management-windows'
 EXE = 'workspace/target/release/worldmusichub-desktop.exe'
@@ -163,6 +163,8 @@ def allowed_file(name):
         return False  # staging directories are preserved, never staging payloads
     if len(rest) == 1:
         return rest[0].endswith(('.json', '.png', '.log'))
+    if root == 'desktop-build-diagnostics':
+        return False
     if len(rest) == 2 and rest[0] == 'downloads' and root != 'desktop-startup':
         if root == 'desktop-authoring':
             return rest[1].endswith(('.json', '.zip'))
@@ -188,6 +190,8 @@ def allowed_directory(name):
     root, rest = scenario
     if not rest:
         return True
+    if root == 'desktop-build-diagnostics':
+        return False
     if rest == ['downloads']:
         return root != 'desktop-startup'
     if rest == ['fixtures']:

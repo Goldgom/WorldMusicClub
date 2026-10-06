@@ -22,7 +22,7 @@ $profileRoot=Join-Path ([IO.Path]::GetTempPath()) ('wmh profile 拼谱 '+[guid]:
 $heldProfile=$null
 New-Item -ItemType Directory $profileRoot | Out-Null
 try {
-  $freshPhases=@('folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart','basic-key-seed','basic-key-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart','live-navigation-settings-keyup','live-navigation-settings-navigation','live-navigation-authoring-keyup','live-navigation-authoring-navigation')
+  $freshPhases=@('folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart','basic-key-seed','basic-key-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart','live-navigation-settings-keyup','live-navigation-settings-navigation','live-navigation-authoring-keyup','live-navigation-authoring-navigation','build-diagnostics')
   New-Item -ItemType Directory (Join-Path $profileRoot 'Scores') | Out-Null
   $score=Join-Path $profileRoot 'Scores/original.bin';[IO.File]::WriteAllText($score,'native score bytes')
   $profiles=@()

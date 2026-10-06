@@ -49,7 +49,7 @@ node scripts/verify-native-human-mod-timbre-evidence.mjs --check <fresh-director
 The verifier requires `WMH_HUMAN_MOD_TIMBRE_EXECUTABLE` to identify the independently
 built executable. The host sets it for its initial verification; the workflow
 sets it for the independent repeat. Source hashes include the complete existing
-canonical/live path plus this acceptance family and stay within the 128-file cap.
+canonical/live path plus this acceptance family and stay within the 160-file cap.
 The verifier checks ordinary, bounded, nonlinked files and records their exact
 byte hashes. WebView profile contents are never retained in artifacts.
 

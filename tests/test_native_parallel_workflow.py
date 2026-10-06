@@ -101,6 +101,21 @@ class ParallelWorkflowTests(unittest.TestCase):
         self.assertEqual(restore['env']['ACCEPTANCE_TRANSFER_SHA256'], '${{ needs.native-feature-acceptance.outputs.transfer_sha256 }}')
         self.assertIn('--expected-sha256 "$env:ACCEPTANCE_TRANSFER_SHA256"', restore['run'])
         self.assertIn('--build-provenance target/release/native-build-provenance.json', build['run'])
+        self.assertIn('node scripts/verify-native-build-diagnostics.mjs --check desktop-build-diagnostics', build['run'])
+        self.assertIn("$env:WMH_BUILD_DIAGNOSTICS_EXECUTABLE=(Resolve-Path 'target/release/worldmusichub-desktop.exe').Path", build['run'])
+        self.assertIn('diagnosticProof.source_commit_count -ne [long](git rev-list --count HEAD)', build['run'])
+        for expression in ['source_sha', 'source_tree', 'executable_sha256']:
+            self.assertIn('$diagnosticProof.' + expression + ' -cne ', build['run'])
+        self.assertLess(build['run'].index('verify-native-build-diagnostics.mjs --check'),
+                        build['run'].index('native-release-manifest.py create'))
+        native_by_id = {step.get('id'): step for step in native}
+        for required_id in ['build_diagnostics_windows', 'build_diagnostics_windows_verify']:
+            self.assertIn(required_id, native_by_id)
+            self.assertEqual(jobs['native-feature-acceptance']['outputs'][required_id],
+                             '${{ steps.' + required_id + '.outcome }}')
+        self.assertIn('-Scenario build-diagnostics', native_by_id['build_diagnostics_windows']['run'])
+        self.assertIn('verify-native-build-diagnostics.mjs --check desktop-build-diagnostics',
+                      native_by_id['build_diagnostics_windows_verify']['run'])
         for step in [join, download, restore, build]:
             self.assertNotIn('if', step)
         seal = next(step for step in native if step.get('id') == 'native_transfer')
@@ -129,6 +144,7 @@ class ParallelWorkflowTests(unittest.TestCase):
             ('download by name', lambda jobs: next(s for s in jobs['native-package']['steps'] if s.get('id') == 'native_transfer_download')['with'].update(name='latest')),
             ('untrusted SHA', lambda jobs: next(s for s in jobs['native-package']['steps'] if s.get('id') == 'native_transfer_restore')['env'].update(ACCEPTANCE_TRANSFER_SHA256='${{ steps.native_transfer_download.outputs.digest }}')),
             ('summary omission', lambda jobs: jobs['acceptance-summary']['needs'].remove('windows-pure-checks')),
+            ('diagnostic recheck omitted', lambda jobs: next(s for s in jobs['native-package']['steps'] if s.get('id') == 'native_package').update(run='echo omitted')),
             ('Linux Python downgrade', lambda jobs: next(s for s in jobs['bulk-import-browser']['steps'] if s.get('uses', '').startswith('actions/setup-python@'))['with'].update({'python-version': '3.12.10'})),
             ('Windows Python matrix swap', lambda jobs: next(s for s in jobs['windows-pure-checks']['steps'] if s.get('uses', '').startswith('actions/setup-python@'))['with'].update({'python-version': '3.12.14'})),
             ('Node patch drift', lambda jobs: next(s for s in jobs['native-package']['steps'] if s.get('uses', '').startswith('actions/setup-node@'))['with'].update({'node-version': '22.23.4'})),

@@ -16,6 +16,9 @@ import {CANONICAL_PRACTICE_SOURCE_FILES} from './canonical-practice-source-evide
 
 export const LIVE_TONE_NAVIGATION_SCENARIO='live-tone-navigation';
 export const LIVE_TONE_NAVIGATION_REPORT_BYTES=1024*1024;
+// Five diagnostics runtime dependencies extend accepted545's 125 modules to 130.
+// Preserve every prior binding; only this finite inventory capacity grows.
+export const LIVE_TONE_NAVIGATION_SOURCE_LIMIT=160;
 export const LIVE_TONE_NAVIGATION_SOURCE_FILES=Object.freeze([...new Set([...CANONICAL_PRACTICE_SOURCE_FILES,
  'scripts/prepare-live-tone-navigation-fixtures.mjs','scripts/verify-native-live-tone-navigation-evidence.mjs',
  'crates/desktop-shell/live-tone-navigation-acceptance.js','tests/live-tone-navigation-proof.js',
@@ -29,13 +32,13 @@ const parse=bytes=>JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes
 const sourceRootDefault=fileURLToPath(new URL('../',import.meta.url));
 
 export async function nativeLiveToneNavigationSourceBinding(root=sourceRootDefault){
- assert.ok(LIVE_TONE_NAVIGATION_SOURCE_FILES.length<=128,'Native live-navigation source inventory exceeds the existing 128-module bound');
+ assert.ok(LIVE_TONE_NAVIGATION_SOURCE_FILES.length<=LIVE_TONE_NAVIGATION_SOURCE_LIMIT,'Native live-navigation source inventory exceeds the explicit 160-module bound');
  const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8'}).trim(),source_sha=git('rev-parse','HEAD'),source_tree=git('rev-parse','HEAD^{tree}'),source_hashes={};
  for(const path of LIVE_TONE_NAVIGATION_SOURCE_FILES){let file=root;for(const part of path.split('/')){file=join(file,part);assert.equal((await lstat(file)).isSymbolicLink(),false,`Linked live-navigation source: ${path}`);}const stat=await lstat(file);assert.ok(stat.isFile()&&stat.size>0&&stat.size<=4*1024*1024);const bytes=await readFile(file),frozen=execFileSync('git',['show',`${source_sha}:${path}`],{cwd:root,maxBuffer:4*1024*1024});assert.deepEqual(bytes,frozen,`Live-navigation source differs from frozen commit: ${path}`);source_hashes[path]=digest(bytes);}
  return{source_sha,source_tree,source_hashes};
 }
 export function validateNativeLiveToneNavigationSourceBinding(value,expected){
- assert.ok(object(value)&&object(expected),'Independent exact source binding required');assert.ok(LIVE_TONE_NAVIGATION_SOURCE_FILES.length<=128);
+ assert.ok(object(value)&&object(expected),'Independent exact source binding required');assert.ok(LIVE_TONE_NAVIGATION_SOURCE_FILES.length<=LIVE_TONE_NAVIGATION_SOURCE_LIMIT);
  for(const binding of [value,expected]){for(const key of ['source_sha','source_tree'])assert.match(binding[key],/^[a-f0-9]{40}$/);assert.deepEqual(Object.keys(binding.source_hashes).sort(),LIVE_TONE_NAVIGATION_SOURCE_FILES);for(const hash of Object.values(binding.source_hashes))assert.match(hash,/^[a-f0-9]{64}$/);}
  for(const key of ['source_sha','source_tree','source_hashes'])assert.deepEqual(value[key],expected[key],`Live-navigation ${key} differs from independently frozen source`);
 }

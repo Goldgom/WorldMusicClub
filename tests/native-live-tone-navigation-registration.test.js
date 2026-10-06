@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {LIVE_TONE_NAVIGATION_PHASES} from '../scripts/prepare-live-tone-navigation-fixtures.mjs';
-import {LIVE_TONE_NAVIGATION_SOURCE_FILES} from '../scripts/verify-native-live-tone-navigation-evidence.mjs';
+import {LIVE_TONE_NAVIGATION_SOURCE_FILES,LIVE_TONE_NAVIGATION_SOURCE_LIMIT} from '../scripts/verify-native-live-tone-navigation-evidence.mjs';
 import {CANONICAL_PRACTICE_SOURCE_FILES} from '../scripts/canonical-practice-source-evidence.mjs';
 
 const root=new URL('../',import.meta.url),read=path=>readFileSync(new URL(path,root),'utf8');
@@ -35,8 +35,8 @@ test('native R state and cleanup are closed, bounded and independent of existing
   assert.match(host,/if\(\$Action.kind -eq 'key-r'\)\{\[NativeAcceptance\]::Key\(0x52\);return\}/);
 });
 
-test('the native source inventory includes the complete current runtime binding within the unchanged cap',()=>{
-  assert.ok(LIVE_TONE_NAVIGATION_SOURCE_FILES.length<=128);assert.equal(new Set(LIVE_TONE_NAVIGATION_SOURCE_FILES).size,LIVE_TONE_NAVIGATION_SOURCE_FILES.length);
+test('the native source inventory includes the complete current runtime binding within the explicitly expanded diagnostic capacity',()=>{
+  assert.ok(LIVE_TONE_NAVIGATION_SOURCE_FILES.length<=LIVE_TONE_NAVIGATION_SOURCE_LIMIT);assert.equal(new Set(LIVE_TONE_NAVIGATION_SOURCE_FILES).size,LIVE_TONE_NAVIGATION_SOURCE_FILES.length);
   for(const path of CANONICAL_PRACTICE_SOURCE_FILES)assert.ok(LIVE_TONE_NAVIGATION_SOURCE_FILES.includes(path),`Missing inherited runtime module: ${path}`);
   for(const path of ['scripts/windows-live-tone-navigation.cs','.github/workflows/native-live-tone-navigation.yml','crates/desktop-shell/live-tone-navigation-acceptance.js','tests/live-tone-navigation-proof.js'])assert.ok(LIVE_TONE_NAVIGATION_SOURCE_FILES.includes(path));
   const scripts=JSON.parse(read('package.json')).scripts;for(const name of ['native-live-tone-navigation-renderer','native-live-tone-navigation-evidence','native-live-tone-navigation-registration']){assert.ok(scripts.test.includes(`tests/${name}.test.js`));assert.ok(scripts['test:native-live-navigation'].includes(`tests/${name}.test.js`));}

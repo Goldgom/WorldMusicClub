@@ -41,6 +41,7 @@ pub const HUMAN_MOD_TIMBRE_PHASES: [&str; 3] = [
 pub const BASIC_KEY_PHASES: [&str; 2] = ["basic-key-seed", "basic-key-restart"];
 pub const AUTHORING_PHASES: [&str; 2] = ["authoring-seed", "authoring-restart"];
 pub const VSQ_AUTHORING_PHASES: [&str; 2] = ["vsq-authoring-seed", "vsq-authoring-restart"];
+pub const BUILD_DIAGNOSTICS_PHASES: [&str; 1] = ["build-diagnostics"];
 pub const SKIN_PHASES: [&str; 3] = ["skin-seed", "skin-restart", "skin-default-restart"];
 pub const CATALOG_PHASES: [&str; 3] = ["catalog-seed", "catalog-restart", "catalog-final"];
 pub const MAX_CLEAN_REPORT_BYTES: usize = 1024 * 1024;
@@ -72,6 +73,7 @@ impl Acceptance {
             .chain(LIVE_TONE_NAVIGATION_PHASES)
             .chain(HUMAN_MOD_TIMBRE_PHASES)
             .chain(SKIN_PHASES)
+            .chain(BUILD_DIAGNOSTICS_PHASES)
             .chain(CATALOG_PHASES)
             .find(|candidate| *candidate == phase)
             .ok_or("Unknown acceptance phase")?;
@@ -107,6 +109,19 @@ impl Acceptance {
                 canonical_helpers,
                 native_controls,
                 include_str!("../human-mod-timbre-acceptance.js")
+            );
+        }
+        if BUILD_DIAGNOSTICS_PHASES.contains(&self.phase) {
+            let (controls, _) = include_str!("../canonical-practice-acceptance.js")
+                .split_once("(() => {")
+                .expect("Canonical controls must precede their runner");
+            return format!(
+                "globalThis.__WMH_ACCEPTANCE_PHASE__={};\n{}\n{}\n{}\n{}",
+                serde_json::to_string(self.phase).unwrap(),
+                include_str!("../acceptance-wait.js"),
+                include_str!("../reference-acceptance.js"),
+                controls,
+                include_str!("../build-diagnostics-acceptance.js")
             );
         }
         if LIVE_TONE_NAVIGATION_PHASES.contains(&self.phase) {
@@ -254,7 +269,8 @@ impl Acceptance {
             || HUMAN_MOD_TIMBRE_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase)
-            || SKIN_PHASES.contains(&self.phase);
+            || SKIN_PHASES.contains(&self.phase)
+            || BUILD_DIAGNOSTICS_PHASES.contains(&self.phase);
         self.directory.join(if song_folder {
             "Scores"
         } else {
@@ -417,6 +433,7 @@ impl Acceptance {
             || BASIC_KEY_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase)
             || SKIN_PHASES.contains(&self.phase)
+            || BUILD_DIAGNOSTICS_PHASES.contains(&self.phase)
         {
             MAX_CLEAN_REPORT_BYTES
         } else if BULK_PHASES.contains(&self.phase) {
@@ -446,6 +463,7 @@ impl Acceptance {
             && !BASIC_KEY_PHASES.contains(&self.phase)
             && !CATALOG_PHASES.contains(&self.phase)
             && !SKIN_PHASES.contains(&self.phase)
+            && !BUILD_DIAGNOSTICS_PHASES.contains(&self.phase)
         {
             return;
         }
@@ -728,6 +746,7 @@ pub fn receive_report(
             || BASIC_KEY_PHASES.contains(&run.phase)
             || CATALOG_PHASES.contains(&run.phase)
             || SKIN_PHASES.contains(&run.phase)
+            || BUILD_DIAGNOSTICS_PHASES.contains(&run.phase)
     });
     let limit = bulk.map_or(MAX_SMOKE_REPORT_BYTES, Acceptance::report_limit);
     let reject = |status, code, message| {
@@ -802,6 +821,8 @@ fn action_limit(phase: &str) -> u64 {
         || FOLDER_PHASES.contains(&phase)
     {
         75
+    } else if BUILD_DIAGNOSTICS_PHASES.contains(&phase) {
+        32
     } else {
         64
     }
@@ -894,6 +915,9 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
             && value["y"].as_f64() < value["height"].as_f64();
     }
     if object.contains_key("devicePixelRatio") {
+        return false;
+    }
+    if BUILD_DIAGNOSTICS_PHASES.contains(&phase) && value["kind"] != "click" {
         return false;
     }
     let live_navigation = LIVE_TONE_NAVIGATION_PHASES.contains(&phase);
@@ -1243,6 +1267,50 @@ mod tests {
             std::fs::write(&path, serde_json::to_vec(&original).unwrap()).unwrap();
         }
         assert_eq!(restart.prepare_webview_profile().unwrap(), profile);
+    }
+
+    #[test]
+    fn build_diagnostics_owns_one_fresh_profile_and_only_bounded_clicks() {
+        let evidence = Evidence::new();
+        let run = Acceptance::new(evidence.0.clone(), "build-diagnostics").unwrap();
+        assert_eq!(run.library_directory(), evidence.0.join("Scores"));
+        assert_eq!(
+            run.profile_directory(),
+            evidence
+                .0
+                .join("webview-profiles")
+                .join("build-diagnostics")
+        );
+        assert!(run.prepare_webview_profile().is_ok());
+        assert!(run.prepare_webview_profile().is_err());
+        assert_eq!(run.report_limit(), MAX_CLEAN_REPORT_BYTES);
+        assert_eq!(action_limit(run.phase), 32);
+        assert!(run
+            .script()
+            .contains("Unexpected diagnostic acceptance phase"));
+        assert!(!run.script().contains("nativeLiveToneNavigationCase"));
+        let action = json!({"version":1,"sequence":32,"kind":"click","x":20,"y":30,"width":1280,"height":900});
+        assert!(valid_action_for_phase(&action, run.phase));
+        let mut changed = action.clone();
+        changed["sequence"] = json!(33);
+        assert!(!valid_action_for_phase(&changed, run.phase));
+        for kind in [
+            "picker",
+            "key-r",
+            "live-key-r-down",
+            "escape",
+            "select-first",
+        ] {
+            changed = action.clone();
+            changed["kind"] = json!(kind);
+            assert!(!valid_action_for_phase(&changed, run.phase));
+        }
+        changed = action;
+        changed["file"] = json!("arbitrary.json");
+        assert!(!valid_action_for_phase(&changed, run.phase));
+        for phase in ["build-diagnostics-extra", "../build-diagnostics"] {
+            assert!(Acceptance::new(evidence.0.clone(), phase).is_err());
+        }
     }
 
     #[test]

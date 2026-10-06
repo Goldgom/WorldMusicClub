@@ -233,6 +233,9 @@ fn dispatch_inner(
             "/api/health" => json_response(Ok(
                 json!({"name":"WorldMusicHub","display_name":"WorldMusicClub","version":env!("CARGO_PKG_VERSION"),"engine":"rust","network":"native-protocol-no-listener","score_format_version":1,"score_schema_revision":score_core::SCORE_SCHEMA_REVISION,"library_management_query_version":1,"library_catalog_version":1}),
             )),
+            practice_server::build_identity::ROUTE => json_response(Ok(
+                practice_server::build_identity::diagnostics("native-protocol-no-listener"),
+            )),
             "/api/catalog" => json_response(
                 serde_json::to_value(score_core::catalog()).map_err(|e| e.to_string()),
             ),
@@ -266,6 +269,9 @@ fn dispatch_inner(
                 }
             }
         };
+    }
+    if path == practice_server::build_identity::ROUTE {
+        return error(405, "method_not_allowed");
     }
     if !path.starts_with("/api/") {
         return error(405, "Only engine operations accept POST");

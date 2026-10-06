@@ -1,7 +1,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$Executable,
   [string]$OutputDirectory='desktop-acceptance',
-  [ValidateSet('desktop','song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre')][string]$Scenario='desktop'
+  [ValidateSet('desktop','song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre','build-diagnostics')][string]$Scenario='desktop'
 )
 $ErrorActionPreference='Stop'
 $fixedLiveKeyScenario=$Scenario -cin @('live-tone-navigation','human-mod-timbre')
@@ -12,7 +12,7 @@ New-Item -ItemType Directory $OutputDirectory | Out-Null
 $OutputDirectory=(Resolve-Path $OutputDirectory).Path
 $Fixtures=Join-Path $OutputDirectory 'fixtures'
 New-Item -ItemType Directory $Fixtures | Out-Null
-$fixtureNames=if($Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre')){@()}elseif($Scenario -eq 'song-folder'){@('folder-original.json','folder-conflict.json')}else{@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu')}
+$fixtureNames=if($Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre','build-diagnostics')){@()}elseif($Scenario -eq 'song-folder'){@('folder-original.json','folder-conflict.json')}else{@('original-duet.musicxml','original-duet.mxl','midi-original-ppq.mid','original-reference-overlap.mid','jianpu-original-steps.jianpu')}
 foreach($name in $fixtureNames) {
   Copy-Item (Join-Path $Repository "tests/fixtures/$name") (Join-Path $Fixtures $name)
 }
@@ -79,6 +79,7 @@ else{Add-Type -Path (Join-Path $PSScriptRoot 'windows-desktop-native.cs')}
 . (Join-Path $PSScriptRoot 'windows-desktop-profile.ps1')
 . (Join-Path $PSScriptRoot 'windows-desktop-catalog-snapshot.ps1')
 . (Join-Path $PSScriptRoot 'windows-desktop-geometry.ps1')
+. (Join-Path $PSScriptRoot 'windows-build-diagnostics.ps1')
 $catalogRendererGeometry=$null;$catalogReportedViewport=$null;$catalogCaptureGeometryFile=$null
 function Save-Json($Value,[string]$Path) {
   $temporary="$Path.tmp"
@@ -541,10 +542,20 @@ $previousDirectory=$env:WMH_DESKTOP_SMOKE_DIR;$previousPhase=$env:WMH_DESKTOP_AC
 $env:WMH_DESKTOP_SMOKE_DIR=$OutputDirectory
 $native=[ordered]@{version=1;source_sha=(git rev-parse HEAD);source_tree=(git rev-parse 'HEAD^{tree}');executable_sha256=(Get-FileHash $Executable -Algorithm SHA256).Hash.ToLower();executable_bytes=(Get-Item $Executable).Length;os=[System.Environment]::OSVersion.VersionString;profile_reused=$true;phases=@();ok=$false}
 $app=$null;$blockedStage=$false;$blockedStagePath=$null;$preservedStagePath=$null;$profileSelection=$null
-$nativeReportName=if($Scenario -eq 'human-mod-timbre'){'native-human-mod-timbre.json'}elseif($Scenario -eq 'live-tone-navigation'){'native-live-tone-navigation.json'}elseif($Scenario -eq 'library-catalog'){'native-library-catalog.json'}elseif($Scenario -eq 'skin'){'native-skin.json'}elseif($Scenario -eq 'canonical-practice'){'native-canonical-practice.json'}elseif($Scenario -eq 'complete-practice'){'native-complete-practice.json'}elseif($Scenario -eq 'basic-key'){'native-basic-key.json'}elseif($Scenario -eq 'vsq-authoring'){'native-vsq-authoring.json'}elseif($Scenario -eq 'authoring'){'native-song-authoring.json'}elseif($Scenario -eq 'pitch-bend'){'native-pitch-bend.json'}elseif($Scenario -eq 'performance-song'){'native-performance-song.json'}elseif($Scenario -eq 'vsq-song'){'native-vsq-song.json'}elseif($Scenario -eq 'clean-song'){'native-clean-song.json'}elseif($Scenario -eq 'bulk-import'){'native-bulk-import.json'}elseif($Scenario -eq 'song-folder'){'native-song-folder.json'}else{'native-acceptance.json'}
-$phases=if($Scenario -eq 'human-mod-timbre'){@('human-timbre-seed','human-timbre-migrate','human-timbre-restart')}elseif($Scenario -eq 'live-tone-navigation'){@('live-navigation-settings-keyup','live-navigation-settings-navigation','live-navigation-authoring-keyup','live-navigation-authoring-navigation')}elseif($Scenario -eq 'library-catalog'){@('catalog-seed','catalog-restart','catalog-final')}elseif($Scenario -eq 'skin'){@('skin-seed','skin-restart','skin-default-restart')}elseif($Scenario -eq 'canonical-practice'){@('canonical-practice-seed','canonical-practice-controls','canonical-practice-restart')}elseif($Scenario -eq 'complete-practice'){@('complete-practice-seed','complete-practice-restart')}elseif($Scenario -eq 'basic-key'){@('basic-key-seed','basic-key-restart')}elseif($Scenario -eq 'vsq-authoring'){@('vsq-authoring-seed','vsq-authoring-restart')}elseif($Scenario -eq 'authoring'){@('authoring-seed','authoring-restart')}elseif($Scenario -eq 'pitch-bend'){@('pitch-bend-seed','pitch-bend-restart')}elseif($Scenario -eq 'performance-song'){@('performance-seed','performance-controls','performance-restart')}elseif($Scenario -eq 'vsq-song'){@('vsq-seed','vsq-restart')}elseif($Scenario -eq 'clean-song'){@('clean-seed','clean-restart')}elseif($Scenario -eq 'bulk-import'){@('bulk-seed','bulk-restart','bulk-failure')}elseif($Scenario -eq 'song-folder'){@('folder-seed','folder-restart','folder-failure')}else{@('seed','restart','close-active','reopen')}
-if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre')){$native.profile_reused=$false;$native.scenario=$Scenario;$native.directory=Join-Path $OutputDirectory 'Scores'}
+$nativeReportName=if($Scenario -eq 'human-mod-timbre'){'native-human-mod-timbre.json'}elseif($Scenario -eq 'build-diagnostics'){'native-build-diagnostics.json'}elseif($Scenario -eq 'live-tone-navigation'){'native-live-tone-navigation.json'}elseif($Scenario -eq 'library-catalog'){'native-library-catalog.json'}elseif($Scenario -eq 'skin'){'native-skin.json'}elseif($Scenario -eq 'canonical-practice'){'native-canonical-practice.json'}elseif($Scenario -eq 'complete-practice'){'native-complete-practice.json'}elseif($Scenario -eq 'basic-key'){'native-basic-key.json'}elseif($Scenario -eq 'vsq-authoring'){'native-vsq-authoring.json'}elseif($Scenario -eq 'authoring'){'native-song-authoring.json'}elseif($Scenario -eq 'pitch-bend'){'native-pitch-bend.json'}elseif($Scenario -eq 'performance-song'){'native-performance-song.json'}elseif($Scenario -eq 'vsq-song'){'native-vsq-song.json'}elseif($Scenario -eq 'clean-song'){'native-clean-song.json'}elseif($Scenario -eq 'bulk-import'){'native-bulk-import.json'}elseif($Scenario -eq 'song-folder'){'native-song-folder.json'}else{'native-acceptance.json'}
+$phases=if($Scenario -eq 'human-mod-timbre'){@('human-timbre-seed','human-timbre-migrate','human-timbre-restart')}elseif($Scenario -eq 'build-diagnostics'){@('build-diagnostics')}elseif($Scenario -eq 'live-tone-navigation'){@('live-navigation-settings-keyup','live-navigation-settings-navigation','live-navigation-authoring-keyup','live-navigation-authoring-navigation')}elseif($Scenario -eq 'library-catalog'){@('catalog-seed','catalog-restart','catalog-final')}elseif($Scenario -eq 'skin'){@('skin-seed','skin-restart','skin-default-restart')}elseif($Scenario -eq 'canonical-practice'){@('canonical-practice-seed','canonical-practice-controls','canonical-practice-restart')}elseif($Scenario -eq 'complete-practice'){@('complete-practice-seed','complete-practice-restart')}elseif($Scenario -eq 'basic-key'){@('basic-key-seed','basic-key-restart')}elseif($Scenario -eq 'vsq-authoring'){@('vsq-authoring-seed','vsq-authoring-restart')}elseif($Scenario -eq 'authoring'){@('authoring-seed','authoring-restart')}elseif($Scenario -eq 'pitch-bend'){@('pitch-bend-seed','pitch-bend-restart')}elseif($Scenario -eq 'performance-song'){@('performance-seed','performance-controls','performance-restart')}elseif($Scenario -eq 'vsq-song'){@('vsq-seed','vsq-restart')}elseif($Scenario -eq 'clean-song'){@('clean-seed','clean-restart')}elseif($Scenario -eq 'bulk-import'){@('bulk-seed','bulk-restart','bulk-failure')}elseif($Scenario -eq 'song-folder'){@('folder-seed','folder-restart','folder-failure')}else{@('seed','restart','close-active','reopen')}
+if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre','build-diagnostics')){$native.profile_reused=$false;$native.scenario=$Scenario;$native.directory=Join-Path $OutputDirectory 'Scores'}
 try {
+if($Scenario -eq 'build-diagnostics') {
+  $bindingJson=& node (Join-Path $PSScriptRoot 'verify-native-build-diagnostics.mjs') --source-binding $Repository
+  if($LASTEXITCODE -ne 0){throw 'Cannot bind diagnostics to clean full-history source'}
+  $binding=ConvertFrom-Json -InputObject $bindingJson -AsHashtable
+  foreach($key in @('source_sha','source_tree')){if($binding[$key] -cne $native[$key]){throw 'Diagnostic source changed before launch'}}
+  $native.source_commit_count=$binding.source_commit_count;$native.source_hashes=$binding.source_hashes
+  $target=@(& rustc -vV | Where-Object {$_ -cmatch '^host: '})
+  if($LASTEXITCODE -ne 0 -or $target.Count -ne 1){throw 'Cannot establish native compiler target'}
+  $native.diagnostic_host=[ordered]@{launched_executable_path=$Executable;target=$target[0].Substring(6);arch=(Get-BuildDiagnosticsArchitecture $Executable);executable_before=(Get-BuildDiagnosticsExecutable $Executable)}
+}
 if($Scenario -in @('complete-practice','canonical-practice','human-mod-timbre')){$native.profile_reused=$true}
 if($Scenario -eq 'skin') {
   $native.profile_reused=$true
@@ -580,8 +591,8 @@ if($Scenario -eq 'library-catalog') {
   $sourceNames=& node --input-type=module -e 'import {pathToFileURL} from "node:url"; const module=await import(pathToFileURL(process.argv[2])); console.log(JSON.stringify(module.CATALOG_SOURCE_FILES));' -- catalog-source-list (Join-Path $PSScriptRoot 'verify-library-catalog-acceptance.mjs')
   if($LASTEXITCODE -ne 0){throw 'Cannot read catalog acceptance source allowlist'}
   $sourceNames=ConvertFrom-Json -InputObject $sourceNames
-  # The closed catalog inventory includes Mod, skin and membership-verifier dependencies.
-  if($sourceNames.Count -ne 52 -or @($sourceNames | Sort-Object -Unique).Count -ne 52){throw 'Catalog source allowlist must contain exactly 52 distinct modules'}
+  # The closed catalog retains Mod, skin, membership and diagnostic-view dependencies.
+  if($sourceNames.Count -ne 55 -or @($sourceNames | Sort-Object -Unique).Count -ne 55){throw 'Catalog source allowlist must contain exactly 55 distinct modules'}
   $native.source_hashes=[ordered]@{}
   foreach($name in $sourceNames) {
     if($name -cnotmatch '^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)+$' -or $name.Split('/') -contains '..'){throw 'Catalog source allowlist contains an unsafe path'}
@@ -603,7 +614,7 @@ if($Scenario -eq 'library-catalog') {
     $profileSelection=Assert-AcceptanceProfileLaunch $OutputDirectory $phase
     $native.profile_launch=$profileSelection
     Save-Json $native (Join-Path $OutputDirectory $nativeReportName)
-    if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre')) {
+    if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre','build-diagnostics')) {
       if($phase -in @('folder-failure','bulk-failure')) {
         $stageName=if($phase -eq 'bulk-failure'){'.import-staging'}else{'.staging'}
         $stage=Join-Path $OutputDirectory "Scores/$stageName"
@@ -615,15 +626,16 @@ if($Scenario -eq 'library-catalog') {
     }
     $catalogRendererGeometry=$null;$catalogReportedViewport=$null;$report=$null
     $env:WMH_DESKTOP_ACCEPTANCE_PHASE=$phase
+    if($Scenario -eq 'build-diagnostics'){$native.diagnostic_host.capture_started_unix_ms=[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()}
     $app=Start-Process -FilePath $Executable -PassThru -RedirectStandardError (Join-Path $OutputDirectory "stderr-$phase.log")
     $phaseStart=[DateTime]::UtcNow;$deadline=$phaseStart.AddSeconds(240);$sequence=1;$reportDeliveryWatch=$null
     $reportFile=Join-Path $OutputDirectory "renderer-$phase.json"
-    $reportLimit=if($Scenario -eq 'bulk-import'){4MB}elseif($Scenario -in @('clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre')){1MB}else{64KB}
+    $reportLimit=if($Scenario -eq 'bulk-import'){4MB}elseif($Scenario -in @('clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre','build-diagnostics')){1MB}else{64KB}
     while($null -eq ($report=Read-AcceptanceJsonSnapshot -Path $reportFile -MaximumBytes $reportLimit -AllowPending)) {
       if($fixedLiveKeyScenario -and [NativeLiveToneNavigationKey]::Held -and [NativeLiveToneNavigationKey]::HeldMilliseconds -gt 10000){throw 'Native test R exceeded its observed 10-second watchdog limit'}
       $app.Refresh();if($app.HasExited){throw "Process exited before $phase evidence: $($app.ExitCode); profile=$($profileSelection.profile_directory); see stderr-$phase.log"}
       if([DateTime]::UtcNow -ge $deadline){throw "Native $phase exceeded 240 seconds"}
-      if($Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre')) {
+      if($Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre','build-diagnostics')) {
         $traceFile=Join-Path $OutputDirectory "trace-$phase.json"
         $trace=Read-AcceptanceJsonSnapshot -Path $traceFile -MaximumBytes 512KB -AllowPending
         if($null -ne $trace) {
@@ -637,11 +649,16 @@ if($Scenario -eq 'library-catalog') {
       $actionFile=Join-Path $OutputDirectory "action-$phase-$sequence.json"
       $action=Read-AcceptanceJsonSnapshot -Path $actionFile -MaximumBytes 64KB -AllowPending
       if($null -ne $action) {
-        $actionLimit=if($phase -ceq 'seed'){72}elseif($phase -in @('vsq-seed','vsq-restart','basic-key-seed','basic-key-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart','canonical-practice-seed')){80}elseif($Scenario -in @('performance-song','pitch-bend','bulk-import','song-folder')){75}else{64}
+        $actionLimit=if($phase -ceq 'build-diagnostics'){32}elseif($phase -ceq 'seed'){72}elseif($phase -in @('vsq-seed','vsq-restart','basic-key-seed','basic-key-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart','canonical-practice-seed')){80}elseif($Scenario -in @('performance-song','pitch-bend','bulk-import','song-folder')){75}else{64}
         if($action.sequence -ne $sequence -or $sequence -gt $actionLimit){throw 'Out-of-order or over-limit native action'}
         $catalogReportedViewport=@($action.width,$action.height)
+        if($Scenario -eq 'build-diagnostics' -and $sequence -eq 1) {
+          $app.Refresh();$native.diagnostic_host.process_id=$app.Id;$native.diagnostic_host.process_image_path=$app.MainModule.FileName
+          Save-Json (Get-BuildDiagnosticsLibrarySnapshot (Join-Path $OutputDirectory 'Scores')) (Join-Path $OutputDirectory 'snapshot-build-diagnostics-before.json')
+          Save-Json $native (Join-Path $OutputDirectory $nativeReportName)
+        }
         $result=@{ok=$false}
-        try{Native-Action $app $action $result;if($action.kind -cne 'capture' -and $Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre') -and (-not $fixedLiveKeyScenario -or -not [NativeLiveToneNavigationKey]::Held)){Capture-Window $app "native-action-$phase-$sequence"};$result.ok=$true}catch{$result.error=$_.Exception.Message}
+        try{Native-Action $app $action $result;if($action.kind -cne 'capture' -and $Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre','build-diagnostics') -and (-not $fixedLiveKeyScenario -or -not [NativeLiveToneNavigationKey]::Held)){Capture-Window $app "native-action-$phase-$sequence"};$result.ok=$true}catch{$result.error=$_.Exception.Message}
         Save-Json $result (Join-Path $OutputDirectory "result-$phase-$sequence.json")
         # A native modal can suspend the renderer, including its result poll.
         # Fail here after preserving the real action error instead of waiting
@@ -662,10 +679,17 @@ if($Scenario -eq 'library-catalog') {
     Capture-Window $app "native-$phase"
     # One existing EXE-owned listener sample, not a network/security audit.
     $listeners=@(Get-NetTCPConnection -State Listen -ErrorAction Stop | Where-Object OwningProcess -eq $app.Id)
+    if($Scenario -eq 'build-diagnostics') {
+      if($app.MainModule.FileName -cne $native.diagnostic_host.process_image_path){throw 'Owned diagnostic process image changed'}
+      $native.diagnostic_host.executable_after=Get-BuildDiagnosticsExecutable $Executable
+      $native.diagnostic_host.executable_tcp_listeners=$listeners.Count
+      $native.diagnostic_host.capture_finished_unix_ms=[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+      Save-Json (Get-BuildDiagnosticsLibrarySnapshot (Join-Path $OutputDirectory 'Scores')) (Join-Path $OutputDirectory 'snapshot-build-diagnostics-after.json')
+    }
     $item=[ordered]@{phase=$phase;process_id=$app.Id;renderer_ok=$report.ok;renderer_origin=$report.origin;actions=$sequence-1;elapsed_seconds=([DateTime]::UtcNow-$phaseStart).TotalSeconds;executable_tcp_listeners=$listeners.Count;normal_close=$false}
     if($fixedLiveKeyScenario){$item.live_key_held_at_close=[NativeLiveToneNavigationKey]::Held}
     $item.profile_directory=$profileSelection.profile_directory;$item.profile_absent_before_launch=$profileSelection.profile_absent_before_launch
-    if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre')){$item.launched_new_process=$true;$item.profile_fresh=$true;$item.profile_reused=$false}
+    if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre','build-diagnostics')){$item.launched_new_process=$true;$item.profile_fresh=$true;$item.profile_reused=$false}
     if($Scenario -in @('complete-practice','canonical-practice')){$item.profile_fresh=$profileSelection.fresh_required;$item.profile_reused=$profileSelection.existing_required}
     if($Scenario -eq 'human-mod-timbre'){$item.profile_fresh=$profileSelection.fresh_required;$item.profile_reused=$profileSelection.existing_required}
     if($Scenario -eq 'skin'){$item.profile_fresh=$profileSelection.fresh_required;$item.profile_reused=$profileSelection.existing_required}
@@ -679,14 +703,21 @@ if($Scenario -eq 'library-catalog') {
     if($app.ExitCode -ne 0){throw "Normal close failed during $phase : $($app.ExitCode)"}
     $item.normal_close=$true;$item.close_seconds=([DateTime]::UtcNow-$closeStart).TotalSeconds
     Save-Json $native (Join-Path $OutputDirectory $nativeReportName);$app=$null
-    if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre')){Save-SongFolderSnapshot $phase}
+    if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre','build-diagnostics')){Save-SongFolderSnapshot $phase}
   }
-  if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre')) {
+  if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre','build-diagnostics')) {
     # Restore only the test-owned blocker; no user folder or permissions change.
     if($blockedStage){Remove-Item -LiteralPath $blockedStagePath;Move-Item -LiteralPath $preservedStagePath -Destination $blockedStagePath;$blockedStage=$false}
     $native.ok=$true;Save-Json $native (Join-Path $OutputDirectory $nativeReportName)
-    $verifier=if($Scenario -eq 'human-mod-timbre'){'verify-native-human-mod-timbre-evidence.mjs'}elseif($Scenario -eq 'live-tone-navigation'){'verify-native-live-tone-navigation-evidence.mjs'}elseif($Scenario -eq 'library-catalog'){'verify-library-catalog-acceptance.mjs'}elseif($Scenario -eq 'skin'){'verify-native-skin-evidence.mjs'}elseif($Scenario -eq 'canonical-practice'){'verify-canonical-practice-evidence.mjs'}elseif($Scenario -eq 'complete-practice'){'verify-complete-practice-evidence.mjs'}elseif($Scenario -eq 'basic-key'){'verify-basic-key-evidence.mjs'}elseif($Scenario -eq 'vsq-authoring'){'verify-native-vsq-authoring-evidence.mjs'}elseif($Scenario -eq 'authoring'){'verify-native-song-authoring-evidence.mjs'}elseif($Scenario -eq 'pitch-bend'){'verify-native-pitch-bend-evidence.mjs'}elseif($Scenario -eq 'performance-song'){'verify-native-performance-song-evidence.mjs'}elseif($Scenario -eq 'vsq-song'){'verify-native-vsq-song-evidence.mjs'}elseif($Scenario -eq 'clean-song'){'verify-native-clean-song-evidence.mjs'}elseif($Scenario -eq 'bulk-import'){'verify-native-bulk-import-evidence.mjs'}else{'verify-native-song-folder-evidence.mjs'}
-    if($Scenario -eq 'skin') {
+    $verifier=if($Scenario -eq 'human-mod-timbre'){'verify-native-human-mod-timbre-evidence.mjs'}elseif($Scenario -eq 'build-diagnostics'){'verify-native-build-diagnostics.mjs'}elseif($Scenario -eq 'live-tone-navigation'){'verify-native-live-tone-navigation-evidence.mjs'}elseif($Scenario -eq 'library-catalog'){'verify-library-catalog-acceptance.mjs'}elseif($Scenario -eq 'skin'){'verify-native-skin-evidence.mjs'}elseif($Scenario -eq 'canonical-practice'){'verify-canonical-practice-evidence.mjs'}elseif($Scenario -eq 'complete-practice'){'verify-complete-practice-evidence.mjs'}elseif($Scenario -eq 'basic-key'){'verify-basic-key-evidence.mjs'}elseif($Scenario -eq 'vsq-authoring'){'verify-native-vsq-authoring-evidence.mjs'}elseif($Scenario -eq 'authoring'){'verify-native-song-authoring-evidence.mjs'}elseif($Scenario -eq 'pitch-bend'){'verify-native-pitch-bend-evidence.mjs'}elseif($Scenario -eq 'performance-song'){'verify-native-performance-song-evidence.mjs'}elseif($Scenario -eq 'vsq-song'){'verify-native-vsq-song-evidence.mjs'}elseif($Scenario -eq 'clean-song'){'verify-native-clean-song-evidence.mjs'}elseif($Scenario -eq 'bulk-import'){'verify-native-bulk-import-evidence.mjs'}else{'verify-native-song-folder-evidence.mjs'}
+    if($Scenario -eq 'build-diagnostics') {
+      $previousDiagnosticExecutable=$env:WMH_BUILD_DIAGNOSTICS_EXECUTABLE
+      try {
+        $env:WMH_BUILD_DIAGNOSTICS_EXECUTABLE=$Executable
+        & node (Join-Path $PSScriptRoot $verifier) $OutputDirectory
+        if($LASTEXITCODE -ne 0){throw 'Native build diagnostics verification failed'}
+      } finally {$env:WMH_BUILD_DIAGNOSTICS_EXECUTABLE=$previousDiagnosticExecutable}
+    } elseif($Scenario -eq 'skin') {
       $previousSkinExecutable=$env:WMH_SKIN_EXECUTABLE
       try {
         $env:WMH_SKIN_EXECUTABLE=$Executable

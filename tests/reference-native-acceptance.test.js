@@ -51,7 +51,9 @@ test('generic seed budget derives from its finite visible Mod and reference acti
   assert.match(renderer,/assert\(sequence<actionLimit,'Native acceptance action count exceeded'\)/);
   assert.ok(renderer.indexOf('assert(sequence<actionLimit')<renderer.indexOf('sequence:++sequence'));
   assert.match(rust,/if phase == "seed" \{[\s\S]*?\n\s*72\n\s*\} else if VSQ_PHASES/);
-  assert.match(runner,/\$actionLimit=if\(\$phase -ceq 'seed'\)\{72\}elseif/);
+  const hostLimit = runner.match(/\$actionLimit=(if[^\r\n]+)/)?.[1];
+  assert.ok(hostLimit, 'Native host action budget must remain explicit');
+  assert.match(hostLimit,/(?:^if|elseif)\(\$phase -ceq 'seed'\)\{72\}elseif/);
   // Run 37375067601 completed the first 64 actions. Without the optional Sound
   // setup action, its next fixed action is reference-sound and its total is 71.
   const referenceOrder=['beforeScore','beforeTake','reference-listening-entry','reference-choose-file','reference-download','reference-policy-accept','reference-sound','reference-play','reference-source-name','reference-pause','reference-play','reference-choose-file','reference-stop','reference-play','reference-stop','reference-mute-1','reference-play','reference-stop','reference-mute-1','reference-play','reference-sound','reference-sound','reference-play','reference-close','reference-listening-entry','afterScore','afterTake'];

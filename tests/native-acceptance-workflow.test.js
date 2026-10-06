@@ -9,8 +9,8 @@ const workflow = readFileSync(new URL('../.github/workflows/windows-desktop-acce
 const jobIds = ['bulk-import-browser', 'native-feature-acceptance'];
 const allJobIds = ['bulk-import-browser', 'windows-pure-checks', 'native-feature-acceptance', 'native-package'];
 const mandatoryOutputs = {
-  'bulk-import-browser': ['producer_gate', 'management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify', 'complete_practice_protocol', 'complete_practice_browser', 'canonical_practice_protocol', 'canonical_practice_browser_720', 'canonical_practice_browser_720_verify', 'canonical_practice_browser_640', 'canonical_practice_browser_640_verify'],
-  'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify', 'complete_practice_windows', 'complete_practice_windows_verify', 'canonical_practice_windows', 'canonical_practice_windows_verify', 'producer_gate'],
+  'bulk-import-browser': ['producer_gate', 'native_clean_profile_routing', 'management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify', 'complete_practice_protocol', 'complete_practice_browser', 'canonical_practice_protocol', 'canonical_practice_browser_720', 'canonical_practice_browser_720_verify', 'canonical_practice_browser_640', 'canonical_practice_browser_640_verify'],
+  'native-feature-acceptance': ['management_catalog_windows', 'management_catalog_windows_verify', 'complete_practice_windows', 'complete_practice_windows_verify', 'canonical_practice_windows', 'canonical_practice_windows_verify', 'build_diagnostics_windows', 'build_diagnostics_windows_verify', 'producer_gate'],
   'windows-pure-checks': ['producer_gate'],
   'native-package': ['producer_gate', 'native_full_portable', 'native_full_upload', 'native_runtime_package', 'native_runtime_verify', 'native_runtime_startup', 'native_runtime_delivery', 'native_runtime_delivery_verify', 'native_runtime_upload', 'native_runtime_evidence'],
 };
@@ -81,6 +81,7 @@ const nativeScenarioOutputs = {
   'pitch-bend': 'desktop-pitch-bend', authoring: 'desktop-authoring', 'basic-key': 'desktop-basic-key',
   'complete-practice': 'desktop-complete-practice', 'canonical-practice': 'desktop-canonical-practice',
   'vsq-authoring': 'desktop-vsq-authoring', 'library-catalog': '$env:RUNNER_TEMP/library-management-windows',
+  'build-diagnostics': 'desktop-build-diagnostics',
 };
 const nativeScenarioGuard = "${{ !cancelled() && steps.native_build.outcome == 'success' }}";
 function assertIndependentNativeScenarios(block) {

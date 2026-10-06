@@ -150,6 +150,10 @@ class NativeAcceptanceTransferTests(unittest.TestCase):
 
     def test_profiles_secret_stores_dependencies_and_arbitrary_extras_are_omitted(self):
         extras = (
+            'workspace/desktop-build-diagnostics/webview-profiles/build-diagnostics/Cookies',
+            'workspace/desktop-build-diagnostics/Scores/songs/private/source.payload',
+            'workspace/desktop-build-diagnostics/downloads/private.json',
+            'workspace/desktop-build-diagnostics/fixtures/private.json',
             'workspace/desktop-authoring/webview-profiles/authoring-seed/Cookies',
             'workspace/desktop-authoring/fixtures/webview-profile.json',
             'workspace/desktop-authoring/credentials.json',
@@ -166,6 +170,24 @@ class NativeAcceptanceTransferTests(unittest.TestCase):
             self.write(name, b'Excluded fixture bytes')
         self.create()
         self.assertEqual(set(self.members()), set(self.payload) | {transfer.MANIFEST})
+
+    def test_diagnostics_transfer_retains_only_original_top_level_evidence(self):
+        scenario = 'workspace/desktop-build-diagnostics'
+        records = {
+            scenario + '/build-diagnostics-proof.json': b'{"synthetic":true,"acceptance":false}\r\n',
+            scenario + '/native-action-build-diagnostics-2.png': b'Original synthetic image bytes',
+        }
+        self.assertIn('desktop-build-diagnostics', transfer.SCENARIOS)
+        self.payload.update(records)
+        for name, data in records.items():
+            self.write(name, data)
+        digest = self.ready()
+        self.restore(digest)
+        for name, data in records.items():
+            self.assertEqual(self.path(name).read_bytes(), data)
+        self.assertFalse(transfer.allowed_directory(scenario + '/Scores'))
+        self.assertFalse(transfer.allowed_directory(scenario + '/downloads'))
+        self.assertFalse(transfer.allowed_directory(scenario + '/fixtures'))
 
     def test_missing_required_files_and_scenarios_fail_before_creating_archive(self):
         for name in [transfer.EXE, *sorted(transfer.REQUIRED_FILES - {transfer.EXE}),

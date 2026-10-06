@@ -22,7 +22,7 @@ test('human timbre has one finite phase family, original seed picker and only ex
 });
 
 test('human timbre composes passive observers and owned controls without starting other runners',()=>{
-  const composition=rust.slice(rust.indexOf('if HUMAN_MOD_TIMBRE_PHASES.contains(&self.phase)'),rust.indexOf('if LIVE_TONE_NAVIGATION_PHASES.contains(&self.phase)'));
+  const composition=rust.slice(rust.indexOf('if HUMAN_MOD_TIMBRE_PHASES.contains(&self.phase)'),rust.indexOf('if BUILD_DIAGNOSTICS_PHASES.contains(&self.phase)'));
   for(const name of ['human-mod-timbre-acceptance.js','reference-acceptance.js','live-tone-acceptance.js','vsq-song-acceptance.js','canonical-practice-acceptance.js','live-tone-navigation-acceptance.js'])assert.ok(composition.includes(name));
   assert.equal((composition.match(/\.split_once/g)||[]).length,3);
   const script=[read('crates/desktop-shell/acceptance-wait.js'),read('crates/desktop-shell/reference-acceptance.js'),read('crates/desktop-shell/live-tone-acceptance.js'),...['vsq-song','canonical-practice','live-tone-navigation'].map(name=>read(`crates/desktop-shell/${name}-acceptance.js`).split('(() => {')[0]),read('crates/desktop-shell/human-mod-timbre-acceptance.js')].join('\n');

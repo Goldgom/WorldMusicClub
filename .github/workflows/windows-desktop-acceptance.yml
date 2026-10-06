@@ -13,6 +13,7 @@ jobs:
       source_sha: ${{ steps.acceptance_source.outputs.source_sha }}
       source_tree: ${{ steps.acceptance_source.outputs.source_tree }}
       run_id: ${{ github.run_id }}
+      native_clean_profile_routing: ${{ steps.native_clean_profile_routing.outcome }}
       management_pack_browser: ${{ steps.management_pack_browser.outcome }}
       management_catalog_browser: ${{ steps.management_catalog_browser.outcome }}
       management_catalog_browser_verify: ${{ steps.management_catalog_browser_verify.outcome }}
@@ -74,6 +75,11 @@ jobs:
         id: required_015
       - id: dense_native_driver
         run: cargo build -p worldmusichub-desktop --example native_import_driver --locked
+      - name: Original clean-profile routing through the exact compiled native driver
+        id: native_clean_profile_routing
+        env:
+          WMH_NATIVE_IMPORT_DRIVER: ${{ github.workspace }}/target/debug/examples/native_import_driver
+        run: node --test tests/native-clean-profile-routing.test.js
       - name: Original current Basic catalog protection through Rust stdin and app DOM
         id: required_017
         timeout-minutes: 6
@@ -621,7 +627,7 @@ jobs:
         if: always()
         env:
           ACCEPTANCE_STEPS: ${{ toJSON(steps) }}
-          ACCEPTANCE_REQUIRED_STEPS: required_001,acceptance_source,required_003,required_004,required_005,required_006,required_007,acceptance_identity,required_009,required_010,required_011,required_012,required_013,required_014,required_015,dense_native_driver,required_017,complete_practice_converter,notation_server,required_020,complete_practice_protocol,canonical_practice_protocol,required_023,required_024,required_025,required_026,required_027,required_028,required_029,dense_browser_setup,required_031,required_032,required_056,required_057,required_033,required_034,required_035,required_036,complete_practice_browser,canonical_practice_browser_720,canonical_practice_browser_720_verify,canonical_practice_browser_640,canonical_practice_browser_640_verify,required_042,required_043,required_044,management_pack_browser,management_catalog_browser,management_catalog_browser_verify,required_048,required_049,required_050,required_051,required_052,required_053,required_054,required_055,required_058,required_059,required_060,required_061,required_062,required_063,required_064,required_065,required_066,required_067,required_068,required_069
+          ACCEPTANCE_REQUIRED_STEPS: required_001,acceptance_source,required_003,required_004,required_005,required_006,required_007,acceptance_identity,required_009,required_010,required_011,required_012,required_013,required_014,required_015,dense_native_driver,native_clean_profile_routing,required_017,complete_practice_converter,notation_server,required_020,complete_practice_protocol,canonical_practice_protocol,required_023,required_024,required_025,required_026,required_027,required_028,required_029,dense_browser_setup,required_031,required_032,required_056,required_057,required_033,required_034,required_035,required_036,complete_practice_browser,canonical_practice_browser_720,canonical_practice_browser_720_verify,canonical_practice_browser_640,canonical_practice_browser_640_verify,required_042,required_043,required_044,management_pack_browser,management_catalog_browser,management_catalog_browser_verify,required_048,required_049,required_050,required_051,required_052,required_053,required_054,required_055,required_058,required_059,required_060,required_061,required_062,required_063,required_064,required_065,required_066,required_067,required_068,required_069
         run: python scripts/native-acceptance-join.py steps
   windows-pure-checks:
     # No dependency on the long native UI path; every original pure check remains mandatory.
@@ -731,6 +737,8 @@ jobs:
       producer_gate: ${{ steps.producer_gate.outcome }}
       transfer_artifact_id: ${{ steps.native_transfer_upload.outputs.artifact-id }}
       transfer_sha256: ${{ steps.native_transfer.outputs.sha256 }}
+      build_diagnostics_windows: ${{ steps.build_diagnostics_windows.outcome }}
+      build_diagnostics_windows_verify: ${{ steps.build_diagnostics_windows_verify.outcome }}
     env:
       RUSTFLAGS: '-C target-feature=+crt-static'
       CARGO_INCREMENTAL: '0'
@@ -777,7 +785,7 @@ jobs:
         id: required_011
         shell: pwsh
         run: |
-          foreach ($script in @('scripts/windows-desktop-acceptance.ps1','scripts/windows-desktop-profile.ps1','scripts/windows-desktop-catalog-snapshot.ps1','scripts/windows-desktop-geometry.ps1','scripts/windows-native-portable-smoke.ps1','scripts/windows-native-runtime-smoke.ps1')) {
+          foreach ($script in @('scripts/windows-desktop-acceptance.ps1','scripts/windows-desktop-profile.ps1','scripts/windows-desktop-catalog-snapshot.ps1','scripts/windows-desktop-geometry.ps1','scripts/windows-build-diagnostics.ps1','scripts/windows-native-portable-smoke.ps1','scripts/windows-native-runtime-smoke.ps1')) {
             $tokens=$null; $errors=$null
             [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script),[ref]$tokens,[ref]$errors)
             if ($errors.Count) { $errors | Format-List; throw "PowerShell syntax errors in $script" }
@@ -1008,6 +1016,26 @@ jobs:
           include-hidden-files: true
           retention-days: 90
           if-no-files-found: warn
+      - name: Actual native Settings build identity and explicit private summary
+        id: build_diagnostics_windows
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
+        timeout-minutes: 6
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD) -cne $env:GITHUB_SHA) { throw 'Unexpected diagnostics build source' }
+          if ((git rev-parse --is-shallow-repository).Trim() -cne 'false') { throw 'Diagnostics requires full source history' }
+          if (git status --porcelain --untracked-files=normal) { throw 'Diagnostics acceptance source is dirty' }
+          ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-build-diagnostics -Scenario build-diagnostics
+      - name: Reverify compiled source, actual owned image and selected diagnostic text
+        id: build_diagnostics_windows_verify
+        if: ${{ !cancelled() && steps.build_diagnostics_windows.outcome == 'success' }}
+        timeout-minutes: 2
+        shell: pwsh
+        env:
+          WMH_BUILD_DIAGNOSTICS_EXECUTABLE: ${{ github.workspace }}/target/release/worldmusichub-desktop.exe
+        run: |
+          node scripts/verify-native-build-diagnostics.mjs --check desktop-build-diagnostics
+          if ($LASTEXITCODE -ne 0) { throw 'Native diagnostics source/process/privacy proof failed' }
       - name: Retain original canonical native proof and exact executable
         id: required_036
         if: always()
@@ -1034,6 +1062,9 @@ jobs:
         with:
           name: native-feature-evidence-${{ github.sha }}
           path: |
+            desktop-build-diagnostics/*.json
+            desktop-build-diagnostics/*.png
+            desktop-build-diagnostics/*.log
             desktop-startup/*.json
             desktop-startup/*.png
             desktop-startup/*.log
@@ -1311,7 +1342,7 @@ jobs:
         if: always()
         env:
           ACCEPTANCE_STEPS: ${{ toJSON(steps) }}
-          ACCEPTANCE_REQUIRED_STEPS: required_001,acceptance_source,required_003,required_004,required_005,acceptance_identity,required_007,required_008,required_009,required_010,required_011,required_012,native_build,required_016,required_017,required_018,required_019,required_020,required_021,required_022,required_023,required_042,required_043,vsq_capture_collect,vsq_capture_seed_upload,vsq_capture_restart_upload,required_024,required_025,required_026,required_027,complete_practice_windows,complete_practice_windows_verify,canonical_practice_windows,canonical_practice_windows_verify,required_032,management_catalog_windows,management_catalog_windows_verify,required_035,required_036,required_037,required_038,required_039,required_040,required_041,required_044,required_045,required_046,required_047,required_048,required_049,required_050,required_051,required_052,required_053,required_054,required_055,native_transfer,native_transfer_upload,native_transfer_identity
+          ACCEPTANCE_REQUIRED_STEPS: required_001,acceptance_source,required_003,required_004,required_005,acceptance_identity,required_007,required_008,required_009,required_010,required_011,required_012,native_build,required_016,required_017,required_018,required_019,required_020,required_021,required_022,required_023,required_042,required_043,vsq_capture_collect,vsq_capture_seed_upload,vsq_capture_restart_upload,required_024,required_025,required_026,required_027,complete_practice_windows,complete_practice_windows_verify,canonical_practice_windows,canonical_practice_windows_verify,required_032,management_catalog_windows,management_catalog_windows_verify,required_035,build_diagnostics_windows,build_diagnostics_windows_verify,required_036,required_037,required_038,required_039,required_040,required_041,required_044,required_045,required_046,required_047,required_048,required_049,required_050,required_051,required_052,required_053,required_054,required_055,native_transfer,native_transfer_upload,native_transfer_identity
         run: python scripts/native-acceptance-join.py steps
   native-package:
     # Candidate creation is suppressed unless every exact-source producer succeeds.
@@ -1410,6 +1441,11 @@ jobs:
           $bulkProof=Get-Content -Raw desktop-bulk-import/native-bulk-import-files.json | ConvertFrom-Json
           $currentTree=(git rev-parse 'HEAD^{tree}').Trim()
           $currentExe=(Get-FileHash target/release/worldmusichub-desktop.exe -Algorithm SHA256).Hash.ToLower()
+          $env:WMH_BUILD_DIAGNOSTICS_EXECUTABLE=(Resolve-Path 'target/release/worldmusichub-desktop.exe').Path
+          node scripts/verify-native-build-diagnostics.mjs --check desktop-build-diagnostics
+          if ($LASTEXITCODE -ne 0) { throw 'Retained native diagnostics source/process/privacy proof failed' }
+          $diagnosticProof=Get-Content -Raw desktop-build-diagnostics/build-diagnostics-proof.json | ConvertFrom-Json
+          if ($diagnosticProof.source_sha -cne '${{ github.sha }}' -or $diagnosticProof.source_tree -cne $currentTree -or $diagnosticProof.executable_sha256 -cne $currentExe -or $diagnosticProof.source_commit_count -ne [long](git rev-list --count HEAD)) { throw 'Diagnostics does not match the exact packaged source/count/executable' }
           if ($bulkProof.source_sha -cne '${{ github.sha }}' -or $bulkProof.source_tree -cne $currentTree -or $bulkProof.executable_sha256 -cne $currentExe) { throw 'Bulk-import evidence does not match the exact packaged source and executable' }
           node scripts/verify-native-clean-song-evidence.mjs --check desktop-clean-song
           if ($LASTEXITCODE -ne 0) { throw 'Native clean-song exact-source proof failed' }
@@ -1598,9 +1634,9 @@ jobs:
           const fs = require('node:fs');
           const jobs = ['bulk-import-browser', 'windows-pure-checks', 'native-feature-acceptance', 'native-package'];
           const mandatorySteps = {
-            'bulk-import-browser': ['producer_gate', 'management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify', 'complete_practice_protocol', 'complete_practice_browser', 'canonical_practice_protocol', 'canonical_practice_browser_720', 'canonical_practice_browser_720_verify', 'canonical_practice_browser_640', 'canonical_practice_browser_640_verify'],
+            'bulk-import-browser': ['producer_gate', 'native_clean_profile_routing', 'management_pack_browser', 'management_catalog_browser', 'management_catalog_browser_verify', 'complete_practice_protocol', 'complete_practice_browser', 'canonical_practice_protocol', 'canonical_practice_browser_720', 'canonical_practice_browser_720_verify', 'canonical_practice_browser_640', 'canonical_practice_browser_640_verify'],
             'windows-pure-checks': ['producer_gate'],
-            'native-feature-acceptance': ['producer_gate', 'management_catalog_windows', 'management_catalog_windows_verify', 'complete_practice_windows', 'complete_practice_windows_verify', 'canonical_practice_windows', 'canonical_practice_windows_verify'],
+            'native-feature-acceptance': ['producer_gate', 'management_catalog_windows', 'management_catalog_windows_verify', 'complete_practice_windows', 'complete_practice_windows_verify', 'canonical_practice_windows', 'canonical_practice_windows_verify', 'build_diagnostics_windows', 'build_diagnostics_windows_verify'],
             'native-package': ['producer_gate', 'native_full_portable', 'native_full_upload', 'native_runtime_package', 'native_runtime_verify', 'native_runtime_startup', 'native_runtime_delivery', 'native_runtime_delivery_verify', 'native_runtime_upload', 'native_runtime_evidence'],
           };
           const needs = JSON.parse(process.env.ACCEPTANCE_NEEDS);
