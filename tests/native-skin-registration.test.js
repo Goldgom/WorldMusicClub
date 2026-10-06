@@ -20,6 +20,8 @@ test('skin registration reuses the existing Windows host with fixed three-phase 
 test('optional skin workflow uses only its frozen preview branch or dispatch and excludes owned profiles',()=>{
   const workflow=read('.github/workflows/native-skin.yml');
   assert.match(workflow,/workflow_dispatch:/);assert.match(workflow,/push:\n    branches: \['preview\/native-skin'\]/);assert.doesNotMatch(workflow,/\bpull_request:|continue-on-error|gh release|permissions:\s*contents:\s*write/);
+  const yaml=workflow.indexOf('python -m pip install PyYAML==6.0.3'),nodeChecks=workflow.indexOf('node --test tests/native-skin-acceptance.test.js');
+  assert.ok(workflow.indexOf('uses: actions/setup-python@')>=0&&workflow.indexOf('uses: actions/setup-python@')<yaml&&yaml<nodeChecks,'Declared YAML validation dependency must be installed before the Node workflow checks');
   assert.equal((workflow.match(/cargo build -p worldmusichub-desktop --release --locked/g)||[]).length,1);
   assert.match(workflow,/windows-desktop-acceptance.ps1 -Executable target\/release\/worldmusichub-desktop.exe[^\n]*-Scenario skin/);
   assert.match(workflow,/WMH_SKIN_EXECUTABLE: \$\{\{ github.workspace \}\}\/target\/release\/worldmusichub-desktop.exe/);
