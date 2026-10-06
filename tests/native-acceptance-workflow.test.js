@@ -66,6 +66,83 @@ function gateRuns(step, { failed = false, cancelled = false, outcomes = {} } = {
   return clauses.every(Boolean);
 }
 
+const nativeScenarioOutputs = {
+  desktop: 'desktop-acceptance', 'song-folder': 'desktop-song-folder', 'bulk-import': 'desktop-bulk-import',
+  'clean-song': 'desktop-clean-song', 'vsq-song': 'desktop-vsq-song', 'performance-song': 'desktop-performance-song',
+  'pitch-bend': 'desktop-pitch-bend', authoring: 'desktop-authoring', 'basic-key': 'desktop-basic-key',
+  'complete-practice': 'desktop-complete-practice', 'canonical-practice': 'desktop-canonical-practice',
+  'vsq-authoring': 'desktop-vsq-authoring', 'library-catalog': '$env:RUNNER_TEMP/library-management-windows',
+};
+const nativeScenarioGuard = "${{ !cancelled() && steps.native_build.outcome == 'success' }}";
+function assertIndependentNativeScenarios(block) {
+  assert.match(block, /^    timeout-minutes: 60$/m);
+  assert.doesNotMatch(block, /^    continue-on-error:/m);
+  const jobSteps = steps(block), buildIndex = jobSteps.findIndex(step => step.includes('id: native_build\n'));
+  assert.ok(buildIndex >= 0);
+  assert.match(jobSteps[buildIndex], /run: cargo build -p worldmusichub-desktop --release --locked/);
+  assert.doesNotMatch(jobSteps[buildIndex], /^        (?:if|continue-on-error):/m);
+  assert.equal((block.match(/\bcargo build\b/g) || []).length, 1, 'All scenarios use one immutable build');
+  const packageIndex = jobSteps.findIndex(step => step.includes('id: native_package\n'));
+  const scenarios = jobSteps.flatMap((step, index) => {
+    const command = step.match(/^\s+(?:run: )?\.\/scripts\/windows-desktop-acceptance\.ps1 (.+)$/m)?.[1];
+    if (!command) return [];
+    const args = command.match(/^-Executable (\S+) -OutputDirectory ("[^"]+"|\S+)(?: -Scenario ([\w-]+))?$/);
+    assert.ok(args, 'Every scenario has an explicit executable and isolated output');
+    const [, executable, output, scenario = 'desktop'] = args;
+    assert.equal(executable, 'target/release/worldmusichub-desktop.exe');
+    assert.ok(index > buildIndex && index < packageIndex, `${scenario} gates packaging`);
+    assert.equal(step.match(/^        if: (.+)$/m)?.[1], nativeScenarioGuard);
+    assert.match(step, /^        shell: pwsh$/m);
+    assert.doesNotMatch(step, /^        continue-on-error:/m);
+    return [{scenario, output: output.replace(/^"|"$/g, ''), step}];
+  });
+  assert.deepEqual(scenarios.map(row => row.scenario), Object.keys(nativeScenarioOutputs), 'No lost or duplicate native scenarios');
+  const roots = scenarios.map(row => row.output.replaceAll('\\', '/').toLowerCase());
+  for (const [index, root] of roots.entries()) {
+    for (const other of roots.slice(index + 1)) {
+      assert.ok(root !== other && !root.startsWith(`${other}/`) && !other.startsWith(`${root}/`), 'Scenario output, fixtures, data and profile roots cannot overlap');
+    }
+  }
+  assert.deepEqual(Object.fromEntries(scenarios.map(({scenario, output}) => [scenario, output])), nativeScenarioOutputs);
+  for (const step of [jobSteps[packageIndex], jobSteps.find(step => step.includes('Expand-Archive -Path')),
+    jobSteps.find(step => step.includes('name: WorldMusicClub-Native-Candidate-'))]) {
+    assert.ok(step);
+    assert.doesNotMatch(step, /^        (?:if|continue-on-error):/m);
+    assert.equal(gateRuns(step, {failed: true, outcomes: {native_build: 'success'}}), false);
+  }
+  return scenarios;
+}
+
+test('each isolated native scenario still runs after a failed peer and requires the exact successful build', () => {
+  const scenarios = assertIndependentNativeScenarios(jobBlock(jobIds[1]));
+  for (const {scenario, step} of scenarios) {
+    assert.equal(gateRuns(step, {failed: true, outcomes: {native_build: 'success'}}), true, scenario);
+    assert.equal(gateRuns(step, {cancelled: true, outcomes: {native_build: 'success'}}), false, scenario);
+    for (const outcome of ['failure', 'cancelled', 'skipped', undefined]) {
+      assert.equal(gateRuns(step, {failed: true, outcomes: {native_build: outcome}}), false, `${scenario}: ${outcome}`);
+    }
+  }
+});
+
+test('native independence contract rejects lost gates, shared folders, stale builds and weakened package admission', () => {
+  const block = jobBlock(jobIds[1]), scenarios = assertIndependentNativeScenarios(block);
+  const generic = scenarios[0].step;
+  for (const mutant of [
+    block.replace(generic, ''),
+    block.replace('desktop-clean-song -Scenario', 'desktop-bulk-import -Scenario'),
+    block.replace('desktop-clean-song -Scenario', 'desktop-bulk-import/nested -Scenario'),
+    block.replace(generic, generic.replace('target/release/worldmusichub-desktop.exe', 'downloaded/stale.exe')),
+    block.replace(generic, generic.replace(/^        if: .+\n/m, '')),
+    block.replace(generic, generic.replace('!cancelled() && ', '')),
+    block.replace(generic, generic.replace('!cancelled()', 'success()')),
+    block.replace(generic, generic.replace(nativeScenarioGuard, '${{ !cancelled() }}')),
+    block.replace(generic, generic.replace('        shell:', '        continue-on-error: true\n        shell:')),
+    block.replace('    timeout-minutes: 60', '    timeout-minutes: 120'),
+    block.replace('        id: native_package\n', `        id: native_package\n        if: ${nativeScenarioGuard}\n`),
+    block.replace(generic, `      - run: cargo build -p worldmusichub-desktop --release --locked\n${generic}`),
+  ]) assert.throws(() => assertIndependentNativeScenarios(mutant));
+});
+
 const independentGates = [
   { job: jobIds[0], basic: 'node scripts/hosted-basic-key-check.mjs',
     target: 'node scripts/hosted-vsq-authoring-check.mjs',
@@ -277,7 +354,8 @@ test('all real checks fail closed and failure evidence survives independently', 
   for (const scenario of ['song-folder', 'bulk-import', 'clean-song', 'vsq-song', 'performance-song', 'pitch-bend', 'authoring']) {
     const index = nativeSteps.findIndex(step => step.includes(`-Scenario ${scenario}`));
     assert.ok(index > 0 && index < packageIndex, `${scenario} gates packaging`);
-    assert.doesNotMatch(nativeSteps[index], /^        (?:if|continue-on-error):/m);
+    assert.doesNotMatch(nativeSteps[index], /^        continue-on-error:/m);
+    assert.equal(gateRuns(nativeSteps[index], {failed: true, outcomes: {native_build: 'success'}}), true);
   }
 });
 
@@ -356,7 +434,8 @@ test('pitch browser heights and actual Windows scenario are mandatory before the
   const packageIndex = nativeSteps.findIndex(step => step.includes('id: native_package'));
   assert.ok(scenarioIndex > 0 && scenarioIndex < packageIndex);
   assert.match(nativeSteps[scenarioIndex], /-Executable target\/release\/worldmusichub-desktop\.exe -OutputDirectory desktop-pitch-bend -Scenario pitch-bend/);
-  assert.doesNotMatch(nativeSteps[scenarioIndex], /^        (?:if|continue-on-error):/m);
+  assert.doesNotMatch(nativeSteps[scenarioIndex], /^        continue-on-error:/m);
+  assert.equal(gateRuns(nativeSteps[scenarioIndex], {failed: true, outcomes: {native_build: 'success'}}), true);
   const pack = nativeSteps[packageIndex];
   assert.match(pack, /node scripts\/verify-native-pitch-bend-evidence\.mjs --check desktop-pitch-bend/);
   assert.match(pack, /if \(\$LASTEXITCODE -ne 0\) \{ throw 'Native pitch-bend exact-source proof failed' \}/);

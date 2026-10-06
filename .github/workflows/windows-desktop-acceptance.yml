@@ -640,31 +640,43 @@ jobs:
       - name: Bound startup, offline engraving and normal native close
         shell: pwsh
         run: ./scripts/windows-desktop-smoke.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-startup
+      # Each scenario owns fixtures, data, profiles and processes beneath its
+      # distinct output root. Keep collecting exact-build evidence after failure;
+      # checks still fail the job and default success() still gates packaging.
       - name: Native files, restart, keyboard, library and close acceptance
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-acceptance
       - name: Native song folders and fresh-profile restart acceptance
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-song-folder -Scenario song-folder
       - name: Native batch import, source retention and unified pack acceptance
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-bulk-import -Scenario bulk-import
       - name: Native complete clean song, decoded media, export and new-process persistence
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-clean-song -Scenario clean-song
       - name: Native VSQ chooser, explicit choice, exact following, export and fresh-process reset
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-vsq-song -Scenario vsq-song
       - name: Native complete performance chooser, reference controls, exact export and fresh-process restart
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-performance-song -Scenario performance-song
       - name: Native original pitch policy, source-clock bends and held-state reconstruction
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-pitch-bend -Scenario pitch-bend
       - name: Native original authoring pair, explicit saves, exact export and fresh-process restart
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-authoring -Scenario authoring
       - name: Native original basic-key inventory, keyboard and restart
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/windows-desktop-acceptance.ps1 -Executable target/release/worldmusichub-desktop.exe -OutputDirectory desktop-basic-key -Scenario basic-key
       - name: Native complete-practice trusted popup, key input, labels and measured viewport
