@@ -1,0 +1,148 @@
+{
+  "base_commit": "1db03b10e165346d8bfc0b42de995d559491d312",
+  "description": "Original-fixture native stdio API + production app/Mod/DSP DOM evidence. The driver was built from the base; the only changed production file in the fixed run was web/transport.js. This is not browser, physical audio, or Windows acceptance.",
+  "before": {
+    "source_sha": "1db03b10e165346d8bfc0b42de995d559491d312",
+    "driver_sha256": "3803140ee4ab5360ce390e04943e794509a4d5d15320397585e4792d1c28481c",
+    "browser": false,
+    "native_window": false,
+    "physical_audio": false,
+    "transitions": [
+      {
+        "source": "json",
+        "score_id": "original-canonical-four-part",
+        "target_count": 2,
+        "history_isolated": true,
+        "display_mute_preserves_take": true,
+        "rapid_resume_pause": {
+          "before_ms": 70,
+          "after_ms": 70,
+          "ok": true
+        }
+      },
+      {
+        "source": "basic",
+        "score_id": "midi-basic-7e5fea609420469fc4178cb8f1d740c80a3f07d0833632794aa0cd68375e5315",
+        "target_count": 3,
+        "history_isolated": true,
+        "display_mute_preserves_take": true,
+        "rapid_resume_pause": {
+          "before_ms": 69.875,
+          "after_ms": 19.875,
+          "ok": false
+        }
+      },
+      {
+        "source": "xml",
+        "score_id": "musicxml-518fe920dc415ae6",
+        "target_count": 2,
+        "history_isolated": true,
+        "display_mute_preserves_take": true,
+        "rapid_resume_pause": {
+          "before_ms": 70,
+          "after_ms": 70,
+          "ok": true
+        }
+      },
+      {
+        "source": "vsq",
+        "score_id": "vsq-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "target_count": 1,
+        "history_isolated": true,
+        "display_mute_preserves_take": true,
+        "rapid_resume_pause": {
+          "before_ms": 70.00000000000023,
+          "after_ms": 20.000000000000227,
+          "ok": false
+        }
+      },
+      {
+        "source": "json",
+        "score_id": "original-canonical-four-part",
+        "target_count": 2,
+        "history_isolated": true,
+        "display_mute_preserves_take": true,
+        "rapid_resume_pause": {
+          "before_ms": 70,
+          "after_ms": 70,
+          "ok": true
+        }
+      }
+    ],
+    "transpose_restore": true,
+    "ok": false,
+    "transport_sha256": "766fdbdf962606d955a91922995fe1a797ceeb917418bd2374b439f74796b2cf"
+  },
+  "after": {
+    "source_sha": "1db03b10e165346d8bfc0b42de995d559491d312",
+    "driver_sha256": "3803140ee4ab5360ce390e04943e794509a4d5d15320397585e4792d1c28481c",
+    "transport_sha256": "2a0d30e63f62f2e20e5c9b31ba24bc9fb30c84876866707d83cd36579d233596",
+    "browser": false,
+    "native_window": false,
+    "physical_audio": false,
+    "transitions": [
+      {
+        "source": "json",
+        "score_id": "original-canonical-four-part",
+        "target_count": 2,
+        "history_isolated": true,
+        "display_mute_preserves_take": true,
+        "rapid_resume_pause": {
+          "before_ms": 70,
+          "after_ms": 70,
+          "ok": true
+        }
+      },
+      {
+        "source": "basic",
+        "score_id": "midi-basic-7e5fea609420469fc4178cb8f1d740c80a3f07d0833632794aa0cd68375e5315",
+        "target_count": 3,
+        "history_isolated": true,
+        "display_mute_preserves_take": true,
+        "rapid_resume_pause": {
+          "before_ms": 69.875,
+          "after_ms": 69.875,
+          "ok": true
+        }
+      },
+      {
+        "source": "xml",
+        "score_id": "musicxml-518fe920dc415ae6",
+        "target_count": 2,
+        "history_isolated": true,
+        "display_mute_preserves_take": true,
+        "rapid_resume_pause": {
+          "before_ms": 70,
+          "after_ms": 70,
+          "ok": true
+        }
+      },
+      {
+        "source": "vsq",
+        "score_id": "vsq-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "target_count": 1,
+        "history_isolated": true,
+        "display_mute_preserves_take": true,
+        "rapid_resume_pause": {
+          "before_ms": 70.00000000000023,
+          "after_ms": 70,
+          "ok": true
+        }
+      },
+      {
+        "source": "json",
+        "score_id": "original-canonical-four-part",
+        "target_count": 2,
+        "history_isolated": true,
+        "display_mute_preserves_take": true,
+        "rapid_resume_pause": {
+          "before_ms": 70,
+          "after_ms": 70,
+          "ok": true
+        }
+      }
+    ],
+    "transpose_restore": true,
+    "ok": true
+  }
+}

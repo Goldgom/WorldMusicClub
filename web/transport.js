@@ -3,7 +3,12 @@ export class Transport {
   constructor() { this.reset(); }
   reset() { this.position = 0; this.startedAt = null; this.running = false; this.cursor = 0; this.completed = false; this.hasStarted = false; }
   seek(position) { this.reset(); this.position = position; }
-  time(now) { return this.running ? this.position + now - this.startedAt : this.position; }
+  // A future audio anchor has not consumed any source time. Keep the saved
+  // position (including count-in) until that anchor, even if paused immediately.
+  time(now) {
+    if (!this.running || now <= this.startedAt) return this.position;
+    return this.position + now - this.startedAt;
+  }
   start(now, notes, countIn = 0) {
     if (this.running) return;
     if (this.completed) this.reset();

@@ -72,6 +72,9 @@ test('rounded native range readback cannot change the exact source clock or fake
 test('signed display clock and written-note lookup share count-in, exact zero, grace and finished frames',async()=>{
  const {app,fixture,time}=await setup({rangeSerialization:true});
  try{
+  // LinkeDOM does not initialize the checked property from the HTML attribute.
+  // Exercise the real count-in, rather than the future audio admission lead.
+  app.$('count-in').checked=true;
   await app.click('vsq-listen-basic');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');
   if(app.$('notation-toggle').getAttribute('aria-expanded')!=='true')await app.click('notation-toggle');
   await app.click('jianpu-button');await app.until(()=>app.$('written-cursor-status').dataset.status==='ready');
@@ -80,7 +83,7 @@ test('signed display clock and written-note lookup share count-in, exact zero, g
   const noteIds=()=>JSON.parse(app.$('written-cursor-status').dataset.sourceNoteIds);
   for(const offset of [-.125,0,.125]){
    time(zeroWall+offset);app.frame();const clock=readPlaybackClock(app.document);
-   assert.equal(clock.transportPositionMs,offset);assert.equal(clock.positionMs,Math.max(0,offset));
+   assert.ok(Math.abs(clock.transportPositionMs-offset)<1e-9);assert.ok(Math.abs(clock.positionMs-Math.max(0,offset))<1e-9);
    assert.equal(clock.running,true);assert.equal(clock.completed,false);
    assert.deepEqual(noteIds(),offset<0?[]:['vsq-t1-ID#0001','vsq-t2-ID#0001']);
   }
