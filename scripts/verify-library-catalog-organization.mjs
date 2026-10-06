@@ -23,7 +23,7 @@ function nativeQuery(report, value, request, generation, libraryId) {
   return matches;
 }
 
-export function validateCatalogOrganization(reports, {initial, restore, selectedIds, fixture, allApi}) {
+export function validateCatalogOrganization(reports, {initial, restore, selectedIds, fixture, allApi, requireMemberships = false}) {
   const [seed, restart, final] = reports, org = restart.organization;
   assert.ok(org && final.organization, 'Required custom-pack organization evidence is missing');
   assert.equal(seed.organization, undefined, 'Organization must start only after the original restart restore gate');
@@ -36,14 +36,14 @@ export function validateCatalogOrganization(reports, {initial, restore, selected
   const marker = {restore, create, rename, add};
   assert.deepEqual(final.profile.organization_before_open, marker, 'Exact organization records did not survive localStorage restart');
   assert.deepEqual(final.operations.restore, restore, 'Final native restore probe must retain the original restore record');
-  assert.deepEqual(final.profile.recovery_before_open, add); assert.deepEqual(final.profile.recovery_after_open, add);
-  const finalLookup = final.api_trace.find(row => row.path === '/api/library/catalog/operation' && row.source === 'app' && row.delivery === 'forwarded' && row.request.operation_id === add?.operation_id && row.response?.outcome === 'committed');
+  if (requireMemberships) { assert.equal(final.profile.recovery_before_open, null); assert.equal(final.profile.recovery_after_open, null); } else { assert.deepEqual(final.profile.recovery_before_open, add); assert.deepEqual(final.profile.recovery_after_open, add); }
+  const finalLookup = final.api_trace.find(row => row.path === '/api/library/catalog/operation' && row.source === (requireMemberships ? 'probe' : 'app') && row.delivery === 'forwarded' && row.request.operation_id === add?.operation_id && row.response?.outcome === 'committed');
   assert.ok(finalLookup, 'Final restart must reconcile the original add-memberships operation');
-  checkedCatalogResult(finalLookup.response, add, {lookup: true}); assert.equal(finalLookup.response.generation, 5);
+  checkedCatalogResult(finalLookup.response, add, {lookup: true}); assert.equal(finalLookup.response.generation, requireMemberships ? 6 : 5);
   nativeQuery(restart, restart.catalog.restored, {view: 'active', limit: 100}, 2, libraryId);
   assert.deepEqual(restart.catalog.restored.counts, fixture.spec.expected.restored);
   assert.deepEqual(orderedRows(restart.catalog.restored.rows), orderedRows(initial.rows), 'Original restored checkpoint changed before custom-pack organization');
-  const extraPreviews = allApi.filter(row => row.path === '/api/library/catalog/preview' && organizationKinds.includes(row.request?.action));
+  const extraPreviews = allApi.filter(row => row.path === '/api/library/catalog/preview' && organizationKinds.includes(row.request?.action) && (!requireMemberships || row.phase === 'catalog-restart'));
   assert.equal(extraPreviews.length, 3, 'Exactly one native review of each organization operation is required');
   let previousDigest = restart.catalog.restored.catalog_digest, previousCommitSequence = 0;
   for (const [index, record] of records.entries()) {
@@ -97,20 +97,20 @@ export function validateCatalogOrganization(reports, {initial, restore, selected
   assert.ok(emptyQueries.some(row => row.sequence < extraPreviews[1].sequence), 'Empty custom pack must be observed before rename');
   assert.ok(restart.screenshots['user-pack-empty-review'] < extraPreviews[1].action_sequence);
   for (const report of [restart, final]) {
-    const value = report.organization;
+    const value = report.organization, generation = requireMemberships && report === final ? 7 : 5, digest = requireMemberships && report === final ? final.memberships?.recovered?.catalog_digest : previousDigest;
     assert.deepEqual(Object.keys(value).sort(), ['create', 'rename', 'add', 'empty', 'packs', 'filtered', 'readonly', 'visible_editions', 'filter_action', 'review_focus'].sort());
     for (const key of ['create', 'rename', 'add']) assert.deepEqual(value[key], org[key], 'Final organization operation identity changed');
     if (report === final) assert.equal(value.empty, null);
-    nativeQuery(report, value.packs, {view: 'packs', limit: 100}, 5, libraryId);
-    const queries = nativeQuery(report, value.filtered, {view: 'active', collection_id: target, limit: 100}, 5, libraryId);
-    for (const checkpoint of [value.packs, value.filtered, report.catalog.active, report.catalog.trash]) { assert.equal(checkpoint.catalog_digest, previousDigest); assert.equal(checkpoint.generation, 5); assert.deepEqual(checkpoint.counts, {...fixture.spec.expected.restored, packs: 4, memberships: 6}); }
+    nativeQuery(report, value.packs, {view: 'packs', limit: 100}, generation, libraryId);
+    const queries = nativeQuery(report, value.filtered, {view: 'active', collection_id: target, limit: 100}, generation, libraryId);
+    for (const checkpoint of [value.packs, value.filtered, report.catalog.active, report.catalog.trash]) { assert.equal(checkpoint.catalog_digest, digest); assert.equal(checkpoint.generation, generation); assert.deepEqual(checkpoint.counts, {...fixture.spec.expected.restored, packs: 4, memberships: 6}); }
     assert.deepEqual([...value.packs.rows].sort((a, b) => a.collection_id.localeCompare(b.collection_id)), expectedPacks(expectedRows, 'rr'));
     assert.deepEqual(orderedRows(report.catalog.active.rows), orderedRows(expectedRows), 'Custom organization altered unrelated original song/source memberships');
     assert.deepEqual(orderedRows(value.filtered.rows), orderedRows(expectedRows.filter(row => selectedIds.includes(row.edition_id))));
     assert.deepEqual(value.visible_editions, value.filtered.rows.map(row => row.edition_id).sort(), 'Actual filtered DOM differs from native target collection');
     assert.deepEqual(value.readonly, {imported_collection_ids: importedIds, rename_target_ids: [target], add_target_ids: [target], imported_rename_controls: []}, 'Imported source groups acquired a mutation control');
     const open = actionAt(report, value.filter_action, 'management-catalog-open-pack'); assert.equal(open.collection_id, target);
-    assert.ok(report.api_trace.some(row => row.path === '/api/library/catalog/query' && row.source === 'app' && row.action_sequence === value.filter_action && row.request.view === 'active' && row.request.collection_id === target && row.response?.catalog_digest === previousDigest && sameCatalogValue(orderedRows(row.response.rows), orderedRows(value.filtered.rows))), 'Pack filter lacks its actual trusted app query');
+    assert.ok(report.api_trace.some(row => row.path === '/api/library/catalog/query' && row.source === 'app' && row.action_sequence === value.filter_action && row.request.view === 'active' && row.request.collection_id === target && row.response?.catalog_digest === digest && sameCatalogValue(orderedRows(row.response.rows), orderedRows(value.filtered.rows))), 'Pack filter lacks its actual trusted app query');
     assert.ok(report.screenshots[report === restart ? 'user-pack-filtered' : 'persisted-user-pack'] >= value.filter_action);
     if (report === restart) assert.ok(value.filter_action > restart.screenshots['user-pack-add-review']);
   }

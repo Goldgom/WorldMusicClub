@@ -9,7 +9,9 @@ three editions, three imported pack groups and four memberships.
 
 `catalog-seed`, `catalog-restart` and `catalog-final` use distinct native
 processes and one actual persisted browser profile. They must preserve the
-renderer recovery pointer and a saved free recording across both restarts.
+renderer recovery pointer across the first restart and a saved free recording
+across both restarts. The second restart deliberately starts without the owned
+renderer recovery key, so native-journal Undo discovery is tested independently.
 The selected shared legacy and clean editions move to Trash together, removing
 three memberships while retaining one active edition. An actual committed reply
 is lost; a deliberately mismatched operation lookup must not confirm it. The
@@ -19,10 +21,13 @@ absent, and retries the identical restore request. It then creates an empty
 custom pack with the real keyboard name `r`, renames that same pack to `rr`, adds
 the two exact restored editions, opens the pack filter and exports the selected
 legacy and clean formats separately. Imported source groups remain excluded from
-rename/add destination controls. The final process makes no writes: it reconciles
-the original addition and restore receipts and proves the named custom pack and
-its exact two memberships persisted. It reports three active editions, zero in
-Trash, all four original memberships and two additional custom memberships.
+rename/add destination controls. Restart then removes those two custom memberships
+and clears the owned recovery key. The final process discovers and explicitly
+undoes that removal, checks the original organization checkpoint, and performs
+the required destination-sharing, uncertain move, exact inverse and conflicting
+Undo sequence described below. Its final native inventory contains three active
+editions, zero in Trash, all four original memberships and three custom memberships
+across two custom packs.
 
 The verifier rejects missing/reordered phases, absent source binding, source
 files not contained in the reported Git commit, changed module hashes, a missing
@@ -40,14 +45,15 @@ The original pre-bootstrap snapshot has an exact, fixture-derived file allowlist
 All original scores, metadata, source payloads, import inventories, receipts,
 backups and clean media remain byte-identical. Reimport may add exactly two
 receipts and their two matching backups. Journal additions must form precisely
-the bootstrap, Trash, restore, create, rename and addition generations. Both copies of every generation,
+the bootstrap, Trash, restore, create, rename and addition generations, followed
+by the exact eight required membership-proof operations. Both copies of every generation,
 their manifest links, state hashes, native receipt previews and recorded API
 state digests are verified. An unfinished journal stage is rejected.
 
 The user-pack extension reuses the existing Windows window, trusted `click`,
-`key-r` and `select-last` roles. It introduces no arbitrary text injection or new
+`key-r`, `select-last` and bounded `select-second` roles. It introduces no arbitrary text injection or new
 window role. Both hosted and native gates run the same
-`runCatalogUserPackAcceptance` function. Each new review must focus its title
+`runCatalogUserPackAcceptance` and `runCatalogMembershipAcceptance` functions. Each new review must focus its title
 once and make that title visible before the next screenshot action; observations
 bind the initiating trusted action and current viewport. Cancel restores its
 initiating control, covered separately by the keyboard DOM regression.
@@ -98,8 +104,11 @@ newer build. The script does not invoke Cargo.
 `npm run test:user-pack-acceptance-flow` rehearses the exact shared user-pack
 function using the production DOM and an already-built native Rust stdin driver.
 It initializes and exercises Trash/restore before organization, runs the strict
-six-generation journal validator against that owned library, and restarts a new
-process for the read-only pack/filter check. Set `WMH_USER_PACK_FLOW_REPORT` to
+six-generation organization journal check against that owned library, removes
+the selected custom memberships and clears the renderer recovery key, then starts
+a new native process for Undo discovery and the remaining membership sequence.
+The final strict journal check covers all fourteen generations, and exported
+current source/take contents must remain equal. Set `WMH_USER_PACK_FLOW_REPORT` to
 save its report. It explicitly labels its input and geometry as synthetic; it is
 not a hosted-browser or Windows acceptance result. It needs no browser, GUI,
 network listener, new music inputs, or shared build-target copy.
@@ -246,3 +255,66 @@ verifier requires that exact sequence and binds each picker plus its following
 Save action to one preview/commit pair with the chosen original request bytes
 and response source identity. Directory ordering and JSON serialization cannot
 silently change this protocol.
+
+## Membership extension after the original organization checkpoint
+
+The shared `library-catalog` renderer now carries Remove, Move and Undo through
+both existing hosted Chromium and Windows WebView2 entry points. It retains the
+three original native processes, fixture archives, import/Trash/restore checks,
+source and backup hashes, selected exports, input ownership and per-action image
+requirements. Historical six-generation bundles remain historical evidence; they
+cannot satisfy the new required membership gate.
+
+- `catalog-seed` keeps the original initialization, shared song Trash and source,
+  practice-take and free-recording preservation proof
+- `catalog-restart` keeps restore, stale-read fencing and create/rename/add/export,
+  then reviews and removes the exact two members of the new custom pack. It
+  deliberately erases only the owned fixture's renderer recovery key after the
+  native receipt is verified, retaining the removal identity in the proof marker
+- `catalog-final` first proves that native status offers Undo while the renderer
+  recovery key is absent. It reviews and confirms that inverse, verifies the
+  original custom-pack checkpoint again, then creates a second custom pack,
+  pre-adds one selected edition, and reviews a mixed-edition move. The actual
+  durable move reply is lost; the UI must reconcile the same operation ID. Its
+  Undo preserves the preexisting destination membership. A later remove/re-add
+  cycle must show a disabled Undo with its reason. A paused real practice source
+  and settled take are exported before and after this final sequence
+
+The additional eight operations extend the journal from generations 0–5 through
+0–13. `verify-library-catalog-memberships.mjs` requires their exact order, native
+preview/commit/lookup bytes, user-input action bindings, focused review rectangles,
+source/destination IDs, source sharing, destination duplicate effects, unchanged
+song/source/Trash records, original membership positions/timestamps, fresh native
+Undo discovery and later conflict. The main verifier requires this extension; an
+absent membership report cannot fall back to the previous gate.
+
+Pack dropdowns are ordered by generated collection identity. The harness reads
+and verifies the exact option IDs, then uses the existing bounded `select-second`
+(Home, Down, Enter, first nonplaceholder) or `select-last` (End, Enter) native key
+sequence. It never assigns a value in a hosted/native run. The ordinary
+organization selector keeps its earlier stricter blank-to-single-target gate.
+No phase or action-count limit is expanded: seed/restart/final retain 64 actions;
+the new membership exercise uses 28 actions, the restart-phase bound is 57 and
+the full final-phase bound is 62.
+Every accepted native action still needs its own client screenshot and geometry.
+The Windows host source allowlist must include all 52 verifier-bound files.
+
+Development checks, without a browser, listener or GUI:
+
+```sh
+node --test tests/library-catalog-membership-renderer.test.js \
+  tests/library-catalog-membership-acceptance.test.js \
+  tests/library-catalog-acceptance.test.js \
+  tests/library-catalog-acceptance-renderer.test.js
+WMH_NATIVE_IMPORT_DRIVER=/absolute/native_import_driver \
+  WMH_USER_PACK_FLOW_REPORT=/absolute/membership-flow.json \
+  npm run test:user-pack-acceptance-flow
+```
+
+The stdio rehearsal uses the same production DOM/helper, a fresh original native
+library and process restart, checks all 14 durable generations and exact saved
+source/take equality, and explicitly reports mocked audio and synthetic input /
+geometry. It is not a hosted-browser or Windows acceptance substitute. The
+existing `npm run test:library-catalog-hosted` and Windows `library-catalog`
+scenario are still the actual-window entry points, run from a clean frozen source
+with its freshly built driver/executable and independently bound source hashes.

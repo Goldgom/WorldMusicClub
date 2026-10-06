@@ -10,6 +10,8 @@ import {authoredLegacyPack, storedZip, STREAMING_ZIP_SCRIPT} from './native-impo
 import {authoredCleanPackage} from './clean-song-package-fixtures.js';
 import {catalogServer} from './library-catalog-fixtures.js';
 import {userPackServer} from './library-user-pack-fixtures.js';
+import {membershipPackServer} from './library-pack-membership-fixtures.js';
+import {syntheticMembershipProtocol} from './library-catalog-membership-acceptance-fixtures.js';
 import {organizationJournalFixture} from './library-catalog-organization-journal-fixtures.js';
 import {inspectOriginalManagementZip} from '../scripts/pack-management-acceptance-fixtures.mjs';
 import {CATALOG_ACCEPTANCE_PHASES, originalCatalogAcceptanceFixtures, prepareLibraryCatalogFixtures, catalogSha256 as sha256} from '../scripts/prepare-library-catalog-acceptance.mjs';
@@ -123,9 +125,10 @@ test('synthetic in-memory PNG format fixtures exercise dimensions, CRC, pixels a
 });
 
 /** Generate protocol values through the isolated in-memory contract fixture, never a host/browser report. */
-async function protocol({organization = false} = {}) {
+async function protocol({organization = false, memberships = false} = {}) {
+  assert.ok(!memberships || organization, 'Synthetic membership extension requires the original organization sequence');
   const fixture = originalCatalogAcceptanceFixtures(), binding = sourceBinding(), runId = 'protocol-only-catalog-contract';
-  const server = await (organization ? userPackServer : catalogServer)({initialized: false});
+  const server = await (memberships ? membershipPackServer : organization ? userPackServer : catalogServer)({initialized: false});
   const packs = fixture.inputs.map(input => ({collection_id: `collection-${input.sha256.slice(0, 32)}`, import_pack_id: input.pack_id, name: input.filename, ...(organization ? {kind: 'imported'} : {})}));
   for (const [index, row] of server.rows.entries()) {
     row.score_id = index === 0 ? fixture.spec.legacy_ids[0] : index === 1 ? fixture.spec.clean_id : fixture.spec.legacy_ids[1];
@@ -195,19 +198,47 @@ async function protocol({organization = false} = {}) {
     }
     current.catalog.active = await query('active'); current.catalog.trash = await query('trash'); organizationRecords = {restore, create, rename, add};
   }
-  current = reports[2]; const finalRecord = organization ? organizationRecords.add : restore;
-  current.profile.recovery_before_open = structuredClone(finalRecord); current.profile.recovery_after_open = structuredClone(finalRecord);
-  await call('/api/library/catalog/operation', {library_id: initial.library_id, operation_id: restore.operation_id});
-  if (organization) {
-    current.operations.restore = structuredClone(restore); current.profile.organization_before_open = structuredClone(organizationRecords);
-    await call('/api/library/catalog/operation', {library_id: initial.library_id, operation_id: finalRecord.operation_id}, {source: 'app'});
-    current.organization = {...structuredClone(reports[1].organization), empty: null, review_focus: [], packs: await packsQuery(), ...await filterPack(organizationRecords.create.preview.request.action.pack_id)};
-    current.screenshots['persisted-user-pack'] = current.organization.filter_action;
+  if (memberships) {
+    await syntheticMembershipProtocol({server, reports, initial, records: [initialize, trash, restore, organizationRecords.create, organizationRecords.rename, organizationRecords.add]});
+  } else {
+    current = reports[2]; const finalRecord = organization ? organizationRecords.add : restore;
+    current.profile.recovery_before_open = structuredClone(finalRecord); current.profile.recovery_after_open = structuredClone(finalRecord);
+    await call('/api/library/catalog/operation', {library_id: initial.library_id, operation_id: restore.operation_id});
+    if (organization) {
+      current.operations.restore = structuredClone(restore); current.profile.organization_before_open = structuredClone(organizationRecords);
+      await call('/api/library/catalog/operation', {library_id: initial.library_id, operation_id: finalRecord.operation_id}, {source: 'app'});
+      current.organization = {...structuredClone(reports[1].organization), empty: null, review_focus: [], packs: await packsQuery(), ...await filterPack(organizationRecords.create.preview.request.action.pack_id)};
+      current.screenshots['persisted-user-pack'] = current.organization.filter_action;
+    }
+    current.catalog.active = await query('active'); current.catalog.trash = await query('trash');
   }
-  current.catalog.active = await query('active'); current.catalog.trash = await query('trash');
   for (const report of reports) { let order = 0; for (const row of report.api_trace) if (row.dispatched) row.dispatch_order = ++order; report.transport_settlement = {version: 1, status: 'complete', admitted: report.api_trace.length, dispatched: order, pending: 0, errors: [], late_admissions: []}; }
-  return {reports, options: {sourceBinding: binding, runId, fixture, requireOrganization: organization}};
+  return {reports, options: {sourceBinding: binding, runId, fixture, requireOrganization: organization, requireMemberships: memberships}};
 }
+
+test('assembled synthetic three-phase membership evidence preserves the original gates and strictly verifies all eight new edits', async () => {
+  const {reports, options} = await protocol({organization: true, memberships: true});
+  const proof = validateCatalogProtocolPhases(reports, options);
+  assert.equal(proof.membershipRecords.length, 8); assert.equal(proof.membershipRecords.at(-1).preview.next_generation, 13);
+  assert.equal(reports[1].catalog.active.generation, 5); assert.equal(reports[2].catalog.active.generation, 7);
+  assert.equal(reports[2].memberships.after_conflict.generation, 13);
+  assert.equal(proof.destinationPackId, reports[2].memberships.records.create_destination.preview.request.action.pack_id);
+  // These are authored protocol rejection cases, not screenshots or browser/native acceptance.
+  for (const [name, mutate] of [
+    ['missing restart membership proof', rows => { delete rows[1].memberships; }],
+    ['missing final membership proof', rows => { delete rows[2].memberships; }],
+    ['missing exact inverse receipt', rows => { delete rows[2].memberships.records.undo_after_restart; }],
+    ['edited final organization checkpoint', rows => { rows[2].organization.filtered.generation = 5; }],
+    ['stale membership checkpoint', rows => { rows[2].memberships.after_move.generation = 9; }],
+    ['recovery cache survives restart', rows => { rows[2].profile.recovery_before_open = rows[1].memberships.records.remove_before_restart; }],
+    ['edited capture coordinates', rows => { rows[1].memberships.records.remove_before_restart.preview.effects.removed_membership_snapshots[0].position++; }],
+    ['missing review screenshot', rows => { delete rows[2].screenshots['membership-move-review']; }],
+    ['wrong original source selection', rows => { rows[2].memberships.selected_ids = [rows[0].catalog.active.rows[0].edition_id]; }],
+    ['fabricated committed lookup', rows => { rows[2].api_trace.find(row => row.path.endsWith('/operation') && row.request.operation_id === rows[2].memberships.records.move.operation_id).response.catalog_digest = sha256('fabricated'); }],
+    ['missing native discovery action', rows => { rows[2].actions.find(row => row.control === 'management-catalog-undo-preview').trusted_clicks = 0; }],
+    ['conflicting inverse incorrectly enabled', rows => { rows[2].memberships.conflict.disabled = false; }],
+  ]) { const changed = structuredClone(reports); mutate(changed); assert.throws(() => validateCatalogProtocolPhases(changed, options), undefined, name); }
+});
 
 test('three-phase protocol oracle independently checks exact ownership, lost responses, retry bytes and memberships', async () => {
   const {reports, options} = await protocol(); const proof = validateCatalogProtocolPhases(reports, options);

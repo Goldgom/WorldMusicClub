@@ -123,23 +123,23 @@ function catalogAcceptanceEqual(left, right) {
 function catalogTrustedActionComplete(action) {
   if (action.untrusted_clicks !== 0) return false;
   if (action.kind === 'catalog-snapshot-before') return action.trusted_clicks === 0;
-  if (action.kind === 'select-last') {
+  if (['select-last', 'select-second'].includes(action.kind)) {
     const selected = action.selection;
     // A native select may emit a second trusted click when its popup closes.
     // Only this exact selector may use that bounded event sequence, and one
     // trusted change from its placeholder must prove the selected destination.
-    if (action.control !== 'management-catalog-add-target' || ![1, 2].includes(action.trusted_clicks)
+    if (!['management-catalog-add-target', 'management-catalog-move-target'].includes(action.control) || ![1, 2].includes(action.trusted_clicks)
       || selected?.target_id !== action.control || selected.target_tag !== 'SELECT'
-      || selected.before !== '' || !/^collection-[0-9a-f]{32}$/.test(selected.after)
-      || !catalogAcceptanceEqual(selected.option_values, ['', selected.after]) || selected.selected_index !== 1
-      || selected.selected_text !== `rr · ${selected.after}` || selected.trusted_changes !== 1 || selected.untrusted_changes !== 0
+      || !(selected.before === '' || Array.isArray(selected.option_values) && selected.option_values.includes(selected.before)) || selected.before === selected.after || !/^collection-[0-9a-f]{32}$/.test(selected.after)
+      || !Array.isArray(selected.option_values) || selected.option_values.length < 2 || selected.option_values.length > 3 || selected.option_values[0] !== '' || new Set(selected.option_values).size !== selected.option_values.length || !selected.option_values.slice(1).every(id => /^collection-[0-9a-f]{32}$/.test(id)) || selected.selected_index !== (action.kind === 'select-second' ? 1 : selected.option_values.length - 1) || selected.option_values[selected.selected_index] !== selected.after
+      || !['rr', 'rrr'].some(name => selected.selected_text === `${name} · ${selected.after}`) || selected.trusted_changes !== 1 || selected.untrusted_changes !== 0
       || !Array.isArray(selected.events)) return false;
     const types = selected.events.map(event => event.type);
     return selected.events.length >= 2 && selected.events.length <= 4
       && selected.events.filter(event => event.type === 'click').length === action.trusted_clicks
       && types.filter(type => type === 'change').length === 1 && types.filter(type => type === 'input').length <= 1
       && (!types.includes('input') || types.indexOf('input') < types.indexOf('change'))
-      && selected.events.every(event => ['click', 'input', 'change'].includes(event.type) && event.trusted === true && event.target_id === action.control && (event.type === 'click' ? ['', selected.after].includes(event.value) : event.value === selected.after));
+      && selected.events.every(event => ['click', 'input', 'change'].includes(event.type) && event.trusted === true && event.target_id === action.control && (event.type === 'click' ? [selected.before, selected.after].includes(event.value) : event.value === selected.after));
   }
   return action.trusted_clicks === 1 && (action.kind !== 'key-r' || action.trusted_key_downs === 1 && action.trusted_key_ups === 1);
 }
@@ -199,6 +199,74 @@ async function runCatalogUserPackAcceptance({document, native, until, query, ope
   return {organization: output, files};
 }
 
+// Shared ORIGINAL membership sequence. Hosts supply genuine input; Node rehearsal
+// explicitly supplies synthetic input and never establishes browser acceptance.
+async function runCatalogMembershipAcceptance({stage, document, native, until, query, operation, apiLast, screenshot, selected, sourcePackId, clearRecovery, transport, output = null, viewport, assert = (value, message) => { if (!value) throw Error(message); }}) {
+  const cat = id => document.getElementById(`management-catalog-${id}`), clone = value => structuredClone(value);
+  const ids = selected.map(row => row.edition_id).sort(), legacy = selected.find(row => row.edition_id.startsWith('legacy:'));
+  output ||= {source_pack_id: sourcePackId, selected_ids: ids, records: {}, review_focus: []};
+  const ready = () => until(() => document.getElementById('management-catalog').dataset.phase === 'ready', 'Membership catalog ready');
+  async function select(rows) { for (const row of rows) { const box = cat('rows').querySelector(`[data-catalog-edition="${row.edition_id}"]`); assert(box && !box.disabled && !box.checked, 'Exact active membership selection unavailable'); await native('click', box); assert(box.checked, 'Native membership selection failed'); } }
+  async function review(control, kind) {
+    const sequence = await native('click', cat(control)); await until(() => !cat('review').hidden && !cat('confirm').disabled, 'Exact membership preview ready');
+    const value = apiLast('/api/library/catalog/preview'); assert(value.preview.request.action.type === kind, 'Wrong membership preview kind');
+    const title = cat('review-title'), bounds = title.getBoundingClientRect(); assert(document.activeElement === title && bounds.top >= 0 && bounds.bottom <= viewport.height && bounds.width > 0 && bounds.height > 0, 'Membership review lacks focused visible title');
+    output.review_focus.push({kind, action_sequence: sequence, active_element: title.id, top: bounds.top, bottom: bounds.bottom, width: bounds.width, height: bounds.height, viewport: {...viewport}});
+    return value;
+  }
+  async function confirm(name, lost = false) {
+    const preview = apiLast('/api/library/catalog/preview'), id = preview.preview.request.operation_id;
+    if (lost) transport.arm({kind: 'lose-after'});
+    await native('click', cat('confirm'));
+    if (lost) {
+      await until(() => operation()?.operation_id === id && operation().phase === 'uncertain', 'Lost membership reply remains uncertain');
+      assert(cat('remove-preview').disabled && cat('move-preview').disabled && cat('undo-preview').disabled && cat('retry').hidden, 'Uncertain membership operation admitted another write');
+      output.uncertain = {before: clone(operation())}; await native('click', cat('check'));
+    }
+    await until(() => operation()?.operation_id === id && operation().phase === 'committed' && document.getElementById('management-catalog').dataset.phase === 'ready' && !cat('check').disabled, 'Original membership operation durably confirmed');
+    output.records[name] = clone(operation()); if (lost) output.uncertain.after = clone(operation());
+  }
+  async function destination(control, id) {
+    const node = cat(control), options = [...node.options].map(option => option.value), index = options.indexOf(id);
+    assert(index > 0 && [1, options.length - 1].includes(index) && node.value !== id, 'Required bounded native destination transition unavailable');
+    await native(index === options.length - 1 ? 'select-last' : 'select-second', node);
+    assert(node.value === id, 'Native destination differs from exact reviewed pack');
+  }
+  if (stage === 'remove') {
+    assert(cat('filter').value === sourcePackId, 'Removal must start in the exact custom source'); output.before = await query('active');
+    await select(selected); const preview = await review('remove-preview', 'remove_memberships');
+    assert(preview.preview.request.action.pack_id === sourcePackId && catalogAcceptanceEqual([...preview.preview.request.action.song_ids].sort(), ids) && preview.summary.removed_membership_count === 2, 'Removal changed its exact source or editions');
+    await screenshot('membership-remove-review', cat('review-title')); await confirm('remove_before_restart'); output.after_remove = await query('active');
+    output.cache = {before: clone(operation()), after: null}; await clearRecovery(); assert(operation() === null || operation() === undefined, 'Owned renderer recovery key was not erased');
+  } else if (stage === 'recover') {
+    const status = apiLast('/api/library/catalog/status'); output.discovery = {status: clone(status), local_record: operation() || null, visible: !cat('undo').hidden, disabled: cat('undo-preview').disabled, operation_text: cat('undo-id').textContent};
+    assert(output.discovery.local_record === null && output.discovery.visible && !output.discovery.disabled && status.membership_undo?.source_pack.collection_id === sourcePackId, 'Native journal did not discover Undo without renderer cache');
+    await screenshot('membership-restart-undo', cat('undo-summary')); const preview = await review('undo-preview', 'undo_memberships');
+    assert(preview.preview.request.action.membership_operation_id === status.membership_undo.operation_id && preview.summary.added_membership_count === 2 && preview.summary.removed_membership_count === 0, 'Restart Undo must restore the exact removed source edges');
+    await confirm('undo_after_restart'); output.recovered = await query('active');
+  } else if (stage === 'exercise') {
+    assert(cat('filter').value === sourcePackId, 'Move rehearsal must start in the exact custom source');
+    if (!cat('organize').open) await native('click', cat('organize').querySelector('summary'));
+    assert(cat('create-name').value === '', 'Final destination name input must be fresh');
+    for (let i = 0; i < 3; i++) await native('key-r', cat('create-name'));
+    assert(cat('create-name').value === 'rrr', 'Destination name needs three real keyboard actions');
+    await review('create-preview', 'create_pack'); await confirm('create_destination');
+    const destinationId = output.records.create_destination.preview.request.action.pack_id;
+    await select([legacy]); await destination('add-target', destinationId); await review('add-preview', 'add_memberships'); await confirm('add_existing_destination');
+    await select(selected); await destination('move-target', destinationId); const move = await review('move-preview', 'move_memberships');
+    assert(move.preview.request.action.from_pack === sourcePackId && move.preview.request.action.to_pack === destinationId && move.summary.removed_membership_count === 2 && move.summary.added_membership_count === 1 && move.summary.unchanged_membership_count === 1, 'Move must preserve the existing destination membership');
+    await screenshot('membership-move-review', cat('review-title')); await confirm('move', true); output.after_move = await query('active');
+    const undo = await review('undo-preview', 'undo_memberships'); assert(undo.summary.added_membership_count === 2 && undo.summary.removed_membership_count === 1, 'Move Undo must leave preexisting destination edges');
+    await confirm('undo_move'); output.after_undo = await query('active');
+    await select([legacy]); await review('remove-preview', 'remove_memberships'); await confirm('remove_conflict');
+    await native('click', cat('active')); await ready(); await select([legacy]); await destination('add-target', sourcePackId); await review('add-preview', 'add_memberships'); await confirm('readd_conflict');
+    output.after_conflict = await query('active'); output.conflict = {status: clone(apiLast('/api/library/catalog/status')), visible: !cat('undo').hidden, disabled: cat('undo-preview').disabled, reason: cat('undo-blocked').textContent};
+    assert(output.conflict.visible && output.conflict.disabled && !cat('undo-blocked').hidden && output.conflict.status.membership_undo?.operation_id === output.records.remove_conflict.operation_id && output.conflict.status.membership_undo.can_undo === false, 'Changed source edge must disable exact Undo with a visible reason');
+    await screenshot('membership-conflict', cat('undo-blocked'));
+  } else throw Error('Unknown bounded membership acceptance stage');
+  return output;
+}
+
 (() => {
   const phase = globalThis.__WMH_ACCEPTANCE_PHASE__, $ = id => document.getElementById(id), assert = (value, message) => { if (!value) throw Error(message); };
   if (!['catalog-seed', 'catalog-restart', 'catalog-final'].includes(phase)) throw Error('Unknown catalog acceptance phase');
@@ -207,7 +275,7 @@ async function runCatalogUserPackAcceptance({document, native, until, query, ope
   const json = (path, options) => waits.json(originalFetch, path, options, 15000);
   const transport = createCatalogAcceptanceTransport({fetcher: originalFetch, digest, origin: location.origin, getActionSequence: () => sequence}); globalThis.fetch = transport.fetcher;
   const report = {version: 1, scenario: 'library-catalog', phase, ok: false, origin: location.origin, checks: [], errors: [], actions: [], screenshots: {}, api_trace: transport.rows, transport_settlement: transport.settlement, faults: transport.faults, files: {}, profile: {}, operations: {}, catalog: {}, state: {}, media: null, opened_score_databases: [], claims: {synthetic_clock: false, mock_success: false, private_music: false}};
-  const storageKey = 'worldmusichub.library-operation.v1', markerKey = 'wmh.catalog.acceptance.owner', organizationKey = 'wmh.catalog.acceptance.organization';
+  const storageKey = 'worldmusichub.library-operation.v1', markerKey = 'wmh.catalog.acceptance.owner', organizationKey = 'wmh.catalog.acceptance.organization', membershipKey = 'wmh.catalog.acceptance.membership';
   const operation = () => {
     const value = JSON.parse(localStorage.getItem(storageKey) || '{"libraries":{}}'), records = Object.values(value.libraries);
     assert(records.length <= 1, 'Catalog fixture must own exactly one renderer library pointer'); return records[0] || null;
@@ -219,10 +287,10 @@ async function runCatalogUserPackAcceptance({document, native, until, query, ope
   const cat = id => $(`management-catalog-${id}`), query = (view, collection_id = null) => probe('/api/library/catalog/query', {view, ...(collection_id ? {collection_id} : {}), limit: 100, refresh: true});
   const checked = name => report.checks.push(name);
   let sequence = 0, armed = null, config, spec, mediaStorage;
-  const selectionEvent = event => { if (armed?.row.kind === 'select-last' && event.target === armed.node) armed.row.selection.events.push({type: event.type, trusted: event.isTrusted, target_id: event.target.id, value: armed.node.value}); };
+  const selectionEvent = event => { if (['select-last', 'select-second'].includes(armed?.row.kind) && event.target === armed.node) armed.row.selection.events.push({type: event.type, trusted: event.isTrusted, target_id: event.target.id, value: armed.node.value}); };
   const trustedClick = event => { if (armed && (event.target === armed.node || armed.node.contains(event.target))) { armed.row.trusted_clicks += Number(event.isTrusted); if (!event.isTrusted) armed.row.untrusted_clicks++; selectionEvent(event); } };
   const trustedKey = event => { if (armed && event.code === 'KeyR' && event.target === armed.node) armed.row[event.type === 'keydown' ? 'trusted_key_downs' : 'trusted_key_ups'] += Number(event.isTrusted); };
-  const trustedChange = event => { if (armed?.row.kind === 'select-last' && event.target === armed.node) { armed.row.selection[event.isTrusted ? 'trusted_changes' : 'untrusted_changes']++; selectionEvent(event); } };
+  const trustedChange = event => { if (['select-last', 'select-second'].includes(armed?.row.kind) && event.target === armed.node) { armed.row.selection[event.isTrusted ? 'trusted_changes' : 'untrusted_changes']++; selectionEvent(event); } };
   document.addEventListener('click', trustedClick, true); document.addEventListener('keydown', trustedKey, true); document.addEventListener('keyup', trustedKey, true); document.addEventListener('change', trustedChange, true); document.addEventListener('input', selectionEvent, true);
   const originalOpen = IDBFactory.prototype.open;
   IDBFactory.prototype.open = function(name, ...args) { if (String(name) === 'worldmusichub.scores.v1') report.opened_score_databases.push(String(name)); return originalOpen.call(this, name, ...args); };
@@ -234,12 +302,12 @@ async function runCatalogUserPackAcceptance({document, native, until, query, ope
     const bounds = node.getBoundingClientRect(); assert(bounds.width > 0 && bounds.height > 0 && !node.closest('[hidden]'), 'Catalog target must be visible');
     const collectionId = node.dataset.catalogOpenPack || node.dataset.catalogRenamePack;
     const row = {sequence: ++sequence, kind, control: node.id || (node.dataset.catalogOpenPack ? 'management-catalog-open-pack' : node.dataset.catalogRenamePack ? 'management-catalog-rename-pack' : node.dataset.catalogEdition || node.tagName), ...(collectionId ? {collection_id: collectionId} : {}), trusted_clicks: 0, untrusted_clicks: 0, trusted_key_downs: 0, trusted_key_ups: 0}; report.actions.push(row); armed = {row, node};
-    if (kind === 'select-last') { assert(node.tagName === 'SELECT' && node.id === 'management-catalog-add-target', 'Only the exact user-pack destination selector may use native select-last'); row.selection = {target_id: node.id, target_tag: node.tagName, before: node.value, after: null, option_values: [...node.options].map(option => option.value), selected_index: null, selected_text: null, trusted_changes: 0, untrusted_changes: 0, events: []}; }
+    if (['select-last', 'select-second'].includes(kind)) { assert(node.tagName === 'SELECT' && ['management-catalog-add-target', 'management-catalog-move-target'].includes(node.id), 'Only the exact user-pack destination selector may use native select-last'); row.selection = {target_id: node.id, target_tag: node.tagName, before: node.value, after: null, option_values: [...node.options].map(option => option.value), selected_index: null, selected_text: null, trusted_changes: 0, untrusted_changes: 0, events: []}; }
     try {
       await json('/__desktop_smoke/action', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({version: 1, sequence, kind, x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2, width: innerWidth, height: innerHeight, ...(file ? {file} : {})})});
       let result;
       await until(async signal => { const response = await originalFetch(`/__desktop_smoke/result/${row.sequence}`, {signal}); if (response.status === 404) return false; result = await response.json(); assert(response.ok && result.ok, result.error || 'Catalog native action failed'); return true; }, `trusted catalog ${kind} ${sequence}`, 15000);
-      if (kind === 'select-last') { row.selection.after = node.value; row.selection.selected_index = node.selectedIndex; row.selection.selected_text = node.options[node.selectedIndex]?.textContent; }
+      if (['select-last', 'select-second'].includes(kind)) { row.selection.after = node.value; row.selection.selected_index = node.selectedIndex; row.selection.selected_text = node.options[node.selectedIndex]?.textContent; }
       assert(catalogTrustedActionComplete(row), 'Catalog action lacks its exact trusted click/key/selection evidence');
       row.completed = true; return row.sequence;
     } finally { armed = null; }
@@ -316,7 +384,7 @@ async function runCatalogUserPackAcceptance({document, native, until, query, ope
     await review('initialize-preview'); await native('click', cat('confirm')); await until(() => operation()?.kind === 'initialize' && operation().phase === 'committed' && $('management-catalog').dataset.phase === 'ready', 'Explicit catalog initialization');
     report.operations.initialize = clone(operation()); report.catalog.initialized = await query('active'); assert(same(report.catalog.initialized.counts, spec.expected.initial), 'Initial catalog membership count differs'); checked('explicit-initialize-cancel-confirm');
     const selected = report.catalog.initialized.rows.filter(row => spec.selected_score_ids.includes(row.score_id)); assert(selected.length === 2, 'Mixed exact two-song selection required');
-    closeDialogs(); await prepareSession(selected.find(row => row.storage_kind === 'legacy'));
+    closeDialogs(); await prepareSession(selected.find(row => row.edition_id.startsWith('legacy:')));
     const clean = selected.find(row => row.storage_kind === 'clean'), storageModule = await import('/native-score-storage.js'); mediaStorage = await storageModule.openScoreStorage({origin: location.origin, fetcher: globalThis.fetch});
     const loaded = await mediaStorage.load(`native:${clean.key}`), asset = loaded.cleanSong.media[0], beforeMedia = new Uint8Array(await (await mediaStorage.loadAsset(`native:${clean.key}`, asset.handle)).arrayBuffer());
     report.media = {key: clean.key, handle: asset.handle, bytes: beforeMedia.length, before_sha256: await digest(beforeMedia)};
@@ -360,16 +428,30 @@ async function runCatalogUserPackAcceptance({document, native, until, query, ope
     localStorage.setItem(organizationKey, JSON.stringify({restore: report.operations.restore, create: report.organization.create, rename: report.organization.rename, add: report.organization.add}));
     checked('custom-pack-create-rename-add-and-selected-export'); checked('imported-source-groups-remain-readonly');
     closeDialogs(); await savedFreeAfterRestart(); report.catalog.active = await query('active'); report.catalog.trash = await query('trash');
+    await openCatalog(); report.memberships = await runCatalogMembershipAcceptance({stage: 'remove', document, native, until, query, operation, apiLast, screenshot, selected: report.organization.add.selected, sourcePackId: report.organization.create.preview.request.action.pack_id, clearRecovery: () => localStorage.removeItem(storageKey), transport, viewport: {width: innerWidth, height: innerHeight}, assert});
+    localStorage.setItem(membershipKey, JSON.stringify(report.memberships.records.remove_before_restart)); checked('custom-membership-removal-clears-owned-recovery-cache');
   }
   async function runFinal() {
-    const prior = report.profile.recovery_before_open, organization = report.profile.organization_before_open;
-    assert(prior?.kind === 'add_memberships' && prior.phase === 'committed' && same(prior, organization?.add), 'Final restart requires the real persisted user-pack operation');
-    await openCatalog(); await committed(prior.operation_id); report.profile.recovery_after_open = clone(operation()); report.operations.restore = clone(organization.restore);
-    const restored = await probe('/api/library/catalog/operation', {library_id: prior.library_id, operation_id: organization.restore.operation_id}); assert(restored.outcome === 'committed' && same(restored.receipt.preview, organization.restore.preview), 'Original restore receipt did not survive organization');
-    assert(apiCount('/api/library/catalog/commit') === 0 && apiCount('/api/library/catalog/initialize') === 0, 'Final restart must be read-only'); report.catalog.active = await query('active'); report.catalog.trash = await query('trash'); assert(same(report.catalog.active.counts, {...spec.expected.restored, packs: spec.expected.restored.packs + 1, memberships: spec.expected.restored.memberships + 2}) && report.catalog.trash.rows.length === 0, 'Final state did not persist');
+    const organization = report.profile.organization_before_open, removed = report.profile.membership_before_open;
+    assert(report.profile.recovery_before_open === null && removed?.kind === 'remove_memberships' && removed.phase === 'committed', 'Final restart requires absent renderer recovery cache and the native membership operation marker');
+    await openCatalog(); report.profile.recovery_after_open = clone(operation()); assert(operation() === null && apiCount('/api/library/catalog/commit') === 0, 'Cache-free discovery must be read-only');
+    report.operations.restore = clone(organization.restore);
+    for (const record of [organization.restore, organization.add]) { const reply = await probe('/api/library/catalog/operation', {library_id: record.library_id, operation_id: record.operation_id}); assert(reply.outcome === 'committed' && same(reply.receipt.preview, record.preview), 'Original durable receipt did not survive cache-free restart'); }
+    report.memberships = await runCatalogMembershipAcceptance({stage: 'recover', document, native, until, query, operation, apiLast, screenshot, selected: organization.add.selected, sourcePackId: organization.create.preview.request.action.pack_id, transport, viewport: {width: innerWidth, height: innerHeight}, assert});
+    checked('native-membership-undo-without-renderer-cache');
+    report.catalog.active = await query('active'); report.catalog.trash = await query('trash'); assert(same(report.catalog.active.counts, {...spec.expected.restored, packs: spec.expected.restored.packs + 1, memberships: spec.expected.restored.memberships + 2}) && report.catalog.trash.rows.length === 0, 'Restored organization state differs');
     await screenshot('persisted-restored-catalog', cat('operation-title')); closeDialogs(); await membershipEvidence(); await savedFreeAfterRestart(); checked('second-process-restart-restores-native-and-renderer-persistence');
-    await openCatalog(); const userPacks = await runCatalogUserPackAcceptance({document, native, until, query, operation, apiLast, download, screenshot, selected: prior.selected, prior: organization, viewport: {width: innerWidth, height: innerHeight}, assert}); report.organization = userPacks.organization;
-    assert(apiCount('/api/library/catalog/commit') === 0, 'Final user-pack restart unexpectedly wrote'); checked('custom-pack-organization-survives-second-restart');
+    await openCatalog(); const userPacks = await runCatalogUserPackAcceptance({document, native, until, query, operation, apiLast, download, screenshot, selected: organization.add.selected, prior: organization, viewport: {width: innerWidth, height: innerHeight}, assert}); report.organization = userPacks.organization;
+    assert(apiCount('/api/library/catalog/commit') === 1, 'Only reviewed native Undo may precede the original organization checkpoint'); checked('custom-pack-organization-survives-second-restart');
+    closeDialogs(); const shared = report.catalog.active.rows.find(row => row.storage_kind === 'legacy' && spec.selected_score_ids.includes(row.score_id));
+    await native('click', $('catalog').querySelector(`[data-library-key="native:${shared.key}"]`)); await until(() => !$('configure-song-mod').disabled, 'Membership practice source selected');
+    click('settings-button'); if ($('count-in').checked) await native('click', $('count-in')); closeDialogs();
+    await createAcceptanceSongMod({document,native,until}).start('all',{layout:'solo'}); await until(() => document.body.dataset.screen === 'stage' && /暂停/.test($('play-button').textContent), 'Membership real practice playback admitted');
+    await native('key-r', $('stage-title')); await until(() => $('hud-captured').textContent === '1', 'Membership actual practice onset'); await native('click', $('play-button'));
+    click('results-button'); await native('click', $('assess-button')); await until(() => catalogPracticeBaselineReady(document), 'Membership practice assessment settled', 15000); closeDialogs(); await menu.returnToLibrary(); await sessionFiles('before'); report.state.before = await state();
+    await openCatalog(); report.memberships = await runCatalogMembershipAcceptance({stage: 'exercise', document, native, until, query, operation, apiLast, screenshot, selected: organization.add.selected, sourcePackId: organization.create.preview.request.action.pack_id, transport, output: report.memberships, viewport: {width: innerWidth, height: innerHeight}, assert});
+    checked('membership-move-undo-preserves-shared-destination'); checked('membership-conflict-disables-undo'); checked('membership-lost-reply-reconciles-same-id');
+    closeDialogs(); assert(same(await state(), report.state.before), 'Membership edits changed the playing source or transport'); await sessionFiles('after'); report.state.after = await state(); assert(same(report.state.before, report.state.after), 'Membership edits changed practice state'); checked('membership-active-source-and-take-preserved');
   }
   addEventListener('DOMContentLoaded', async () => {
     try {
@@ -377,6 +459,7 @@ async function runCatalogUserPackAcceptance({document, native, until, query, ope
       report.run_id = config.run_id; report.source_binding = config.source_binding; report.fixture = config.fixture;
       report.profile.marker_before = localStorage.getItem(markerKey); report.profile.recovery_before_open = clone(operation());
       report.profile.organization_before_open = JSON.parse(localStorage.getItem(organizationKey) || 'null');
+      report.profile.membership_before_open = JSON.parse(localStorage.getItem(membershipKey) || 'null');
       if (phase === 'catalog-seed') { assert(report.profile.marker_before === null && report.profile.recovery_before_open === null, 'Catalog seed must have a fresh real profile'); localStorage.setItem(markerKey, config.run_id); }
       else assert(report.profile.marker_before === config.run_id, 'Restart must reuse the same actual browser profile');
       report.profile.marker_after = localStorage.getItem(markerKey);

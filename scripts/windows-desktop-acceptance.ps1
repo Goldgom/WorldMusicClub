@@ -495,8 +495,8 @@ if($Scenario -eq 'library-catalog') {
   $sourceNames=& node --input-type=module -e 'import {pathToFileURL} from "node:url"; const module=await import(pathToFileURL(process.argv[2])); console.log(JSON.stringify(module.CATALOG_SOURCE_FILES));' -- catalog-source-list (Join-Path $PSScriptRoot 'verify-library-catalog-acceptance.mjs')
   if($LASTEXITCODE -ne 0){throw 'Cannot read catalog acceptance source allowlist'}
   $sourceNames=ConvertFrom-Json -InputObject $sourceNames
-  # The frozen catalog now includes its Mod policy and five skin dependencies.
-  if($sourceNames.Count -ne 51 -or @($sourceNames | Sort-Object -Unique).Count -ne 51){throw 'Catalog source allowlist must contain exactly 51 distinct modules'}
+  # The closed catalog inventory includes Mod, skin and membership-verifier dependencies.
+  if($sourceNames.Count -ne 52 -or @($sourceNames | Sort-Object -Unique).Count -ne 52){throw 'Catalog source allowlist must contain exactly 52 distinct modules'}
   $native.source_hashes=[ordered]@{}
   foreach($name in $sourceNames) {
     if($name -cnotmatch '^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)+$' -or $name.Split('/') -contains '..'){throw 'Catalog source allowlist contains an unsafe path'}

@@ -13,13 +13,14 @@ import {validatePerformanceRecord} from '../web/performance-library.js';
 import {checkedManagementResponse, managementRequest} from '../web/library-management-contract.js';
 import {assertSettledPracticeExport} from './pack-management-acceptance-fixtures.mjs';
 import {validateCatalogOrganization, validateCatalogSelectedExport} from './verify-library-catalog-organization.mjs';
+import {validateCatalogMemberships, validateMembershipJournalState} from './verify-library-catalog-memberships.mjs';
 export {validateCatalogSelectedExport} from './verify-library-catalog-organization.mjs';
 import {CATALOG_REQUESTED_VIEWPORT, CATALOG_MINIMUM_VIEWPORT, CATALOG_NATIVE_VIEWPORT_CONTRACT, CATALOG_HOSTED_VIEWPORT_CONTRACT, validateCatalogNativeGeometry, validateCatalogNativeCaptureStable, validateCatalogNativeClick, validateCatalogPhaseSequence} from './catalog-native-geometry.mjs';
 export {validateCatalogPhaseSequence} from './catalog-native-geometry.mjs';
 
 export const CATALOG_EVIDENCE_LIMITS = Object.freeze({report: 1024 * 1024, file: 16 * 1024 * 1024, files: 512, total: 32 * 1024 * 1024, actions: 64, api: 180});
 export const CATALOG_SOURCE_FILES = Object.freeze([
-  'scripts/prepare-library-catalog-acceptance.mjs', 'scripts/verify-library-catalog-acceptance.mjs', 'scripts/verify-library-catalog-organization.mjs', 'scripts/catalog-native-geometry.mjs',
+  'scripts/prepare-library-catalog-acceptance.mjs', 'scripts/verify-library-catalog-acceptance.mjs', 'scripts/verify-library-catalog-organization.mjs', 'scripts/verify-library-catalog-memberships.mjs', 'scripts/catalog-native-geometry.mjs',
   'crates/desktop-shell/library-catalog-acceptance.js',
   'web/performance-view.js',
   'web/piano-stage-view.js',
@@ -34,13 +35,13 @@ export const CATALOG_SOURCE_FILES = Object.freeze([
 ]);
 export const CATALOG_REQUIRED_CHECKS = Object.freeze({
   'catalog-seed': ['explicit-initialize-cancel-confirm', 'wrong-operation-response-cannot-confirm-owner', 'active-take-and-free-recordings-preserved', 'durable-multi-song-trash-retains-admitted-media'],
-  'catalog-restart': ['new-process-reconciles-persisted-original-operation', 'exact-reimport-keeps-trash-owner', 'proved-absent-restore-retries-exact-operation', 'late-native-query-cannot-own-reopened-view', 'custom-pack-create-rename-add-and-selected-export', 'imported-source-groups-remain-readonly'],
-  'catalog-final': ['second-process-restart-restores-native-and-renderer-persistence', 'custom-pack-organization-survives-second-restart'],
+  'catalog-restart': ['new-process-reconciles-persisted-original-operation', 'exact-reimport-keeps-trash-owner', 'proved-absent-restore-retries-exact-operation', 'late-native-query-cannot-own-reopened-view', 'custom-pack-create-rename-add-and-selected-export', 'imported-source-groups-remain-readonly', 'custom-membership-removal-clears-owned-recovery-cache'],
+  'catalog-final': ['second-process-restart-restores-native-and-renderer-persistence', 'custom-pack-organization-survives-second-restart', 'native-membership-undo-without-renderer-cache', 'membership-move-undo-preserves-shared-destination', 'membership-conflict-disables-undo', 'membership-lost-reply-reconciles-same-id', 'membership-active-source-and-take-preserved'],
 });
 export const CATALOG_SCREENSHOTS = Object.freeze({
   'catalog-seed': ['shared-duplicate-evidence', 'exact-trash-review', 'uncertain-native-commit', 'preserved-recordings'],
-  'catalog-restart': ['recovered-original-operation', 'exact-restore-review', 'restored-current-owner', 'user-pack-empty-review', 'user-pack-add-review', 'user-pack-filtered'],
-  'catalog-final': ['persisted-restored-catalog', 'shared-duplicate-evidence', 'persisted-user-pack'],
+  'catalog-restart': ['recovered-original-operation', 'exact-restore-review', 'restored-current-owner', 'user-pack-empty-review', 'user-pack-add-review', 'user-pack-filtered', 'membership-remove-review'],
+  'catalog-final': ['persisted-restored-catalog', 'shared-duplicate-evidence', 'persisted-user-pack', 'membership-restart-undo', 'membership-move-review', 'membership-conflict'],
 });
 const hash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const uint = value => Number.isSafeInteger(value) && value >= 0;
@@ -266,7 +267,8 @@ export async function catalogLibraryInventory(directory) {
   await walk(directory); return rows.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export function validateCatalogProtocolPhases(reports, {sourceBinding, runId, fixture = originalCatalogAcceptanceFixtures(), nativeGeometries, nativeProcesses, requireOrganization = false, expectedOrigin = NATIVE_PROTOCOL_ORIGIN} = {}) {
+export function validateCatalogProtocolPhases(reports, {sourceBinding, runId, fixture = originalCatalogAcceptanceFixtures(), nativeGeometries, nativeProcesses, requireOrganization = false, requireMemberships = false, expectedOrigin = NATIVE_PROTOCOL_ORIGIN} = {}) {
+  assert.ok(!requireMemberships || requireOrganization, 'Membership acceptance requires original organization gates');
   validateCatalogPhaseSequence(reports, {nativeGeometries, nativeProcesses});
   assert.ok(typeof runId === 'string' && runId.length >= 16 && runId.length <= 128, 'Catalog run identity required');
   const allApi = [];
@@ -281,22 +283,27 @@ export function validateCatalogProtocolPhases(reports, {sourceBinding, runId, fi
     const api = validateCatalogApiEvidence(report.api_trace); allApi.push(...api.map(row => ({...row, phase: report.phase})));
     assert.ok(Array.isArray(report.actions) && report.actions.length > 0 && report.actions.length <= CATALOG_EVIDENCE_LIMITS.actions);
     for (const [index, action] of report.actions.entries()) {
-      assert.equal(action.sequence, index + 1); assert.ok(['click', 'picker', 'key-r', 'select-last', 'catalog-snapshot-before'].includes(action.kind));
+      assert.equal(action.sequence, index + 1); assert.ok(['click', 'picker', 'key-r', 'select-last', ...(requireMemberships ? ['select-second'] : []), 'catalog-snapshot-before'].includes(action.kind));
       assert.ok(typeof action.control === 'string');
       for (const field of ['trusted_clicks', 'trusted_key_downs', 'trusted_key_ups']) assert.ok(uint(action[field]));
       assert.equal(action.untrusted_clicks, 0, 'Catalog control used synthetic event evidence'); assert.equal(action.completed, true);
-      if (action.kind === 'select-last') {
-        assert.equal(action.control, 'management-catalog-add-target'); assert.ok([1, 2].includes(action.trusted_clicks));
+      if (['select-last', 'select-second'].includes(action.kind)) {
+        assert.ok((requireMemberships ? ['management-catalog-add-target', 'management-catalog-move-target'] : ['management-catalog-add-target']).includes(action.control)); assert.ok([1, 2].includes(action.trusted_clicks));
         assert.deepEqual(Object.keys(action.selection || {}).sort(), ['target_id', 'target_tag', 'before', 'after', 'option_values', 'selected_index', 'selected_text', 'trusted_changes', 'untrusted_changes', 'events'].sort());
         assert.equal(action.selection.target_id, action.control); assert.equal(action.selection.target_tag, 'SELECT');
-        assert.equal(action.selection.before, ''); assert.match(action.selection.after, /^collection-[a-f0-9]{32}$/);
-        assert.deepEqual(action.selection.option_values, ['', action.selection.after]); assert.equal(action.selection.selected_index, 1); assert.equal(action.selection.selected_text, `rr · ${action.selection.after}`);
+        assert.match(action.selection.after, /^collection-[a-f0-9]{32}$/);
+        if (requireMemberships && report.phase === 'catalog-final') {
+          const options = action.selection.option_values; assert.ok(Array.isArray(options) && options.length >= 2 && options.length <= 3 && options[0] === '' && new Set(options).size === options.length);
+          assert.ok(options.slice(1).every(id => /^collection-[a-f0-9]{32}$/.test(id))); assert.ok(options.includes(action.selection.before) && action.selection.before !== action.selection.after);
+          assert.equal(action.selection.selected_index, action.kind === 'select-second' ? 1 : options.length - 1); assert.equal(options[action.selection.selected_index], action.selection.after);
+          assert.ok(['rr', 'rrr'].some(name => action.selection.selected_text === `${name} · ${action.selection.after}`));
+        } else { assert.equal(action.selection.before, ''); assert.deepEqual(action.selection.option_values, ['', action.selection.after]); assert.equal(action.selection.selected_index, 1); assert.equal(action.selection.selected_text, `rr · ${action.selection.after}`); }
         assert.equal(action.selection.trusted_changes, 1); assert.equal(action.selection.untrusted_changes, 0);
         const events = action.selection.events; assert.ok(Array.isArray(events) && events.length >= 2 && events.length <= 4);
         const types = events.map(event => event.type); assert.equal(types.filter(type => type === 'change').length, 1); assert.ok(types.filter(type => type === 'input').length <= 1);
         assert.ok(!types.includes('input') || types.indexOf('input') < types.indexOf('change'));
         assert.equal(events.filter(event => event.type === 'click').length, action.trusted_clicks);
-        for (const event of events) { assert.ok(['click', 'input', 'change'].includes(event.type)); assert.ok((event.type === 'click' ? ['', action.selection.after] : [action.selection.after]).includes(event.value)); assert.deepEqual(event, {type: event.type, trusted: true, target_id: action.control, value: event.value}); }
+        for (const event of events) { assert.ok(['click', 'input', 'change'].includes(event.type)); assert.ok((event.type === 'click' ? [action.selection.before, action.selection.after] : [action.selection.after]).includes(event.value)); assert.deepEqual(event, {type: event.type, trusted: true, target_id: action.control, value: event.value}); }
       } else if (action.kind !== 'catalog-snapshot-before') { assert.equal(action.trusted_clicks, 1, 'Catalog control lacks exactly one actual trusted click'); assert.equal(action.selection, undefined); }
       if (action.kind === 'key-r') { assert.equal(action.trusted_key_downs, 1); assert.equal(action.trusted_key_ups, 1); }
       if (action.kind === 'catalog-snapshot-before') { assert.equal(report.phase, 'catalog-seed'); assert.equal(action.trusted_clicks, 0); }
@@ -342,7 +349,7 @@ export function validateCatalogProtocolPhases(reports, {sourceBinding, runId, fi
   checkedCatalogResult(initCalls[0].response, initialize);
   assert.ok(seed.api_trace.filter(row => row.path === '/api/library/catalog/initialize/preview').length >= 2, 'Initialization cancel then review must be observed');
   const commits = allApi.filter(row => row.path === '/api/library/catalog/commit');
-  assert.equal(commits.length, requireOrganization ? 6 : 3, 'Only original trash/restore attempts and the three required organization commits are permitted');
+  assert.equal(commits.length, requireMemberships ? 14 : requireOrganization ? 6 : 3, 'Only the exact original and required membership-proof commit attempts are permitted');
   const trashCalls = commits.filter(row => row.request.preview.request.operation_id === trash.operation_id);
   assert.equal(trashCalls.length, 1); assert.equal(trashCalls[0].phase, 'catalog-seed'); assert.equal(trashCalls[0].delivery, 'lost-after-native');
   checkedCatalogResult(trashCalls[0].response, trash);
@@ -356,7 +363,7 @@ export function validateCatalogProtocolPhases(reports, {sourceBinding, runId, fi
   const recovered = found('catalog-restart', trash, 'committed'); assert.ok(recovered, 'Restart must ask native journal for the original trash operation'); checkedCatalogResult(recovered.response, trash, {lookup: true});
   const absent = found('catalog-restart', restore, 'not_committed'); assert.ok(absent, 'Restore must be proven absent before same-ID retry'); checkedCatalogResult(absent.response, restore, {lookup: true});
   const finalFound = found('catalog-final', restore, 'committed'); assert.ok(finalFound, 'Final restart must reconcile original restore operation'); checkedCatalogResult(finalFound.response, restore, {lookup: true});
-  assert.equal(allApi.filter(row => row.path.startsWith('/api/library/catalog/') && row.path.endsWith('/commit') && row.phase === 'catalog-final').length, 0);
+  assert.equal(allApi.filter(row => row.path.startsWith('/api/library/catalog/') && row.path.endsWith('/commit') && row.phase === 'catalog-final').length, requireMemberships ? 7 : 0);
   for (const report of [restart, final]) {
     assert.deepEqual(report.catalog.active.rows.map(row => row.edition_id).sort(), initial.rows.map(row => row.edition_id).sort());
     if (!requireOrganization) assert.deepEqual(report.catalog.active.rows.map(row => [row.edition_id, row.packs]).sort(), initial.rows.map(row => [row.edition_id, row.packs]).sort());
@@ -391,8 +398,9 @@ export function validateCatalogProtocolPhases(reports, {sourceBinding, runId, fi
   assert.deepEqual(stale.before, stale.after, 'Late native query changed current visible view/operation ownership');
   assert.equal(stale.before.view, 'active'); assert.equal(stale.before.operation_id, restore.operation_id);
   assert.deepEqual([...stale.before.edition_ids].sort(), initial.rows.map(row => row.edition_id).sort());
-  const organization = requireOrganization ? validateCatalogOrganization(reports, {initial, restore, selectedIds, fixture, allApi}) : {};
-  return {initialize, trash, restore, ...organization, selectedIds, initialRows: initial.rows, library_id: initial.library_id, api_count: allApi.length, imports, allApi};
+  const organization = requireOrganization ? validateCatalogOrganization(reports, {initial, restore, selectedIds, fixture, allApi, requireMemberships}) : {};
+  const memberships = requireMemberships ? validateCatalogMemberships(reports, {initial, selectedIds, allApi, fixture}) : {};
+  return {initialize, trash, restore, ...organization, ...memberships, selectedIds, initialRows: initial.rows, library_id: initial.library_id, api_count: allApi.length, imports, allApi};
 }
 
 export async function validateCatalogJournal(directory, rows, operations) {
@@ -400,6 +408,7 @@ export async function validateCatalogJournal(directory, rows, operations) {
   let previous = null, genesis, previousState, previousStateDigest;
   const records = [operations.initialize, operations.trash, operations.restore];
   if (operations.create || operations.rename || operations.add) { assert.ok(operations.create && operations.rename && operations.add, 'All three organization journal records are required'); records.push(operations.create, operations.rename, operations.add); }
+  if (operations.membershipRecords) { assert.equal(operations.membershipRecords.length, 8); records.push(...operations.membershipRecords); }
   for (const [generation, record] of records.entries()) {
     const folder = `commits/${String(generation).padStart(20, '0')}-${record.operation_id}`;
     const bytes = {};
@@ -417,8 +426,8 @@ export async function validateCatalogJournal(directory, rows, operations) {
     const response = operations.allApi?.find(row => row.response?.operation_id === record.operation_id && row.response?.outcome === 'committed' && row.response?.generation === generation);
     if (generation >= 3) assert.ok(response, 'Organization generation lacks its exact native committed digest');
     if (response) assert.equal(response.response.catalog_digest, sha256(bytes.state), 'Native API catalog digest differs from exact durable journal state');
-    assert.equal(state.inventory.songs.length, 3); assert.equal(state.inventory.packs.length, generation >= 3 ? 4 : 3); assert.equal(state.inventory.sources.length, 3);
-    assert.equal(state.inventory.memberships.length, generation === 1 ? 1 : generation === 5 ? 6 : 4);
+    assert.equal(state.inventory.songs.length, 3); assert.equal(state.inventory.packs.length, generation >= 8 ? 5 : generation >= 3 ? 4 : 3); assert.equal(state.inventory.sources.length, 3);
+    assert.equal(state.inventory.memberships.length, generation >= 6 ? [4, 6, 6, 7, 6, 7, 6, 7][generation - 6] : generation === 1 ? 1 : generation === 5 ? 6 : 4);
     assert.equal(state.inventory.songs.filter(row => row.trashed_by !== null).length, generation === 1 ? 2 : 0);
     if (generation === 0) {
       assert.deepEqual(receipt, {kind: 'bootstrap', operation_id: record.operation_id, state_sha256: sha256(bytes.state)}); genesis = state;
@@ -443,6 +452,10 @@ export async function validateCatalogJournal(directory, rows, operations) {
       assert.deepEqual(state.inventory.memberships, genesis.inventory.memberships.filter(edge => generation !== 1 || !selected.has(edge.id.song)).map(edge => generation === 2 && selected.has(edge.id.song) ? {...edge, revision: 2} : edge), 'Catalog journal failed exact membership removal/restoration');
       assert.deepEqual(state.trash[0].entities.map(item => item.before.Song), genesis.inventory.songs.filter(song => selected.has(song.id)));
       assert.deepEqual(state.trash[0].memberships.map(item => item.membership), genesis.inventory.memberships.filter(edge => selected.has(edge.id.song)));
+    }
+    else if (generation >= 6) {
+      assert.equal(record.preview.base_digest, previousStateDigest); assert.deepEqual(receipt, {kind: 'transition', receipt: {preview: record.preview}});
+      validateMembershipJournalState(state, previousState, record, generation, records);
     }
     else {
       const action = record.preview.request.action, target = operations.create.preview.request.action.pack_id;
@@ -669,11 +682,11 @@ export async function verifyLibraryCatalogAcceptance(directory, options = {}) {
   assert.equal(profileDirectories.size, 1, 'Recovery phases used different browser profile directories');
   assert.ok(typeof host.directory === 'string' && host.directory.replaceAll('\\', '/').endsWith('/Scores'));
   assert.equal([...profileDirectories][0].replaceAll('\\', '/'), `${host.directory.replaceAll('\\', '/').slice(0, -7)}/webview-catalog-profile`);
-  const operations = validateCatalogProtocolPhases(reports, {sourceBinding, runId: host.run_id, fixture, requireOrganization: true, expectedOrigin, ...(native ? {nativeGeometries, nativeProcesses: host.phases.map(row => row.process_id)} : {})});
+  const operations = validateCatalogProtocolPhases(reports, {sourceBinding, runId: host.run_id, fixture, requireOrganization: true, requireMemberships: true, expectedOrigin, ...(native ? {nativeGeometries, nativeProcesses: host.phases.map(row => row.process_id)} : {})});
   const [seed, restart, final] = reports;
   assert.equal(seed.api_trace.filter(row => row.path === '/api/library/list' && row.status === 200)[0]?.response.entries.length, 0, 'Seed must prove a genuinely empty native library');
   for (const report of reports) {
-    assert.equal(report.actions.filter(row => row.kind === 'key-r').length, report === seed ? 3 : report === restart ? 2 : 0, 'Actual practice/recording and organization name key actions differ');
+    assert.equal(report.actions.filter(row => row.kind === 'key-r').length, report === seed ? 3 : report === restart ? 2 : 4, 'Actual practice/recording and organization name key actions differ');
     for (const row of report.api_trace.filter(row => row.path === '/api/library/list' && row.status === 200)) assert.equal(row.response.directory, host.directory, 'Native query did not use the host-owned ORIGINAL Scores root');
   }
   for (const report of [seed, final]) for (const view of ['packs', 'duplicates']) {
@@ -695,7 +708,7 @@ export async function verifyLibraryCatalogAcceptance(directory, options = {}) {
   const seedRoles = ['beforeScore', 'beforeTake', 'afterScore', 'afterTake', 'beforeSavedFree', 'beforeDraftFree', 'afterSavedFree', 'afterDraftFree'];
   assert.deepEqual(Object.keys(seed.files).sort(), seedRoles.sort());
   assert.deepEqual(Object.keys(restart.files).sort(), ['restartedSavedFree', 'selectedLegacyPack', 'selectedCleanPack'].sort());
-  assert.deepEqual(Object.keys(final.files), ['restartedSavedFree']);
+  assert.deepEqual(Object.keys(final.files).sort(), ['restartedSavedFree', 'beforeScore', 'beforeTake', 'afterScore', 'afterTake'].sort());
   for (const report of reports) {
     assert.equal(new Set(Object.values(report.files)).size, Object.keys(report.files).length, 'Preservation checkpoints must use distinct actual downloads');
     assert.equal(report.downloads.length, Object.keys(report.files).length, 'Unexpected or omitted preservation download');
@@ -726,6 +739,11 @@ export async function verifyLibraryCatalogAcceptance(directory, options = {}) {
   assert.notEqual(saved.id, draft.id, 'Saved and unsaved free recordings need distinct original identities');
   for (const report of [restart, final]) assert.deepEqual(await downloadBytes(report, 'restartedSavedFree'), downloads.beforeSavedFree, 'Real browser profile restart changed saved free recording bytes');
   for (const [kind, role] of [['legacy', 'selectedLegacyPack'], ['clean', 'selectedCleanPack']]) validateCatalogSelectedExport(await downloadBytes(restart, role), restart, kind, operations, fixture);
+  for (const suffix of ['Score', 'Take']) assert.deepEqual(await downloadBytes(final, `before${suffix}`), await downloadBytes(final, `after${suffix}`), `Membership edits changed the playing ${suffix}`);
+  assert.deepEqual(final.state.before, final.state.after, 'Membership edits changed the current session');
+  const membershipTake = parse(await downloadBytes(final, 'beforeTake')); assertSettledPracticeExport(membershipTake); assert.equal(membershipTake.score_id, fixture.spec.legacy_ids[0]);
+  assert.equal(membershipTake.input_evidence?.events.filter(row => row.kind === 'note_on' && row.input_kind === 'typing_keyboard').length, 1); assert.equal(parse(await downloadBytes(final, 'beforeScore')).id, fixture.spec.legacy_ids[0]);
+  assert.equal(final.state.before.preview, `native:${selectedLegacy.key}`);
   const media = seed.media, expectedMedia = fixture.spec.clean_media[0];
   assert.equal(media.bytes, expectedMedia.bytes); assert.equal(media.before_sha256, expectedMedia.sha256); assert.equal(media.after_sha256, expectedMedia.sha256);
   assert.equal(media.new_load_error, 'catalog_in_trash'); assert.match(media.handle, /^asset-[a-f0-9]{64}$/);

@@ -38,10 +38,10 @@ async function probe(path, body) { const response = await transport.probe(path, 
 const query = (view, collection_id = null) => probe('/api/library/catalog/query', {view, collection_id, refresh: true, limit: 100});
 async function open(expected = 'ready') { await app.click('library-management-button'); await app.until(() => !app.$('management-catalog-button').hidden); await app.click('management-catalog-button'); await app.until(() => app.$('management-catalog').dataset.phase === expected); }
 async function input(kind, node) {
-  assert.ok(node && !node.disabled); ++sequence;
+  assert.ok(node && !node.disabled, `Unavailable ${node?.id}; phase=${app.$('management-catalog').dataset.phase}; status=${cat('status').textContent}; operation=${operation()?.phase}; undo=${JSON.stringify(transport.rows.filter(row => row.path.endsWith('/status')).at(-1)?.response?.membership_undo)}`); ++sequence;
   node.focus(); node.click();
   if (kind === 'key-r') { node.value += 'r'; app.emit(node, 'input'); }
-  else if (kind === 'select-last') { node.value = [...node.options].at(-1).value; app.emit(node, 'change'); }
+  else if (['select-last', 'select-second'].includes(kind)) { node.value = kind === 'select-second' ? node.options[1].value : [...node.options].at(-1).value; app.emit(node, 'change'); }
   else assert.equal(kind, 'click');
   if (node.type === 'checkbox') { node.checked = !node.checked; app.emit(node, 'change'); }
   if (node.type === 'submit') app.emit(node.closest('form'), 'submit');
@@ -78,9 +78,28 @@ try {
     report.selected_exports[kind] = validateCatalogSelectedExport(bytes, {api_trace: journalOperations.allApi}, kind, exportOperations, fixture);
   }
   report.journal = await validateCatalogJournal(directory, await catalogLibraryInventory(directory), journalOperations); assert.equal(report.journal.length, 6);
+  const membershipArgs = () => ({document: app.document, native: input, until: app.until, query, operation, apiLast: path => transport.rows.filter(row => row.path === path && row.status === 200).at(-1)?.response, screenshot: async (_name, node) => input('click', node), selected, sourcePackId: first.create.preview.request.action.pack_id, transport, viewport: {width: 1280, height: 720}});
+  await input('click', cat('clear'));
+  const removal = await helpers.runCatalogMembershipAcceptance({...membershipArgs(), stage: 'remove', clearRecovery: () => values.delete(LIBRARY_OPERATION_STORAGE_KEY)});
+  assert.equal(operation(), undefined); const firstApi = JSON.parse(JSON.stringify(transport.rows)); report.phases.at(-1).memberships = removal;
+  report.phases.at(-1).action_count = sequence; report.phases.at(-1).api_count = transport.rows.length;
   const firstPid = driver.pid; await close(); await launch('restart'); assert.notEqual(driver.pid, firstPid); await open();
+  let membership = await helpers.runCatalogMembershipAcceptance({...membershipArgs(), stage: 'recover'});
   const restarted = await run(first, selected); assert.deepEqual(restarted.filtered.rows.map(row => row.edition_id).sort(), selected.map(row => row.edition_id).sort());
-  assert.equal(transport.rows.filter(row => row.path === '/api/library/catalog/commit').length, 0);
+  assert.equal(transport.rows.filter(row => row.path === '/api/library/catalog/commit').length, 1);
+  await app.click('management-close'); const playing = selected.find(row => row.storage_kind === 'legacy'); app.savedButton(playing.key).click();
+  await app.until(() => app.$('song-lobby').dataset.previewId === `native:${playing.key}` && !app.$('start-practice').disabled); app.$('count-in').checked = false;
+  await app.click('start-practice'); await app.until(() => app.document.body.dataset.screen === 'stage' && !app.$('play-button').disabled);
+  const note = app.$('keyboard').querySelector('[data-midi="60"]'); app.emit(note, 'pointerdown', {pointerId: 17, button: 0}); app.emit(note, 'pointerup', {pointerId: 17});
+  await app.click('back-to-library'); await app.until(() => !app.$('assess-button').disabled);
+  const beforeScore = await app.exported('export-button'), beforeTake = await app.exported('export-takes'), beforeIdentity = app.$('song-lobby').dataset.previewId, beforeAudio = app.audio();
+  await open(); membership = await helpers.runCatalogMembershipAcceptance({...membershipArgs(), stage: 'exercise', output: membership});
+  await app.click('management-close'); assert.deepEqual(await app.exported('export-button'), beforeScore); assert.deepEqual(await app.exported('export-takes'), beforeTake); assert.equal(app.$('song-lobby').dataset.previewId, beforeIdentity); assert.deepEqual(app.audio(), beforeAudio);
+  report.practice_preserved = {score_sha256: digest(JSON.stringify(beforeScore)), take_sha256: digest(JSON.stringify(beforeTake)), preview: beforeIdentity, real_native_source: true, mocked_audio: true};
+  const secondApi = JSON.parse(JSON.stringify(transport.rows)); validateCatalogApiEvidence(secondApi); validateCatalogHostApiTrace(hostRows, secondApi);
+  const membershipRecords = [removal.records.remove_before_restart, ...['undo_after_restart', 'create_destination', 'add_existing_destination', 'move', 'undo_move', 'remove_conflict', 'readd_conflict'].map(key => membership.records[key])];
+  report.membership_journal = await validateCatalogJournal(directory, await catalogLibraryInventory(directory), {...journalOperations, membershipRecords, allApi: [...firstApi, ...secondApi]}); assert.equal(report.membership_journal.length, 14);
+  report.phases.at(-1).memberships = membership; report.phases.at(-1).action_count = sequence; report.phases.at(-1).api_count = transport.rows.length;
   report.ok = true;
 } catch (error) { report.error = error.stack || String(error); process.exitCode = 1; }
 finally { await close(); await rm(root, {recursive: true, force: true}); if (process.env.WMH_USER_PACK_FLOW_REPORT) await writeFile(process.env.WMH_USER_PACK_FLOW_REPORT, JSON.stringify(report, null, 2)); console.log(JSON.stringify({...report, phases: report.phases.map(({name, process_id, action_count, api_count}) => ({name, process_id, action_count, api_count}))}, null, 2)); }

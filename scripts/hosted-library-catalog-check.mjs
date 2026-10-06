@@ -54,12 +54,12 @@ try {
       const result = {ok: false, browser_action: true, process_id: driver.pid};
       try {
         assert.equal(actionPending, false, 'Only one trusted catalog action may be active'); actionPending = true;
-        assert.equal(action.version, 1); assert.equal(action.sequence, host.actions + 1); assert.ok(action.sequence <= 64); assert.ok(['click', 'picker', 'key-r', 'select-last', 'catalog-snapshot-before'].includes(action.kind));
+        assert.equal(action.version, 1); assert.equal(action.sequence, host.actions + 1); assert.ok(action.sequence <= 64); assert.ok(['click', 'picker', 'key-r', 'select-last', 'select-second', 'catalog-snapshot-before'].includes(action.kind));
         assert.equal(action.width, 1280); assert.equal(action.height, 720); assert.ok(Number.isFinite(action.x) && Number.isFinite(action.y) && action.x >= 0 && action.x < 1280 && action.y >= 0 && action.y < 720);
         host.actions++; await save(`action-${phase}-${action.sequence}.json`, action);
         if (action.kind === 'catalog-snapshot-before') { assert.equal(phase, 'catalog-seed'); assert.equal(snapshotBefore, false); await snapshot('catalog-before'); snapshotBefore = true; }
         else if (action.kind === 'picker') await chooser.choose(action, join(output, 'fixtures'));
-        else { await page.mouse.click(action.x, action.y); if (action.kind === 'key-r') await page.keyboard.press('r'); if (action.kind === 'select-last') { await page.keyboard.press('End'); await page.keyboard.press('Enter'); } }
+        else { await page.mouse.click(action.x, action.y); if (action.kind === 'key-r') await page.keyboard.press('r'); if (action.kind === 'select-second') { await page.keyboard.press('Home'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter'); } if (action.kind === 'select-last') { await page.keyboard.press('End'); await page.keyboard.press('Enter'); } }
         await screenshot(phase, action.sequence); result.ok = true;
       } catch (error) { result.error = String(error.stack || error); actionFailure = result.error; }
       finally { await save(`result-${phase}-${action.sequence}.json`, result); actionResults.set(action.sequence, result); actionPending = false; }
@@ -71,7 +71,7 @@ try {
         if (pathname.startsWith('/__desktop_smoke/')) {
           if (pathname === '/__desktop_smoke/catalog-config') { await route.fulfill({status: 200, json: config}); return; }
           if (pathname === '/__desktop_smoke/state') { await route.fulfill({status: 200, json: {phase, downloads}}); return; }
-          if (pathname === '/__desktop_smoke/action') { const action = request.postDataJSON(); assert.ok(action?.version === 1 && Number.isInteger(action.sequence) && action.sequence >= 1 && action.sequence <= 64 && ['click', 'picker', 'key-r', 'select-last', 'catalog-snapshot-before'].includes(action.kind)); await route.fulfill({status: 200, json: {}}); void perform(action); return; }
+          if (pathname === '/__desktop_smoke/action') { const action = request.postDataJSON(); assert.ok(action?.version === 1 && Number.isInteger(action.sequence) && action.sequence >= 1 && action.sequence <= 64 && ['click', 'picker', 'key-r', 'select-last', 'select-second', 'catalog-snapshot-before'].includes(action.kind)); await route.fulfill({status: 200, json: {}}); void perform(action); return; }
           if (pathname === '/__desktop_smoke/report') { assert.equal(renderer, null, 'Repeated/stale renderer report'); assert.ok(request.postDataBuffer().length <= 1024 * 1024); const value = request.postDataJSON(); assert.equal(value.phase, phase); assert.equal(value.run_id, runId); renderer = value; await save(`renderer-${phase}.json`, renderer); await route.fulfill({status: 200, json: {}}); return; }
           if (pathname === '/__desktop_smoke/progress') { await route.fulfill({status: 200, json: {}}); return; }
           const sequence = Number(pathname.slice('/__desktop_smoke/result/'.length)), result = actionResults.get(sequence); await route.fulfill(result ? {status: 200, json: result} : {status: 404, json: {error: 'pending'}}); return;
