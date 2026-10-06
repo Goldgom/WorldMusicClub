@@ -69,12 +69,12 @@ test('rounded native range readback cannot change the exact source clock or fake
  }finally{await app.close();}
 });
 
-test('signed display clock and written-note lookup share count-in, exact zero, grace and finished frames',async()=>{
+for(const countIn of [false,true])test(`signed display clock and written-note lookup share ${countIn?'explicit count-in':'initial admission'}, exact zero, grace and finished frames`,async()=>{
  const {app,fixture,time}=await setup({rangeSerialization:true});
  try{
   // LinkeDOM does not initialize the checked property from the HTML attribute.
-  // Exercise the real count-in, rather than the future audio admission lead.
-  app.$('count-in').checked=true;
+  // Cover both the future admission lead and a real explicit count-in.
+  app.$('count-in').checked=countIn;
   await app.click('vsq-listen-basic');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');
   if(app.$('notation-toggle').getAttribute('aria-expanded')!=='true')await app.click('notation-toggle');
   await app.click('jianpu-button');await app.until(()=>app.$('written-cursor-status').dataset.status==='ready');

@@ -174,6 +174,26 @@ test('complete-song start admits a metadata-only PV on the shared clock before i
  }finally{await app.close();}
 });
 
+test('complete-song resume retains the source scheduling lead and accepted recorder anchor',async t=>{
+ let clock=1000;const {app}=await setup({media:true,now:()=>clock});
+ try{
+  const video=app.$('clean-song-pv'),plays=[];
+  video.pause=()=>{video.paused=true;};video.play=()=>{plays.push(clock);video.paused=false;return Promise.resolve();};video.load=()=>{};
+  await activate(app,'practice');await app.until(()=>Boolean(video.src));video.onloadeddata();app.frame();assert.deepEqual(plays,[]);
+  clock=1200;app.renderAudioTo(.2);app.frame();await app.tick();assert.deepEqual(plays,[1200]);
+  await app.click('play-button');const paused=readPlaybackClock(app.document).positionMs;assert.equal(paused,150);
+  clock=1210;app.renderAudioTo(.21);app.frame();const firstNewNode=app.audioNodes.length;
+  await app.click('play-button');app.frame();
+  const sourceStarts=app.audioNodes.slice(firstNewNode).filter(node=>node.kind==='oscillator').flatMap(node=>node.starts);
+  assert.ok(sourceStarts.length>0);assert.ok(Math.abs(Math.min(...sourceStarts)-.26)<1e-9,'Resumed source audio stays scheduled 50 ms in the future');
+  const take=await app.exported('export-takes'),segment=take.passes[0].clock_segments.at(-1);
+  assert.equal(segment.wallStart,1260);assert.equal(segment.positionStart,paused);
+  assert.equal(readPlaybackClock(app.document).transportPositionMs,100,'Source-follow retains the existing signed scheduling projection before its accepted anchor');
+  t.diagnostic(JSON.stringify({resume_media_observation:{resume_wall_ms:clock,accepted_source_wall_ms:segment.wallStart,pv_play_call_wall_ms:plays.at(-1),physical_video_verified:false}}));
+  await app.click('play-button');assert.equal(readPlaybackClock(app.document).positionMs,paused);assert.equal(video.paused,true);
+ }finally{await app.close();}
+});
+
 test('a late audio unlock cannot activate clean audio after another song selection',async()=>{const {app}=await setup();try{const pending=deferred();app.setUnlock(()=>pending.promise);await app.click('start-listen');await app.click('home-single-player');const bundled=app.document.querySelector('#catalog [data-score-id]');bundled.click();await app.until(()=>app.$('clean-song-preview').hidden);pending.resolve();await app.tick();assert.equal(runningOscillators(app).length,0);}finally{await app.close();}});
 
 test('range summary retains all notes and 88-key action changes device range without transposition',async()=>{const {app,score}=await setup();try{await activate(app,'listen');await app.click('play-button');assert.match(app.$('song-complete-range-text').textContent,/5 notes/);const original=JSON.stringify(score.parts);await app.click('song-use-piano-88');assert.equal(app.$('key-count').value,'88');assert.equal(JSON.stringify(score.parts),original);assert.equal(app.$('song-use-piano-88').hidden,true);app.$('tempo').value='130';app.emit(app.$('tempo'),'change');assert.equal(app.$('tempo').value,'120');assert.equal(app.requests.filter(request=>request.path==='/api/transpose').length,0);}finally{await app.close();}});

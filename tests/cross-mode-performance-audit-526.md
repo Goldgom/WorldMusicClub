@@ -2,6 +2,8 @@
 
 Base: `1db03b10e165346d8bfc0b42de995d559491d312`. The audit found and fixed one shared transport-clock defect. `web/transport.js` is the only changed production file.
 
+The initial clock-read clamp was superseded after integrated validation exposed early PV/source-follow behavior. See `cross-mode-performance-anchor-followup-533.md` for the corrected pause-only boundary and its media verification limits. The retained 526 JSON evidence records that earlier candidate, not full acceptance.
+
 ## Fixed: early Resume → Pause rewound Basic and VSQ
 
 Pause a Basic MIDI or VSQ performance, resume, then pause within the 50 ms audio admission lead. The transport subtracts the remaining lead from the saved source position even though resumed source audio has not elapsed. The recorder retains the original resume position, leaving the paused clock and recorder out of agreement. Canonical JSON/MusicXML correctly retain the held position.
@@ -18,7 +20,7 @@ This is reproduced by `cross-mode-performance-resume.test.js` through actual `we
 
 The narrower DOM regression observed 150 → 100 ms for both affected profiles. `Transport.time()` added `now - startedAt` even while the accepted anchor remained in the future. Canonical has its own held source-clock handling.
 
-The fix clamps only that elapsed contribution to zero until the future anchor. It preserves the stored source position, including an explicit negative count-in, and resumes normal one-to-one elapsed time at the anchor. The native rerun preserves Basic at 69.875 ms and VSQ at 70 ms; JSON/MusicXML remain at 70 ms. Exact before/after output and transport hashes are retained in `cross-mode-performance-audit-evidence-526.json`. Initial start, positive/fractional resume, repeated Pause, post-anchor time, count-in, nonzero loop wrapping, seek and replay are covered by the clock regression.
+The corrected fix keeps signed initial/resumed clock reads and prevents `Transport.pause()` from saving the unelapsed admission lead as a source rewind. It preserves the stored source position, including an explicit negative count-in, without changing scheduling reads or accepted recorder anchors. The 526 native rerun preserved Basic at 69.875 ms and VSQ at 70 ms; JSON/MusicXML remained at 70 ms. Exact historical before/after output and transport hashes are retained in `cross-mode-performance-audit-evidence-526.json`. Initial start, positive/fractional resume, repeated Pause, post-anchor time, count-in, nonzero loop wrapping, seek and replay are covered by the corrected clock regression.
 
 ## Verified supported behavior
 

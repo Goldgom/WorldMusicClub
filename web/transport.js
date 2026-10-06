@@ -3,12 +3,8 @@ export class Transport {
   constructor() { this.reset(); }
   reset() { this.position = 0; this.startedAt = null; this.running = false; this.cursor = 0; this.completed = false; this.hasStarted = false; }
   seek(position) { this.reset(); this.position = position; }
-  // A future audio anchor has not consumed any source time. Keep the saved
-  // position (including count-in) until that anchor, even if paused immediately.
-  time(now) {
-    if (!this.running || now <= this.startedAt) return this.position;
-    return this.position + now - this.startedAt;
-  }
+  // Scheduling, media and notation retain the signed audio admission lead.
+  time(now) { return this.running ? this.position + now - this.startedAt : this.position; }
   start(now, notes, countIn = 0) {
     if (this.running) return;
     if (this.completed) this.reset();
@@ -19,7 +15,12 @@ export class Transport {
     this.startedAt = now;
     this.running = true;
   }
-  pause(now) { this.position = this.time(now); this.startedAt = null; this.running = false; }
+  pause(now) {
+    // Admission lead is not consumed source time and must not become a saved
+    // rewind when an initial start or resume is interrupted before its anchor.
+    if (this.running && now >= this.startedAt) this.position = this.time(now);
+    this.startedAt = null; this.running = false;
+  }
   due(now, notes, lookAhead = 100) {
     if (!this.running) return [];
     const position = this.time(now);
