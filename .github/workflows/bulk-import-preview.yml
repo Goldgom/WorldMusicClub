@@ -42,11 +42,11 @@ jobs:
           name: bulk-import-ui-preview-${{ github.sha }}
           path: test-results/bulk-import/
           if-no-files-found: warn
-      - name: Check invalid single-score routing and assessment ownership
+      - name: Check single-score import sources, routing and assessment ownership
         if: ${{ !cancelled() && steps.recovery_backend.outcome == 'success' }}
         run: >-
           node --test
-          --test-name-pattern='tempo recompiles, export retains canonical JSON|a failed replacement import cannot strand a take'
+          --test-name-pattern='tempo recompiles, export retains canonical JSON|a failed replacement import cannot strand a take|MusicXML import submits raw XML'
           tests/frontend-browser.test.js
       - name: Check saved sources and compact piano controls
         if: ${{ !cancelled() && steps.recovery_backend.outcome == 'success' }}

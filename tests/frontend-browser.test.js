@@ -186,7 +186,20 @@ test('image review requires explicit durations and confirmation, preserving the 
 });
 test('MusicXML import submits raw XML and preserves the returned source',async()=>{
  const xml='<score-partwise version="4.0"><work><work-title>Test</work-title></work></score-partwise>';
- await ui('#score-file').setInputFiles({name:'exercise.musicxml',mimeType:'application/xml',buffer:Buffer.from(xml)});await page.waitForTimeout(100);const sent=JSON.parse(requests.filter(r=>r.url==='/api/compile').at(-1).body);assert.equal(sent.source.content,xml);assert.equal(requests.filter(r=>r.url==='/api/import/musicxml').at(-1).body,xml);
+ // The bootstrap and imported scores have the same title. Observe this
+ // import's requests before selecting the file, not the last global compile
+ // after a timer that can expire before the file bytes have even been read.
+ const imported=page.waitForResponse('**/api/import/musicxml');
+ const compiled=page.waitForResponse(response=>response.url().endsWith('/api/compile')&&response.request().postDataJSON().source?.format==='musicxml');
+ await ui('#score-file').setInputFiles({name:'exercise.musicxml',mimeType:'application/xml',buffer:Buffer.from(xml)});
+ const response=await imported;assert.equal(response.status(),200);assert.deepEqual(response.request().postDataBuffer(),Buffer.from(xml));
+ const returned=(await response.json()).score.source;assert.equal(returned.content,xml);
+ const compilation=await compiled;assert.equal(compilation.status(),200);assert.deepEqual(compilation.request().postDataJSON().source,returned);
+ // Preview Mod stays disabled for this compile's entire admission. A title
+ // or the old take's Play state can already match before source publication.
+ await page.waitForFunction(()=>document.querySelector('#configure-song-mod').disabled===false);
+ const download=page.waitForEvent('download');await ui('#export-button').click();
+ assert.deepEqual(JSON.parse(await readFile(await(await download).path(),'utf8')).source,returned);
 });
 test('MIDI access is user-triggered; simulated note on/off drives the piano',async()=>{
  await page.addInitScript(()=>{window.midiRequests=0;window.testMidiInput={id:'test-input',name:'Simulated piano',state:'connected',onmidimessage:null};Object.defineProperty(navigator,'requestMIDIAccess',{configurable:true,value:async(options)=>{window.midiRequests++;window.midiOptions=options;return{inputs:new Map([['test-input',window.testMidiInput]]),onstatechange:null}}})});await reloadStage();await ui('#play-button:not([disabled])').waitFor();assert.equal(await page.evaluate(()=>window.midiRequests),0);await ui('#midi-button').click();await closeShellPanels();assert.equal(await page.evaluate(()=>window.midiRequests),1);assert.equal(await page.evaluate(()=>window.midiOptions.sysex),false);

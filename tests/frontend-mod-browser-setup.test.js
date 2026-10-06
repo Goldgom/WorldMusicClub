@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {nativeScoreServer,nativeStorageApp,nativeResponse} from './native-storage-app-fixtures.js';
+import {nativeScoreServer,nativeStorageApp,nativeResponse,deferred} from './native-storage-app-fixtures.js';
 import {fixture} from './frontend-fixtures.js';
+import {compileBrowserFixture} from './frontend-browser-compilation-fixture.js';
 import {readPlaybackClock} from '../web/playback-clock-view.js';
 import {SONG_MOD_STORAGE_PREFIX} from '../web/song-mod.js';
 
@@ -25,6 +26,38 @@ test('a frozen-clock original fixture can activate paused through Import and Res
     assert.deepEqual((await app.exported('export-button')).parts,fixture.parts);
     assert.equal((await app.exported('export-takes')).passes.length,0);
   }finally{await app.close();}
+});
+test('same-title MusicXML import retains source only after file bytes, import and compile responses settle',async()=>{
+  const {app,server}=await pausedImport(),read=deferred(),imported=deferred(),compiled=deferred();
+  const xml='\uFEFF<score-partwise version="4.0">\r\n<!-- 原稿 & exact bytes -->\r\n</score-partwise>',bytes=new TextEncoder().encode(xml);
+  const score={...structuredClone(fixture),source:{format:'musicxml',filename:null,content:xml}};
+  let importRequest,compileRequest;
+  try{
+    server.setRoute(request=>{
+      if(request.path==='/api/import/musicxml'){importRequest=request;return imported.promise;}
+      if(request.path==='/api/compile'&&request.body.source?.format==='musicxml'){compileRequest=request;return compiled.promise;}
+    });
+    const previousCompile=server.requests.filter(request=>request.path==='/api/compile').at(-1);
+    const file={name:'exercise.musicxml',size:bytes.length,arrayBuffer:()=>read.promise,text:()=>{throw Error('MusicXML must retain the original file bytes');}};
+    Object.defineProperty(app.$('score-file'),'files',{configurable:true,value:[file]});app.emit(app.$('score-file'),'change');
+    assert.equal(app.$('score-title').textContent,score.title,'The old title already matches while file reading is pending');
+    assert.equal(importRequest,undefined);assert.equal(previousCompile.body.source,null);
+    assert.equal((await app.exported('export-button')).source,null);
+
+    read.resolve(bytes.buffer);await app.until(()=>Boolean(importRequest),'The raw MusicXML request never arrived');
+    assert.deepEqual(new Uint8Array(importRequest.body),bytes);assert.equal(compileRequest,undefined);
+    assert.equal(server.requests.filter(request=>request.path==='/api/compile').at(-1),previousCompile,'An observed import request alone does not replace the bootstrap compile');
+    assert.equal((await app.exported('export-button')).source,null);
+
+    imported.resolve(nativeResponse(compileBrowserFixture(score)));await app.until(()=>Boolean(compileRequest),'The imported source was not submitted for compilation');
+    assert.deepEqual(compileRequest.body.source,score.source);assert.equal(app.$('play-button').disabled,true);
+    assert.equal((await app.exported('export-button')).source,null,'An observed compile request alone does not publish its response');
+    await app.click('sound-button');assert.equal(app.$('play-button').disabled,false,'The old take can still be playable while source compilation waits');
+    assert.equal(app.$('configure-song-mod').disabled,true,'Import admission must remain pending despite the old take being playable');
+
+    compiled.resolve(compileRequest.defaultReply());await app.until(()=>!app.$('configure-song-mod').disabled,'The imported score did not finish admission');
+    assert.equal(app.$('score-title').textContent,fixture.title);assert.deepEqual((await app.exported('export-button')).source,score.source);
+  }finally{read.resolve(bytes.buffer);imported.resolve(nativeResponse(compileBrowserFixture(score)));compiled.resolve(nativeResponse(compileBrowserFixture(score)));await app.close();}
 });
 test('stage Mod closure precedes the second target check and the final out-of-range reason',async()=>{
   const score=structuredClone(fixture);score.title='Original setup range test';score.parts[0].notes[0].pitch={step:'C',alter:0,octave:8};

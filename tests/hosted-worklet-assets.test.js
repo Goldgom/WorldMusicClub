@@ -143,6 +143,14 @@ test('bulk preview builds its existing exact-source asset server before import w
  const workflow=JSON.parse(execFileSync('python3',['scripts/check-authoring-workflow.py','--json','.github/workflows/bulk-import-preview.yml'],{cwd:root,encoding:'utf8'}));
  const steps=workflow.jobs['bulk-ui'].steps,builds=steps.filter(row=>row.run==='cargo build -p practice-server --locked');assert.equal(builds.length,1);assert.equal(builds[0].id,'recovery_backend');
  const run=steps.find(row=>row.run==='node scripts/hosted-bulk-import-check.mjs');assert.ok(steps.indexOf(builds[0])<steps.indexOf(run));assert.equal(run.env.WMH_SERVER_BINARY,'${{ github.workspace }}/target/debug/practice-server');
+ const mocked=steps.find(row=>row.run?.includes('tests/frontend-browser.test.js'));assert.ok(mocked);assert.equal(mocked.if,"${{ !cancelled() && steps.recovery_backend.outcome == 'success' }}");assert.equal(mocked['continue-on-error'],undefined);
+ const pattern=new RegExp(mocked.run.match(/--test-name-pattern='([^']+)'/)[1]),browserSource=await readFile(new URL('./frontend-browser.test.js',import.meta.url),'utf8');
+ const selected=[...browserSource.matchAll(/^test\('([^']+)'/gm)].map(match=>match[1]).filter(name=>pattern.test(name));
+ assert.deepEqual(selected.sort(),[
+  'tempo recompiles, export retains canonical JSON and invalid import is recoverable',
+  'a failed replacement import cannot strand a take behind an obsolete assessment request',
+  'MusicXML import submits raw XML and preserves the returned source',
+ ].sort(),'The focused preview must retain both existing regressions and exercise the source-preserving MusicXML import');
  const source=await readFile(new URL('../scripts/hosted-bulk-import-check.mjs',import.meta.url),'utf8');
  for(const required of ['startHostedAssetServer({root','validateHostedAssetEvidence(report.asset_server','startSongModPerformance(page',"assert.equal(report.bootstrap.running,true)","assert.equal(await page.locator('#score-title').textContent(),activeTitle)","assert.equal(await page.locator('#song-lobby').getAttribute('data-preview-id'),preview)",'assert.deepEqual(await readFile(originalPath),fixture.bytes)','await closeSession();page=await launch()','validateManagementWorkletLoads(profile.worklet_loads'])assert.ok(source.includes(required),required);
  assert.equal(source.includes('await readFile(file)'),false);assert.equal(source.includes('context.route(`${origin}/**`'),false);
