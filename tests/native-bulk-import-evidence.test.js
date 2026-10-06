@@ -11,9 +11,133 @@ import {promisify} from 'node:util';
 import {fileURLToPath} from 'node:url';
 import {bulkAcceptanceFixtures} from '../scripts/prepare-bulk-import-fixtures.mjs';
 import {storedZip,authoredLegacyPack} from './native-import-driver-fixtures.js';
-import {verifyNativeBulkImportEvidence,validateBulkTakePreservation,bulkFixtureContentHash,readBulkEvidenceZip,BULK_IMPORT_PHASES,BULK_IMPORT_CHECKS} from '../scripts/verify-native-bulk-import-evidence.mjs';
+import {verifyNativeBulkImportEvidence,validateBulkAudition,validateBulkTakePreservation,bulkFixtureContentHash,readBulkEvidenceZip,BULK_IMPORT_PHASES,BULK_IMPORT_CHECKS} from '../scripts/verify-native-bulk-import-evidence.mjs';
+
+import {runInNewContext} from 'node:vm';
+import {syntheticCanonicalProfile} from './canonical-dom-audio-fixture.js';
+import {syntheticAudioThreadStatus,syntheticAudioThreadLifecycle} from './audio-thread-proof-fixtures.js';
+import {buildCanonicalAudioPlan,createCanonicalAudioTransfer,CANONICAL_AUDIO_POLICY} from '../web/canonical-audio-plan.js';
+import {CanonicalAudioCore} from '../web/canonical-audio-core.js';
+import {openScoreStorage} from '../web/native-score-storage.js';
+import {ScorePreview} from '../web/score-preview.js';
+import {CanonicalPracticeSession} from '../web/canonical-practice-session.js';
 
 const hash=value=>createHash('sha256').update(value).digest('hex'),clone=structuredClone,run=promisify(execFile);
+
+// Production DSP exercises the oracle; native provenance below is modeled.
+// This unit fixture is never evidence that a browser or Windows ran.
+function audition(score){
+  const notes=score.parts[0].notes.map((note,index)=>({id:note.id,part_id:'piano',midi:index?64:60,start_ms:index?2000:0,duration_ms:2000,velocity:note.velocity,source_note_id:note.id,source_note_ids:[note.id],voice:'1',staff:1})),compilation={score,timeline:{duration_ms:8000,notes}},profile=syntheticCanonicalProfile(compilation);
+  const plan=buildCanonicalAudioPlan(compilation,profile,{sampleRate:8000,mode:'listen',acceptedPolicyId:CANONICAL_AUDIO_POLICY,range:{startMs:0,endMs:8000},countInMs:0}),messages=[],core=new CanonicalAudioCore(plan.sampleRate,{emit:(message,transfer=[])=>messages.push(structuredClone(message,{transfer}))});
+  let frame=0;const blocks=[],render=()=>{const samples=new Float32Array(128);core.process([samples],frame);const peak=Math.max(...samples.map(Math.abs)),rms=Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length);blocks.push({audioTime:frame/8000,peak,rms});frame+=128;};
+  const wire=createCanonicalAudioTransfer(plan);core.handleMessage({type:'prepare',generation:1,positionFrame:0,wire:wire.wire},frame);while(core.state==='preparing')render();core.handleMessage({type:'start',generation:1,anchorFrame:frame+64},frame);while(frame<4096)render();core.handleMessage({type:'cancel',generation:2,reason:'dispose'},frame);
+  const started=messages.find(row=>row.type==='started'),raw=messages.find(row=>row.type==='canceled'),record={...raw,ledger:{actualStarts:Array.from(raw.ledger.actualStarts).slice(0,raw.recordCount),actualEnds:Array.from(raw.ledger.actualEnds).slice(0,raw.recordCount)},ledgerCapacity:raw.ledger.actualStarts.length,unusedLedgerSentinel:0,unusedLedgerEmpty:Array.from(raw.ledger.actualStarts).slice(raw.recordCount).every(value=>value===0)&&Array.from(raw.ledger.actualEnds).slice(raw.recordCount).every(value=>value===0),passFrames:Array.from(raw.passFrames).slice(0,raw.passCount),pauseSpans:Array.from(raw.pauseSpans)};
+  const graphToDestination=[{type:'AudioWorkletNode',gain:null},{type:'GainNode',gain:.315},{type:'AudioDestinationNode',gain:null}],run={receiverId:1,planGeneration:1,positionFrame:0,plan,prepared:messages.find(row=>row.type==='ready'),started:{...started,anchorTime:started.anchorFrame/8000,connected:true,outputContextMatches:true,outputGain:.315,graphToDestination},node:{actualAudioWorkletNode:true,contextMatches:true,numberOfInputs:0,numberOfOutputs:1},messages:messages.map(row=>({type:row.type,generation:row.generation,planGeneration:row.planGeneration,frame:row.frame,isTrusted:true,portMatches:true})),terminals:[{callback:'onStopped',ledgerType:'Float64Array',record:structuredClone(record)}],rawTerminals:[{isTrusted:true,portMatches:true,ledgerType:'Float64Array',record:structuredClone(record)}],lifecycle:syntheticAudioThreadLifecycle(),pcm:{method:'passive-output-analyser',fftSize:256,blocks,graphToDestination}};
+  const state={screen:'library',previewId:`native:song-${bulkFixtureContentHash(score)}`,durationMs:8000,captured:'0',grades:{accuracy:'—'},assessments:0};
+  return{version:1,compilation,profile,fetchRestored:true,responses:[{path:'/api/compile',status:200,state:'consumed',body:clone(compilation)},{path:'/api/compile',status:200,state:'consumed',body:clone(compilation)},{path:'/api/canonical-audio-profile',status:200,state:'consumed',body:clone(profile)}],playAction:2,stopAction:3,trusted:[2,3].map(actionSequence=>({type:'click',id:'lobby-preview-play',trusted:true,actionSequence})),before:{...structuredClone(state),status:'ready',positionMs:0},playing:{...structuredClone(state),status:'playing',positionMs:300},stopped:{...structuredClone(state),status:'stopped',positionMs:400},playingAudio:syntheticAudioThreadStatus({started:1,activeReceivers:1,completed:0}),finalAudio:syntheticAudioThreadStatus({started:1,completed:0}),audio:[run],cleanup:{restored:true,overflow:false,errors:[],cleanupErrors:[]}};
+}
+
+test('bulk saved audition binds storage validation and preview compilation before the source audio profile',async()=>{
+  const score=bulkAcceptanceFixtures().scores[0],original=audition(score),errors=[],requests=[];
+  const source=await readFile(new URL('../crates/desktop-shell/bulk-import-acceptance.js',import.meta.url),'utf8'),observe=runInNewContext(source.slice(0,source.indexOf('(() => {'))+';observeBulkAuditionResponses;',{structuredClone});
+  const probe=observe(async(path,options)=>{
+    requests.push({path,body:options?.body===undefined?null:JSON.parse(options.body)});
+    let body;
+    if(path==='/api/health')body={name:'WorldMusicHub',engine:'rust',score_format_version:1,network:'native-protocol-no-listener'};
+    else if(path==='/api/library/load')body={entry:{key:`song-${bulkFixtureContentHash(score)}`,title:score.title,score_id:score.id,score_bytes:JSON.stringify(score).length,saved_at_unix_ms:1700000000000},score_json:JSON.stringify(score)};
+    else if(path==='/api/compile')body=original.compilation;
+    else if(path==='/api/canonical-audio-profile')body=original.profile;
+    else throw Error(`Unexpected saved-audition request: ${path}`);
+    return new Response(JSON.stringify(body),{status:200});
+  },{onError:error=>errors.push(error)});
+  const api=async(path,body,signal)=>(await probe.fetch(path,{method:'POST',body:JSON.stringify(body),signal})).json();
+  const storage=await openScoreStorage({origin:'https://wmh.localhost',fetcher:probe.fetch,validateScore:(score,signal)=>api('/api/compile',score,signal),openBrowserLibrary:()=>{throw Error('Native saved audition must not open browser storage');}});
+  const preview=new ScorePreview({compile:(score,signal)=>api('/api/compile',score,signal),check:async()=>({status:'ready'})}),session=new CanonicalPracticeSession({api});
+  try{
+    const key=`native:song-${bulkFixtureContentHash(score)}`;
+    assert.equal(await preview.select(key,async signal=>(await storage.load(key,{signal})).score),true);
+    assert.equal(preview.value.status,'ready');session.select(preview.value.compiled);
+    // Exercise the actual profile request and source-plan builder without a
+    // device; the independent DSP fixture above supplies modeled audio proof.
+    const prepared=await session.prepare({soundEnabled:false,context:{sampleRate:8000},mode:'listen',range:{startMs:0,endMs:8000},countInMs:0});
+    assert.deepEqual(prepared.plan,original.audio[0].plan);
+    assert.deepEqual(requests.map(row=>row.path),['/api/health','/api/library/load','/api/compile','/api/compile','/api/canonical-audio-profile']);
+    for(const request of requests.slice(2))assert.deepEqual(request.body,score);
+    assert.deepEqual(clone(probe.rows),original.responses);assert.deepEqual(errors,[]);
+    validateBulkAudition({...original,responses:clone(probe.rows)},score);
+  }finally{session.destroy();preview.cancel();storage.close();probe.restore();}
+});
+
+test('bulk saved audition rejects missing, extra, unconsumed and divergent response bindings',async()=>{
+  const score=bulkAcceptanceFixtures().scores[0],original=audition(score);
+  const mutations=[
+    ['missing storage validation',rows=>rows.splice(0,1)],
+    ['missing preview compilation',rows=>rows.splice(1,1)],
+    ['missing profile',rows=>rows.pop()],
+    ['extra compilation',rows=>rows.splice(1,0,clone(rows[0]))],
+    ['extra profile',rows=>rows.push(clone(rows[2]))],
+    ['profile before compilation',rows=>rows.reverse()],
+  ];
+  for(const index of [0,1,2]){
+    mutations.push([`unconsumed response ${index}`,rows=>{rows[index].state='awaiting-consumption';}]);
+    mutations.push([`failed response ${index}`,rows=>{rows[index].status=422;}]);
+    mutations.push([`wrong path ${index}`,rows=>{rows[index].path='/api/assess';}]);
+  }
+  for(const index of [0,1]){
+    mutations.push([`changed retained source ${index}`,rows=>{rows[index].body.score.source.content+='\n';}]);
+    mutations.push([`changed timing ${index}`,rows=>{rows[index].body.timeline.notes[0].duration_ms++;}]);
+  }
+  mutations.push(['changed profile',rows=>{rows[2].body.source_fingerprint='0'.repeat(64);}]);
+  for(const [name,mutate]of mutations){const value=clone(original);mutate(value.responses);assert.throws(()=>validateBulkAudition(value,score),/exact storage-validation, preview-compilation and audio-profile responses/,name);}
+});
+
+test('bulk audition requires source-bound native PCM, cancellation frames and quiet zero-input cleanup',async()=>{
+  const score=bulkAcceptanceFixtures().scores[0],original=audition(score);validateBulkAudition(original,score);
+  assert.throws(()=>validateBulkAudition({sourceStarts:2,activeSources:0,pendingSources:0},score),/canonical audition evidence is missing/);
+  for(const [index,change] of [
+    value=>value.responses[0].state='awaiting-consumption',
+    value=>value.compilation.score.source.content+='\n',
+    value=>value.compilation.timeline.notes[0].duration_ms++,
+    value=>value.profile.source_fingerprint='0'.repeat(64),
+    value=>value.audio[0].node.actualAudioWorkletNode=false,
+    value=>value.audio[0].plan.notes[0][1]++,
+    value=>value.audio[0].plan.instrumentOverrides={piano:'reed'},
+    value=>value.audio[0].pcm.blocks.forEach(block=>{block.peak=block.rms=0;}),
+    value=>value.audio[0].pcm.graphToDestination.pop(),
+    value=>value.audio[0].messages[2].isTrusted=false,
+    value=>value.audio[0].rawTerminals[0].portMatches=false,
+    value=>value.audio[0].terminals[0].record.ledger.actualEnds[0]--,
+    value=>{value.audio[0].terminals[0].record.ledger.actualStarts[0]++;value.audio[0].rawTerminals[0].record.ledger.actualStarts[0]++;},
+    value=>value.audio[0].lifecycle.connected=true,
+    value=>value.finalAudio.pendingReceivers=1,
+    value=>value.playing.positionMs=0,
+    value=>value.stopped.captured='1',
+    value=>value.stopped.assessments=1,
+    value=>value.stopped.grades.accuracy='100%',
+    value=>value.stopAction++,
+    value=>value.trusted[0].trusted=false,
+    value=>value.cleanup.restored=false,
+    value=>value.fetchRestored=false,
+  ].entries()){
+    const changed=structuredClone(original);change(changed);
+    // Keep consumed bodies bound so these tests independently exercise the
+    // source, plan, audio and native-input gates after response validation.
+    changed.responses[0].body=clone(changed.compilation);changed.responses[1].body=clone(changed.compilation);changed.responses[2].body=clone(changed.profile);
+    assert.throws(()=>validateBulkAudition(changed,score),/audition/,`Audition mutation ${index}`);
+  }
+});
+
+test('bulk audition observes only caller-consumed JSON and forwards promises and request arguments',async()=>{
+  const source=await readFile(new URL('../crates/desktop-shell/bulk-import-acceptance.js',import.meta.url),'utf8'),observe=runInNewContext(source.slice(0,source.indexOf('(() => {'))+';observeBulkAuditionResponses;',{structuredClone});
+  const value={original:'source'},bodyPromise=Promise.resolve(value),calls=[],errors=[],response={status:200,json(...args){calls.push({owner:this,args});return bodyPromise;}},original=response.json,promise=Promise.resolve(response),owner={};
+  const probe=observe(function(...args){assert.equal(this,owner);calls.push(args);return promise;},{onError:error=>errors.push(error)});
+  assert.equal(probe.fetch.call(owner,'/api/compile',{method:'POST',body:'unchanged'}),promise);await promise;assert.equal(probe.rows[0].state,'awaiting-consumption');
+  assert.equal(response.json('original argument'),bodyPromise);await bodyPromise;await Promise.resolve();assert.equal(probe.rows[0].state,'consumed');assert.deepEqual(probe.rows[0].body,value);assert.equal(response.json,original);assert.equal(calls[1].owner,response);assert.deepEqual(calls[1].args,['original argument']);
+  probe.fetch.call(owner,'/api/assess');assert.equal(probe.assessmentRequests(),1);probe.restore();assert.deepEqual(errors,[]);
+});
+
+// Independently authored observations only. These tests launch Node, never a
+// GUI, WebView, browser, native executable or server, and never claim acceptance.
 
 test('streaming ZIP fixture preserves UTF-8 member names independently of Python text encoding',async()=>{
  const fixture=authoredLegacyPack(),moduleUrl=new URL('./native-import-driver-fixtures.js',import.meta.url).href;
@@ -51,10 +175,10 @@ async function evidence(t){
   function report(filename,mode,outcomes,{index=null,keepBoth=false}={}){const bytes=sources.get(filename),items=outcomes.map(([status,entryIndex],index)=>({index,path:status==='retained_nonplayable'?'original-events/metadata.json':`song-${index}/score.json`,title:entryIndex===undefined?'Original unsupported event source':entries[entryIndex].title,status,code:status==='conflict'?'library_id_conflict':`pack_${status}`,message:`Authored ${status} result`,playable:status!=='retained_nonplayable',...(['saved','duplicate','conflict'].includes(status)?{entry:clone(entries[entryIndex])}:{})}));return{status:200,filename,mode,index,keepBoth,body:{format:'worldmusichub-import-report',version:1,mode,source:{filename,sha256:hash(bytes),bytes:bytes.length,retained:mode==='commit',archive_key:`pack-${hash(bytes)}`},items,summary:{...Object.fromEntries(statuses.map(status=>[status,items.filter(item=>item.status===status).length])),total:items.length},inventory:zipInventory(bytes,filename),warnings:[]}};}
   const observations=[report('原创曲包_日本語.zip','preview',[['ready',0],['ready',1],['retained_nonplayable']]),report('原创曲包_日本語.zip','commit',[['saved',0],['saved',1],['retained_nonplayable']]),report('原创曲包_日本語.zip','preview',[['duplicate',0],['duplicate',1],['retained_nonplayable']]),report('原创曲包_日本語.zip','commit',[['duplicate',0],['duplicate',1],['retained_nonplayable']]),report('bulk-backup.json','preview',[['duplicate',0],['duplicate',1]]),report('bulk-backup.json','commit',[['duplicate',0],['duplicate',1]]),report('bulk-conflict.zip','preview',[['conflict',0]]),report('bulk-conflict.zip','commit',[['conflict',0]]),report('bulk-conflict.zip','commit',[['saved',2]],{index:0,keepBoth:true}),report(seedFiles.unified,'preview',[['duplicate',0],['duplicate',1],['duplicate',2]]),report(seedFiles.unified,'commit',[['duplicate',0],['duplicate',1],['duplicate',2]]),{status:400,filename:'bulk-malformed.zip',mode:'preview',index:null,keepBoth:false,body:{code:'pack_invalid',error:'Original intentionally malformed ZIP'}}];
   observations.splice(6,0,report('bulk-standard-a.json','preview',[['duplicate',0]]),report('bulk-standard-b.json','preview',[['duplicate',1]]),report('bulk-standard-a.json','commit',[['duplicate',0]]),report('bulk-standard-b.json','commit',[['duplicate',1]]));
-  const definitions={'bulk-seed':[['click'],['key-r'],['click'],['picker','原创曲包_日本語.zip'],['click'],['click'],['picker','原创曲包_日本語.zip'],['click'],['picker','bulk-backup.json'],['click'],['picker','bulk-multiple'],['click'],['picker','bulk-conflict.zip'],['click'],['click'],['picker',seedFiles.unified],['click'],['cancel-picker'],['picker','bulk-malformed.zip'],['click']], 'bulk-restart':[['click'],['click'],['click']], 'bulk-failure':[['picker','bulk-failure.zip'],['click']]};
+  const definitions={'bulk-seed':[['click'],['key-r'],['click'],['picker','原创曲包_日本語.zip'],['click'],['click'],['picker','原创曲包_日本語.zip'],['click'],['picker','bulk-backup.json'],['click'],['picker','bulk-multiple'],['click'],['picker','bulk-conflict.zip'],['click'],['click'],['picker',seedFiles.unified],['click'],['cancel-picker'],['picker','bulk-malformed.zip'],['click']], 'bulk-restart':[['click'],['click'],['click'],['click'],['click']], 'bulk-failure':[['picker','bulk-failure.zip'],['click']]};
   const phases=BULK_IMPORT_PHASES.map((phase,index)=>({phase,process_id:100+index,renderer_ok:true,renderer_origin:'https://wmh.localhost',normal_close:true,executable_tcp_listeners:0,launched_new_process:true,profile_fresh:true,profile_reused:false,actions:definitions[phase].length})),native={version:1,scenario:'bulk-import',ok:true,profile_reused:false,source_sha:'1'.repeat(40),source_tree:'2'.repeat(40),executable_sha256:'3'.repeat(64),executable_bytes:80000,directory:join(directory,'Scores'),phases};
   const reports=Object.fromEntries(BULK_IMPORT_PHASES.map((phase,index)=>[phase,{version:1,phase,ok:true,origin:'https://wmh.localhost',profileMarkerAbsent:true,checks:[...BULK_IMPORT_CHECKS[phase]],openedScoreDatabases:[],errors:[],directory:native.directory,actions:phases[index].actions,importReports:[],downloads:[],files:{}}]));
-  Object.assign(reports['bulk-seed'],{inventory:clone(entries),importReports:observations,files:seedFiles,transportAdmission:transport(),screenshots:{preflight:5,saved:6,history:20}});Object.assign(reports['bulk-restart'],{inventory:clone(entries),files:restartFiles,audition:{sourceStarts:2,activeSources:0,pendingSources:0},screenshots:{history:3}});
+  Object.assign(reports['bulk-seed'],{inventory:clone(entries),importReports:observations,files:seedFiles,transportAdmission:transport(),screenshots:{preflight:5,saved:6,history:20}});Object.assign(reports['bulk-restart'],{inventory:clone(entries),files:restartFiles,audition:audition(fixtures.scores[0]),screenshots:{history:5}});
   Object.assign(reports['bulk-failure'],{screenshots:{failure:2},importReports:[report('bulk-failure.zip','preview',[['ready',0]]),{status:422,filename:'bulk-failure.zip',mode:'commit',index:null,keepBoth:false,body:{code:'library_unsafe_path',error:'Native .import-staging path is not an ordinary directory'}}],failure:{filename:'bulk-failure.zip',code:'library_unsafe_path',phase:'failed',persistence:'not-saved',retryVisible:true,message:'Native storage is unavailable. Retry this file after restoring access.'}});
   for(const phase of ['bulk-seed','bulk-restart'])reports[phase].downloads=Object.values(reports[phase].files).map(file=>({file,complete:true,success:true}));
   const values={beforeScore:clone(fixtures.scores[0]),afterScore:clone(fixtures.scores[0]),beforeTake:take(fixtures.scores[0].id),afterTake:take(fixtures.scores[0].id)};
@@ -73,6 +197,25 @@ async function evidence(t){
 test('rederives authored bulk evidence from exact archives, retained originals, downloads and native actions',async t=>{const f=await evidence(t),proof=await verifyNativeBulkImportEvidence(f.directory);assert.equal(proof.ok,true);assert.equal(proof.entry_count,3);assert.equal(proof.retained_archive_count,6);assert.equal(proof.typing_note_on_count,1);assert.equal(proof.scored_input_count,1);assert.equal(proof.files.filter(row=>row.path.startsWith('downloads/')).length,7);assert.equal(proof.original_sha256,hash(f.fixtures.files.get('原创曲包_日本語.zip')));for(const row of proof.files){const bytes=await readFile(join(f.directory,row.path));assert.equal(row.sha256,hash(bytes));assert.equal(row.bytes,bytes.length);}});
 
 test('host source, executable, phase order, profiles and renderer evidence fail closed',async t=>{const f=await evidence(t);for(const edit of [v=>v.ok=false,v=>v.source_sha+='\n',v=>v.source_tree='invalid',v=>v.executable_sha256='0',v=>v.executable_bytes=0,v=>v.scenario='song-folder',v=>v.profile_reused=true,v=>v.phases.reverse(),v=>v.phases[1].normal_close=false,v=>v.phases[0].executable_tcp_listeners=1,v=>v.phases[2].actions=65,v=>v.phases[1].profile_fresh=false]){const value=clone(f.native);edit(value);await f.saveJson('native-bulk-import.json',value);await assert.rejects(verifyNativeBulkImportEvidence(f.directory),/Native|native/);}await f.saveJson('native-bulk-import.json',f.native);for(const edit of [v=>v.ok=false,v=>v.origin='http://localhost',v=>v.profileMarkerAbsent=false,v=>v.openedScoreDatabases=['worldmusichub.scores.v1'],v=>v.errors=['failure'],v=>v.checks=[],v=>v.directory='relative/Scores']){const value=clone(f.reports['bulk-seed']);edit(value);await f.saveJson('renderer-bulk-seed.json',value);await assert.rejects(verifyNativeBulkImportEvidence(f.directory),/Renderer|native|Native/);}});
+
+test('bulk archive proof requires the canonical audition and both successful native click actions',async t=>{
+ const f=await evidence(t),restart=f.reports['bulk-restart'];
+ for(const mutate of [
+  value=>value.audition={sourceStarts:2,activeSources:0,pendingSources:0},
+  value=>value.audition.audio=[],
+  value=>value.audition.audio[0].pcm.blocks.forEach(block=>{block.peak=block.rms=0;}),
+  value=>value.audition.audio[0].rawTerminals=[],
+  value=>value.audition.trusted[0].trusted=false,
+  value=>{value.audition.playAction=6;value.audition.stopAction=7;value.audition.trusted.forEach((row,index)=>row.actionSequence=6+index);},
+ ]){const changed=clone(restart);mutate(changed);await f.saveJson('renderer-bulk-restart.json',changed);await assert.rejects(verifyNativeBulkImportEvidence(f.directory),/audition/i);}
+ await f.writeReport('bulk-restart');
+ for(const sequence of [2,3]){
+  const actionFile=`action-bulk-restart-${sequence}.json`,resultFile=`result-bulk-restart-${sequence}.json`,action=JSON.parse(await readFile(join(f.directory,actionFile)));
+  await f.saveJson(actionFile,{...action,kind:'key-r'});await assert.rejects(verifyNativeBulkImportEvidence(f.directory),/Audition click lacks its native action/);await f.saveJson(actionFile,action);
+  await f.saveJson(resultFile,{ok:false});await assert.rejects(verifyNativeBulkImportEvidence(f.directory),/Native bulk-restart action .* failed/);await f.saveJson(resultFile,{ok:true});
+ }
+ assert.equal((await verifyNativeBulkImportEvidence(f.directory)).ok,true);
+});
 
 test('real picker results require ownership, completion, sequential actions and exact selected sources',async t=>{const f=await evidence(t),path='result-bulk-seed-4.json',original=JSON.parse(await readFile(join(f.directory,path)));for(const edit of [v=>v.ok=false,v=>delete v.owned_dialog,v=>v.owned_dialog.process_id=999,v=>v.owned_dialog.root_owner_hwnd=99,v=>v.picker_completion.dialog_dismissed=false,v=>v.picker_completion.app_enabled=false]){const value=clone(original);edit(value);await f.saveJson(path,value);await assert.rejects(verifyNativeBulkImportEvidence(f.directory),/Native bulk-seed/);}await f.saveJson(path,original);await f.saveJson('action-bulk-seed-21.json',{version:1});await assert.rejects(verifyNativeBulkImportEvidence(f.directory),/bounded and sequential/);await rm(join(f.directory,'action-bulk-seed-21.json'));const action=JSON.parse(await readFile(join(f.directory,'action-bulk-seed-4.json')));action.file='../outside.zip';await f.saveJson('action-bulk-seed-4.json',action);await assert.rejects(verifyNativeBulkImportEvidence(f.directory),/picker fixture invalid/);});
 

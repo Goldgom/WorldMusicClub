@@ -28,6 +28,26 @@ function createBulkChooserObserver({target,now=()=>performance.now(),defer=callb
  return {records,begin(sequence,kind){if(active)throw Error('Overlapping native chooser observations');active={sequence,kind,started_wall_ms:now(),finished_wall_ms:null,completed:false,blurs:[]};records.push(active);pending.set(active,[])},async end(sequence,completed){if(!active||active.sequence!==sequence)throw Error('Native chooser observation ownership changed');const record=active;active=null;await Promise.all(pending.get(record));record.finished_wall_ms=now();record.completed=completed},stop(){target.removeEventListener('blur',observe,true)}};
 }
 
+function observeBulkAuditionResponses(fetcher,{onError}){
+  const rows=[],restores=new Set();let active=true,assessmentRequests=0;
+  const observe=function(...args){
+    const promise=Reflect.apply(fetcher,this,args),path=String(args[0]);
+    if(path==='/api/assess')assessmentRequests++;
+    if(!['/api/compile','/api/canonical-audio-profile'].includes(path))return promise;
+    if(rows.length>=4){onError('Audition response observation bound');return promise;}
+    const row={path,status:null,state:'fetching'};rows.push(row);
+    promise.then(response=>{
+      if(!active)return;row.status=response.status;row.state='awaiting-consumption';
+      const original=response.json,descriptor=Object.getOwnPropertyDescriptor(response,'json');
+      const restore=()=>{if(response.json===json){if(descriptor)Object.defineProperty(response,'json',descriptor);else delete response.json;}restores.delete(restore);};
+      function json(...values){const result=Reflect.apply(original,this,values);if(this===response)result.then(body=>{if(active){row.body=structuredClone(body);row.state='consumed';}restore();},error=>{if(active){row.state='rejected';onError(String(error));}restore();});return result;}
+      response.json=json;restores.add(restore);
+    },error=>{if(active){row.state='rejected';onError(String(error));}});
+    return promise;
+  };
+  return{fetch:observe,rows,assessmentRequests:()=>assessmentRequests,restore(){active=false;for(const restore of [...restores])restore();}};
+}
+
 /* Real Windows chooser + native protocol + isolated filesystem proof. No
  * injected FileList, replaced persistence, or app-state setters are used. */
 (() => {
@@ -80,7 +100,34 @@ function createBulkChooserObserver({target,now=()=>performance.now(),defer=callb
     const saved=await inventory();report.inventory=saved.entries;report.directory=saved.directory;await history();screenshots.history=await native('click',$('bulk-import-title'));
    }else if(phase==='bulk-restart'){
     const saved=await inventory();report.inventory=saved.entries;report.directory=saved.directory;assert(saved.entries.length===3,'Fresh profile lost native songs');report.checks.push('fresh-profile-native-inventory');
-    const entry=saved.entries.find(row=>row.title==='原创批量练习一'),key=`native:${entry?.key}`;assert(entry,'Authored original missing');await until(()=>$('catalog').querySelector(`[data-library-key="${key}"]`),'saved row listed');await native('click',$('catalog').querySelector(`[data-library-key="${key}"]`));await until(()=>$('song-lobby').dataset.previewId===key&&!$('lobby-preview-play').disabled,'saved preview ready');const probe=observeNativeReferenceAudio();try{await native('click',$('lobby-preview-play'));await until(()=>probe.snapshot().sourceStarts>0,'saved audition started');await native('click',$('lobby-preview-play'));report.audition=probe.snapshot();assert(report.audition.activeSources===0&&report.audition.pendingSources===0,'Saved audition did not clean up')}finally{probe.restore()}report.checks.push('saved-song-preview-audition');
+    const entry=saved.entries.find(row=>row.title==='原创批量练习一'),key=`native:${entry?.key}`;assert(entry,'Authored original missing');
+    const {CanonicalAudioReceiver}=await import('/canonical-audio-receiver.js'),receiver=await observeBasicKeyReceiver(document,{Receiver:CanonicalAudioReceiver,readStartFrame:n=>n[1],readEndFrame:n=>n[2]});
+    const audition=report.audition={version:1,trusted:[]},button=$('lobby-preview-play');
+    const previousFetch=globalThis.fetch,responses=observeBulkAuditionResponses(previousFetch,{onError:error=>errors.push(error)});globalThis.fetch=responses.fetch;audition.responses=responses.rows;
+    const snapshot=()=>({screen:document.body.dataset.screen,previewId:$('song-lobby').dataset.previewId,status:$('lobby-preview-status').dataset.state,positionMs:Number($('lobby-preview-progress').value),durationMs:Number($('lobby-preview-progress').max),captured:$('hud-captured').textContent,grades:Object.fromEntries(['hud-accuracy','accuracy','hits','misses','timing'].map(id=>[id,$(id)?.textContent||''])),assessments:responses.assessmentRequests()});
+    const trusted=event=>{assert(audition.trusted.length<2,'Audition pointer bound');audition.trusted.push({type:event.type,id:event.currentTarget.id,trusted:event.isTrusted===true,actionSequence:sequence});};button.addEventListener('click',trusted,true);
+    const compact=record=>{const value=structuredClone(record);if(value.ledgerLayout==='range-pass-major'){value.ledgerCapacity=value.ledger.actualStarts.length;value.unusedLedgerSentinel=0;value.unusedLedgerEmpty=value.ledger.actualStarts.slice(value.recordCount).every(frame=>frame===0)&&value.ledger.actualEnds.slice(value.recordCount).every(frame=>frame===0);value.ledger.actualStarts=value.ledger.actualStarts.slice(0,value.recordCount);value.ledger.actualEnds=value.ledger.actualEnds.slice(0,value.recordCount);value.passFrames=Array.from(value.passFrames||[]).slice(0,value.passCount);}value.pauseSpans=Array.from(value.pauseSpans||[]);return value;};
+    let auditionFailure;
+    try{
+      await until(()=>$('catalog').querySelector(`[data-library-key="${key}"]`),'saved row listed');
+      await native('click',$('catalog').querySelector(`[data-library-key="${key}"]`));
+      await until(()=>$('song-lobby').dataset.previewId===key&&$('song-lobby').dataset.previewStatus==='ready'&&!$('lobby-preview-play').disabled,'saved canonical preview ready');
+      audition.before=snapshot();audition.playAction=sequence+1;await native('click',button);
+      await until(()=>{receiver.assertHealthy();const run=receiver.snapshot()[0],state=receiver.status();return $('lobby-preview-status').dataset.state==='playing'&&Number($('lobby-preview-progress').value)>250&&state.started===1&&state.activeReceivers===1&&state.pendingReceivers===0&&run?.pcm.blocks.some(block=>block.audioTime>=run.started.anchorTime&&block.peak>1e-6&&block.rms>1e-8);},'saved canonical audition actual PCM and advancing source clock');
+      audition.playing=snapshot();audition.playingAudio=receiver.status();audition.stopAction=sequence+1;await native('click',button);
+      await until(()=>{receiver.assertHealthy();return $('lobby-preview-status').dataset.state==='stopped'&&receiver.settledSince(0)&&receiver.quiet();},'saved canonical audition canceled frame ledger and disconnected receiver');audition.stopped=snapshot();
+      await until(()=>responses.rows.some(row=>row.path==='/api/compile'&&row.state==='consumed'&&row.status===200&&row.body.score?.id===entry.score_id&&row.body.score?.title===entry.title)&&responses.rows.some(row=>row.path==='/api/canonical-audio-profile'&&row.state==='consumed'&&row.status===200&&row.body.source_fingerprint===receiver.snapshot()[0].plan.sourceFingerprint),'consumed saved-score compilation and audio profile');
+      audition.compilation=responses.rows.find(row=>row.path==='/api/compile'&&row.state==='consumed').body;
+      audition.profile=responses.rows.find(row=>row.path==='/api/canonical-audio-profile'&&row.state==='consumed').body;
+      assert(audition.stopped.captured===audition.before.captured&&JSON.stringify(audition.stopped.grades)===JSON.stringify(audition.before.grades)&&audition.stopped.assessments===audition.before.assessments,'Lobby audition changed scored input or results');
+    }catch(error){auditionFailure=error;audition.error=String(error);}finally{
+      button.removeEventListener('click',trusted,true);
+      responses.restore();if(globalThis.fetch===responses.fetch)globalThis.fetch=previousFetch;audition.fetchRestored=globalThis.fetch===previousFetch;
+      try{audition.audio=receiver.snapshot().map(row=>({...row,terminals:row.terminals.map(terminal=>({...terminal,record:compact(terminal.record)})),rawTerminals:row.rawTerminals.map(terminal=>({...terminal,record:compact(terminal.record)}))}));audition.finalAudio=receiver.status();}catch(error){audition.observationError=String(error);auditionFailure??=error;}
+      try{audition.cleanup=receiver.restore();assert(audition.cleanup.restored&&!audition.cleanup.errors.length&&!audition.cleanup.cleanupErrors.length&&!audition.cleanup.overflow,'Audition observer cleanup failed');}catch(error){audition.cleanupError=String(error);auditionFailure??=error;}
+    }
+    if(auditionFailure)throw auditionFailure;
+    report.checks.push('saved-song-preview-audition');
     const original=await history();assert(original,'Original ZIP missing after restart');report.files.original=await downloadNode(original);report.history=await json('/api/library/imports');assert(report.history.imports.some(row=>row.filename==='原创曲包_日本語.zip'&&row.report?.items.some(item=>item.status==='retained_nonplayable'&&!item.playable)),'Retained unsupported events disappeared after restart');report.checks.push('retained-originals-after-restart');screenshots.history=await native('click',$('bulk-import-title'));
    }else if(phase==='bulk-failure'){
     report.directory=(await inventory()).directory;await choose('bulk-failure.zip');await save();const group=document.querySelector('[data-import-file]');assert(['failed','uncertain'].includes(group.dataset.phase),'Blocked write claimed success');report.failure={filename:'bulk-failure.zip',phase:group.dataset.phase,code:importReports.at(-1).body.code,persistence:group.dataset.phase==='uncertain'?'unknown':'not-saved',retryVisible:!group.querySelector('[data-import-retry]').hidden,message:group.textContent};assert(report.failure.retryVisible&&count('saved')===0,'Blocked import has no actionable unsaved result');report.checks.push('blocked-native-import-actionable-no-fallback');screenshots.failure=await native('click',$('bulk-import-title'));
