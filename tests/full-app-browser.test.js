@@ -11,6 +11,7 @@ import {registerReferenceListeningBrowserRegressions} from './reference-listenin
 import {registerSharedPianoStageBrowserRegressions} from './shared-piano-stage-browser-regression.js';
 import {registerLiveToneNavigationBrowserRegressions} from './live-tone-navigation-browser-regression.js';
 import {registerFreePianoBrowserRegressions} from './free-piano-browser-regression.js';
+import {registerSkinBrowserRegressions} from './skin-browser-regression.js';
 import {selectLegacyEnglish, wideKeyboardBindings, keyboardBrowserScore, observeRealAudio, guitarPhraseBrowserScore, boundedPreviewBrowserRecord, orderedInitialTempoBrowserMidi, standardMidiDisclosure} from './browser-input-fixtures.js';
 /**
  * Full-stack checks against the actual Rust executable and its embedded UI.
@@ -2655,3 +2656,5 @@ registerGameLobbyBrowserRegressions({test,getPage:()=>page,ui,closeShellPanels,e
 registerSharedPianoStageBrowserRegressions({test,getPage:()=>page,ui,setSessionMode,readyForTitle,closeShellPanels,artifactDirectory,exportScore,exportTakeData,waitForEngraving});
 
 registerLiveToneNavigationBrowserRegressions({test,getPage:()=>page,startPreview,prepareKeyboardBrowserPractice,ui,closeShellPanels,exportTakeData,exportScore,pausedTakeSnapshot,artifactDirectory});
+
+registerSkinBrowserRegressions({test,getPage:()=>page,getOrigin:()=>origin,ui,startPreview,configureStageMod,readyForTitle,closeShellPanels,exportTakeData,exportScore,pausedTakeSnapshot,getRequests:getRequestsForLocale,artifactDirectory});
