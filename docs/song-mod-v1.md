@@ -1,5 +1,8 @@
 # Song Mod v1
 
+This section preserves the original v1 contract and parity vector. Current browser
+human sound support and persistence are specified in **Compatible browser v2 extension** below.
+
 Song Mods are user-owned sidecars. They do not replace any canonical, MIDI, VSQ, raw-source, skin or notation schema. They contain no executable scripts, accounts, multiplayer routes or user assets.
 
 The selected-song action strip has one **Start performance / 开始演奏** action and a **Mod** entry. Apply saves the draft without starting playback. Cancel discards it, including while compatibility checks are pending. The in-stage Mod entry pauses before editing; changing performers or sound policy restarts that session and clears its in-memory takes, with an explicit warning. Display and playback mute changes preserve the paused source position, target plan and takes; mute rebuilds only the machine audio plan on the next Play. In-stage Play/Pause, Replay, Reset and seek controls remain.
@@ -59,3 +62,62 @@ The dialog consumes this descriptor to explain the current input scope. The reso
 ## Verification boundary
 
 Node tests exercise production DSP cores and production app code against in-memory native APIs and DOM/audio fixtures. They prove PCM differences with identical actual gate ledgers, source PCM restoration, per-part selection, tamper rejection, all-human/all-machine ownership, storage recovery, cancellation/navigation and repeated actions. They are not browser rendering, real audio-device or Windows package acceptance. Hosted original-fixture UI and Windows validation remain separate gates before promotion.
+
+## Compatible browser v2 extension
+
+The browser now writes Mod version 2. The preceding version 1 contract and its
+SHA-256 parity vector remain supported unchanged; the separate Rust/Unity
+prototype remains version 1 and has not been extended or enabled.
+
+Version 2 adds exactly one required field to each part: `liveInstrument`, with
+closed values `follow`, `piano`, or `guitar`. `instrument` continues to store the
+machine recipe independently. Selecting Human keeps that machine recipe dormant;
+selecting Machine keeps the human live preference dormant. No dormant value
+changes another part's active recipe or creates a voice.
+
+The v2 fingerprint preimage is UTF-8 `wmc-song-mod-config-v2\n` followed by compact
+JSON for `[layout,showOtherParts,parts.map(p=>[p.partId,p.performer,p.instrument,p.liveInstrument,p.muted,p.visible])]`.
+Both versions reject unknown fields, missing required fields, wrong versions,
+invalid enumerations, source/order mismatches and corrupt fingerprints. Migration
+first validates v1, then sets every `liveInstrument` to `follow` in a v2 copy.
+The constructor accepts a complete legacy-shaped configuration for normalization,
+but rejects mixed legacy/v2 part shapes. Loading uses the v2 storage prefix
+`worldmusichub.song-mod.v2.` and checks the existing v1 key only when the v2 key is
+absent. Reading/canceling never writes storage. Successful Apply writes v2 while
+leaving the original v1 bytes in their old key; failed storage writes retain the
+current tab's usable choices and disclose the failure. An invalid save cannot
+replace either the admitted in-memory Mod or a saved copy.
+
+Human selectors offer **Follow current performance instrument**, **Piano-style
+basic synthesis (sine)** and **Guitar-style basic synthesis (triangle)**. These
+reuse exactly the two existing live AudioWorklet recipes; they do not add acoustic
+samples, GM patches, instruments, devices or a main-thread oscillator fallback.
+Follow resolves against the existing performance instrument control. The Mod does
+not rewrite that shared preference, so Free practice keeps its existing sound.
+The performance profile still determines input geometry, playable range, target
+adaptation and scoring even when the live recipe differs.
+
+A single human part uses its resolved live recipe. Multiple human parts must
+resolve to the same recipe because they share one physical input. Mute and
+visibility do not remove a human owner from that check. Conflicts list the
+involved parts and effective sounds, disable Apply and Start/Play, and preserve
+all choices. **Unify human sounds** explicitly names its destination and affected
+human parts before changing only the draft; Apply remains necessary. No automatic
+unification or pitch/representative-based owner selection is performed.
+
+`wmc-part-instrument-policy-v2` snapshots include mode, current performance
+instrument, exact source binding and configuration fingerprint. Follow is resolved
+freshly at admission and before live routing. Captured policies are revalidated
+after asynchronous live preparation, preventing old defaults, modes or Mods from
+playing a late voice. A single physical same-key event still reaches the existing
+recorder once and the live worklet once with every target owner retained.
+
+Human live-sound edits use the existing explicit take-reset warning and reset
+boundary. Cancel preserves the applied Mod and takes; opening the editor pauses
+and releases held sound. Restart, navigation, changed performance instrument,
+input cleanup and late-unlock fencing retain their existing cancellation paths.
+Machine DSP, score sources, source clocks, target planning and recording/scoring
+algorithms are unchanged. Node coverage includes real production live PCM,
+source-plan equality across canonical/Basic/VSQ, migration, conflicts, stale
+policies and interrupted UI flows. Browser/device/native acceptance remains a
+separate checkpoint.

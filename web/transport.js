@@ -53,12 +53,12 @@ export class Synth {
     this.liveToneFactory = liveToneFactory; this.onError = onError; this.onEvent = onEvent;
     this.liveReceiver = null; this.livePreparation = null; this.liveRequired = false; this.liveError = null; this.disposed = false;
   }
-  async unlock() {
+  async unlock({live=true}={}) {
     const Audio = globalThis.AudioContext || globalThis.webkitAudioContext;
     if (!Audio && !this.context) throw new Error('Audio is unavailable in this browser. Try a current Chrome, Edge, Firefox or Safari.');
     if (this.disposed) throw new Error('The audio output is closed.');
     this.context ||= new Audio();
-    if (this.liveError) throw this.liveError;
+    if (live && this.liveError) throw this.liveError;
     if (this.liveRequired && this.context.state === 'closed') throw this.rememberLiveFailure(Object.assign(new Error('The audio device is closed; reopen the app before using sound again.'), {code: 'live_audio_closed'}));
     if (!this.output) {
       this.output = this.context.createGain(); this.output.gain.value = 0.7;
@@ -67,6 +67,10 @@ export class Synth {
       } else this.output.connect(this.context.destination);
     }
     if (this.context.state !== 'running') await this.context.resume();
+    // A procedural machine-only source may reuse the device/output even when
+    // the separate live receiver failed. Its terminal error is never cleared;
+    // manual play and ordinary unlock still require the live receiver.
+    if (!live) return;
     // Once selected, live input cannot fall back to graph-changing oscillators.
     // Waiting here also lets the app's contact token fence a key released while
     // the persistent receiver was still preparing or recovering its device.

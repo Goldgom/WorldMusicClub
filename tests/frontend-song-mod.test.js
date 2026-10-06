@@ -6,6 +6,7 @@ import {basicKeyRenditionFixture} from './basic-key-rendition-fixtures.js';
 import {originalMultipartNotation} from './notation-scope-fixtures.js';
 import {beat,pitchMidi} from '../web/music.js';
 import {getAppI18n} from '../web/app-locale.js';
+import {Synth} from '../web/transport.js';
 import {SONG_MOD_STORAGE_PREFIX} from '../web/song-mod.js';
 
 async function basicFixture({storageValues=new Map()}={}){
@@ -216,4 +217,120 @@ test('stage display edits leave an in-flight same-source preview check able to s
   await app.click('back-to-library');app.savedButton(keys[0]).click();await app.until(()=>Boolean(release));await app.click('resume-session');await app.click('edit-song-mod');set(app,'visible',score.parts[1].id,false);await apply(app);await app.click('back-to-library');assert.equal(app.$('start-performance').disabled,true);
   release();await app.until(()=>!app.$('start-performance').disabled);await app.click('configure-song-mod');assert.equal(control(app,'visible',score.parts[1].id).checked,false);
  }finally{release?.();await app.close();}
+});
+
+const liveCore=app=>app.audioNodes.findLast(node=>node.kind==='live-audio-worklet'&&node.connected)?.core;
+const manualPlays=app=>app.plays.filter(args=>String(args[0]).startsWith('manual:'));
+
+test('human Mod sound reaches one actual live worklet voice; Cancel, Apply and navigation clean held and pending input while free sound stays unchanged',async()=>{
+ const f=await basicFixture(),{app,score}=f,part=score.parts[0].id;
+ try{
+  await app.click('configure-song-mod');set(app,'live-instrument',part,'guitar');await apply(app);
+  await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');f.time(1120);
+  const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:91,button:0});await app.tick();f.time(1160);
+  assert.equal(manualPlays(app).at(-1)[4],'guitar');assert.equal(liveCore(app).activeNotes,1);assert.equal(liveCore(app).notes.find(note=>note.occupied).guitar,true);assert.ok(liveCore(app).pcmEnergy>0);assert.equal((await app.exported('export-takes')).passes[0].inputs.length,1);
+  await app.click('edit-song-mod');assert.equal(liveCore(app).activeNotes,0);set(app,'live-instrument',part,'piano');assert.match(app.$('song-mod-warning').textContent,/restarts this session/);await app.click('song-mod-cancel');
+  assert.equal((await app.exported('export-takes')).song_mod.config.parts[0].liveInstrument,'guitar');assert.equal((await app.exported('export-takes')).passes[0].inputs.length,1);
+  await app.click('edit-song-mod');set(app,'live-instrument',part,'piano');await apply(app);assert.equal((await app.exported('export-takes')).passes.length,0);
+  await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');f.time(1220);app.emit(key,'pointerdown',{pointerId:92,button:0});await app.tick();f.time(1250);
+  assert.equal(manualPlays(app).at(-1)[4],'piano');assert.equal(liveCore(app).notes.find(note=>note.occupied).guitar,false);
+  await app.click('edit-song-mod');set(app,'live-instrument',part,'guitar');await apply(app);await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');f.time(1320);
+  let release;app.setUnlock(()=>new Promise(resolve=>{release=resolve;}));const before=manualPlays(app).length;app.emit(key,'pointerdown',{pointerId:93,button:0});await app.until(()=>Boolean(release));await app.click('edit-song-mod');await app.click('song-mod-cancel');release();await app.tick();assert.equal(manualPlays(app).length,before);assert.equal(liveCore(app).activeNotes,0);app.setUnlock(null);
+  app.emit(key,'pointerdown',{pointerId:94,button:0});await app.tick();assert.equal(manualPlays(app).at(-1)[4],'guitar');await app.click('back-to-library');assert.equal(liveCore(app).activeNotes,0);
+  await app.click('start-free-practice');app.emit(app.$('free-practice-title'),'keydown',{code:'KeyA',key:'a',repeat:false});await app.tick();assert.equal(manualPlays(app).at(-1)[4],'piano','Free practice retains its shared performance preference');app.emit(app.$('free-practice-title'),'keyup',{code:'KeyA',key:'a'});
+  assert.equal(app.audioNodes.filter(node=>node.kind==='oscillator').length,0,'No main-thread oscillator fallback');
+ }finally{await app.close();}
+});
+
+test('conflicts name all human parts, block Apply and Start, and Unify explicitly names its destination and affected group in both locales',async()=>{
+ const f=await basicFixture(),{app,score,storageValues}=f,[first,second,third]=score.parts,i18n=getAppI18n(app.document);
+ try{
+  await app.click('configure-song-mod');set(app,'performer',second.id,'human');set(app,'live-instrument',first.id,'piano');set(app,'live-instrument',second.id,'guitar');
+  for(const locale of ['zh-CN','en']){i18n.setLocale(locale);assert.equal(app.$('song-mod-apply').disabled,true);assert.equal(app.$('song-mod-input-routing').dataset.liveSoundStatus,'conflict');for(const part of [first,second])assert.ok(app.$('song-mod-input-routing').textContent.includes(part.name));}
+  await app.click('song-mod-apply');assert.equal([...storageValues.keys()].filter(key=>key.startsWith(SONG_MOD_STORAGE_PREFIX)).length,0);assert.equal(app.$('song-mod-dialog').open,true);
+  app.$('song-mod-unify-sound').value='guitar';app.emit(app.$('song-mod-unify-sound'),'change');assert.match(app.$('song-mod-unify-description').textContent,/Guitar-style basic synthesis/);for(const part of [first,second])assert.ok(app.$('song-mod-unify-description').textContent.includes(part.name));assert.ok(!app.$('song-mod-unify-description').textContent.includes(third.name));
+  await app.click('song-mod-unify-human');assert.equal(control(app,'live-instrument',first.id).value,'guitar');assert.equal(control(app,'live-instrument',second.id).value,'guitar');assert.equal(control(app,'live-instrument',third.id).value,'follow');assert.equal(app.$('song-mod-apply').disabled,false);
+  set(app,'live-instrument',first.id,'piano');set(app,'live-instrument',second.id,'follow');await apply(app);assert.equal(app.$('start-performance').disabled,false);
+  app.$('instrument').value='guitar';app.emit(app.$('instrument'),'change');await app.until(()=>app.$('song-mod-preview-summary').textContent.includes('Conflicting human sounds'));assert.equal(app.$('start-performance').disabled,true);assert.equal(app.audioNodes.filter(node=>node.kind==='audio-worklet'&&node.connected).length,0);
+  await app.click('configure-song-mod');assert.equal(control(app,'live-instrument',first.id).value,'piano');assert.equal(control(app,'live-instrument',second.id).value,'follow');assert.equal(app.$('song-mod-apply').disabled,true);await app.click('song-mod-unify-human');await apply(app);await app.until(()=>!app.$('start-performance').disabled);
+ }finally{await app.close();}
+});
+
+test('human same-key owners keep one scored event and one live voice through the shared Mod route',async()=>{
+ const score=originalMultipartNotation({partCount:2,measures:4});score.parts.forEach((part,index)=>{part.notes=[{...part.notes[0],id:`shared-note-${index}`,pitch:{step:'C',alter:0,octave:4}}];});
+ const server=await nativeScoreServer({scores:[score]});
+ // Explicit synthetic native response: this test verifies app consumption of
+ // an already deduplicated Rust contract, not a new JS target planner.
+ server.setRoute(({path,body})=>{if(path!=='/api/practice-targets'||body.timeline.notes.length!==2||!body.timeline.notes.every(note=>note.id.startsWith('shared-note-')))return;const [one,two]=body.timeline.notes,target={...one,source_note_ids:[one.id,two.id]};return nativeResponse({timeline:{...body.timeline,notes:[target]},groups:[{target_id:one.id,source_occurrence_ids:[one.id,two.id],source_note_ids:[one.id,two.id],part_ids:score.parts.map(part=>part.id)}],diagnostics:[],source_note_count:2,target_count:1,playable:true});});
+ let clock=1000;const app=await nativeStorageApp(server,{now:()=>clock});
+ try{
+  const key=[...server.records.keys()][0];await app.until(()=>app.savedButton(key)&&!app.$('start-performance').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('configure-song-mod').disabled);await app.click('configure-song-mod');await app.click('song-mod-all-human');app.$('song-mod-unify-sound').value='guitar';app.emit(app.$('song-mod-unify-sound'),'change');await app.click('song-mod-unify-human');await apply(app);app.$('count-in').checked=false;await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');
+  clock=1120;app.renderAudioTo(.12);app.frame();const keyNode=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(keyNode,'pointerdown',{pointerId:95,button:0});await app.tick();clock=1150;app.renderAudioTo(.15);app.frame();
+  assert.equal(liveCore(app).activeNotes,1);assert.equal(liveCore(app).started,1);assert.equal(manualPlays(app).length,1);assert.equal(manualPlays(app)[0][4],'guitar');assert.equal(source(app).core.plan.count,0);
+  const take=await app.exported('export-takes');assert.equal(take.passes[0].inputs.length,1);assert.equal(take.target_plan.target_count,1);assert.deepEqual(take.target_plan.groups[0].part_ids,score.parts.map(part=>part.id));
+  await app.click('reset-button');assert.equal(liveCore(app).activeNotes,0);assert.equal((await app.exported('export-takes')).passes.length,0);
+ }finally{await app.close();}
+});
+
+test('human live preference and dormant machine recipe reopen unchanged after application restart',async()=>{
+ const storageValues=new Map();let f=await basicFixture({storageValues});
+ try{const part=f.score.parts[0].id;await f.app.click('configure-song-mod');set(f.app,'performer',part,'machine');set(f.app,'instrument',part,'reed');set(f.app,'performer',part,'human');set(f.app,'live-instrument',part,'guitar');await apply(f.app);}finally{await f.app.close();}
+ f=await basicFixture({storageValues});
+ try{const part=f.score.parts[0].id;await f.app.click('configure-song-mod');assert.equal(control(f.app,'live-instrument',part).value,'guitar');assert.equal(control(f.app,'instrument',part).value,'reed');assert.equal(control(f.app,'live-instrument',part).disabled,false);set(f.app,'performer',part,'machine');assert.equal(control(f.app,'live-instrument',part).value,'guitar');assert.equal(control(f.app,'live-instrument',part).disabled,true);assert.equal(control(f.app,'instrument',part).value,'reed');await f.app.click('song-mod-cancel');await f.app.click('start-performance');await f.app.until(()=>f.app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal((await f.app.exported('export-takes')).song_mod.config.parts[0].liveInstrument,'guitar');}finally{await f.app.close();}
+});
+
+test('changing the performance instrument during pending stage Apply rejects its captured sound policy without saving',async()=>{
+ const f=await basicFixture(),{app,server,score,storageValues}=f;let release,delayNext=false;
+ server.setRoute(({path,defaultReply})=>{if(delayNext&&path==='/api/practice-targets'){delayNext=false;return new Promise(resolve=>{release=()=>resolve(defaultReply());});}});
+ try{
+  await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');await app.click('edit-song-mod');set(app,'live-instrument',score.parts[0].id,'guitar');delayNext=true;app.$('song-mod-apply').click();await app.until(()=>Boolean(release));
+  const saved=[...storageValues].filter(([key])=>key.startsWith(SONG_MOD_STORAGE_PREFIX));app.$('instrument').value='guitar';app.emit(app.$('instrument'),'change');release();await app.until(()=>!app.$('song-mod-dialog').open);assert.deepEqual([...storageValues].filter(([key])=>key.startsWith(SONG_MOD_STORAGE_PREFIX)),saved);
+  assert.equal((await app.exported('export-takes')).song_mod.config.parts[0].liveInstrument,'follow');assert.equal(liveCore(app).activeNotes,0);
+ }finally{release?.();await app.close();}
+});
+
+
+test('a canceled key awaiting live worklet preparation cannot play or surface a stale-policy error after a Mod reset',async()=>{
+ const f=await basicFixture(),{app,score}=f,originalPrepare=Synth.prototype.prepareLiveAudio;let release;
+ try{
+  await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');f.time(1120);
+  Synth.prototype.prepareLiveAudio=async function(...args){const receiver=await originalPrepare.apply(this,args);await new Promise(resolve=>{release=resolve;});return receiver;};
+  const key=app.document.querySelector('#keyboard [data-midi="60"]'),before=manualPlays(app).length;app.emit(key,'pointerdown',{pointerId:96,button:0});await app.until(()=>Boolean(release));
+  await app.click('edit-song-mod');set(app,'live-instrument',score.parts[0].id,'guitar');await apply(app);release();await app.tick();
+  assert.equal(manualPlays(app).length,before);assert.equal(liveCore(app).activeNotes,0);assert.doesNotMatch(app.$('notice').textContent,/no longer matches/);
+ }finally{Synth.prototype.prepareLiveAudio=originalPrepare;release?.();await app.close();}
+});
+
+async function proceduralModFixture({audioWorklet=true}={}){
+ const {cleanDescriptor,fixtureKey}=await import('./clean-song-fixtures.js'),descriptor=cleanDescriptor(),score=descriptor.runtime.compilation.score,server=await nativeScoreServer(),key=fixtureKey.slice(7);
+ server.records.set(key,{entry:{key,revision:1,title:score.title,composer:'',score_id:score.id,label:score.title,score_bytes:JSON.stringify(score).length,saved_at_unix_ms:1700000000000,clean_package:{version:2,content_sha256:descriptor.content_sha256,media:descriptor.media}},score_json:JSON.stringify(score),clean_package:descriptor});
+ let clock=1000;const storageValues=new Map(),app=await nativeStorageApp(server,{now:()=>clock,audioWorklet,storageValues});await app.until(()=>Boolean(app.savedButton(key)));await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('configure-song-mod').disabled&&!app.$('clean-song-preview').hidden);app.$('count-in').checked=false;
+ return{app,score,storageValues,time:ms=>{clock=ms;app.renderAudioTo((ms-1000)/1000);app.frame();}};
+}
+
+test('procedural source human Mod is blocked before Apply or Start without live worklet support; source-only Listen and silent practice remain usable',async()=>{
+ const {app,score,storageValues,time}=await proceduralModFixture({audioWorklet:false});
+ try{
+  assert.equal(app.$('start-performance').disabled,true);assert.match(app.$('song-mod-preview-summary').textContent,/audio thread|AudioWorklet/i);await app.click('configure-song-mod');set(app,'live-instrument',score.parts[0].id,'guitar');assert.equal(app.$('song-mod-apply').disabled,true);assert.match(app.$('song-mod-input-routing').textContent,/requires AudioWorklet/);await app.click('song-mod-apply');assert.equal(app.$('song-mod-dialog').open,true);assert.equal([...storageValues.keys()].some(key=>key.startsWith(SONG_MOD_STORAGE_PREFIX)),false);await app.click('song-mod-cancel');
+  await app.click('start-performance');assert.equal(app.document.body.dataset.screen,'library');assert.equal(app.audio().contexts,0);assert.equal((await app.exported('export-takes')).passes.length,0);assert.equal(manualPlays(app).length,0);
+  await app.click('configure-song-mod');await app.click('song-mod-all-machine');assert.equal(app.$('song-mod-apply').disabled,false);await apply(app);assert.equal(app.$('start-performance').disabled,false);await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing','Procedural Listen should run');assert.equal((await app.exported('export-takes')).passes.length,0);assert.equal(app.audioNodes.some(node=>node.kind==='live-audio-worklet'),false);
+  await app.click('sound-button');await app.click('edit-song-mod');await app.click('song-mod-all-human');await apply(app);await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing','Explicit silent practice should run');time(1120);const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:97,button:0});await app.tick();assert.equal((await app.exported('export-takes')).passes[0].inputs.length,1);assert.equal(manualPlays(app).length,0,'Explicit silent practice does not construct a live voice');
+ }finally{await app.close();}
+});
+
+test('procedural source awaits live worklet readiness before starting a human take and fails without a partial onset',async()=>{
+ const {app,score}=await proceduralModFixture();let rejectModule;
+ try{
+  await app.click('configure-song-mod');set(app,'live-instrument',score.parts[0].id,'guitar');await apply(app);app.setAudioModule(()=>new Promise((resolve,reject)=>{rejectModule=reject;}));app.$('start-performance').click();await app.until(()=>Boolean(rejectModule));
+  assert.equal((await app.exported('export-takes')).passes.length,0);assert.equal(app.$('progress').getAttribute('data-playback-clock')&&JSON.parse(app.$('progress').getAttribute('data-playback-clock')).running,false);assert.equal(manualPlays(app).length,0);
+  rejectModule(Error('Original test: live worklet unavailable'));await app.until(()=>app.$('notice').textContent.includes('Original test: live worklet unavailable'));assert.equal((await app.exported('export-takes')).passes.length,0);assert.equal(manualPlays(app).length,0);assert.equal(app.audioNodes.filter(node=>node.kind==='oscillator').length,0);
+  app.setAudioModule(null);await app.click('edit-song-mod');await app.click('song-mod-all-machine');await apply(app);await app.until(()=>!app.$('play-button').disabled);await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.ok(app.audioNodes.some(node=>node.kind==='oscillator'&&!node.disconnected),'Existing procedural machine source can recover independently');assert.equal((await app.exported('export-takes')).passes.length,0);
+  await app.click('back-to-library');await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(manualPlays(app).length,0);
+  await app.click('edit-song-mod');set(app,'performer',score.parts[0].id,'human');assert.equal(app.$('song-mod-apply').disabled,true);assert.match(app.$('song-mod-input-routing').textContent,/Original test: live worklet unavailable/);await app.click('song-mod-cancel');assert.equal((await app.exported('export-takes')).passes.length,0);
+ }finally{rejectModule?.(Error('Test cleanup'));await app.close();}
+});
+
+test('procedural accompaniment admits human live guitar on its existing worklet before recording',async()=>{
+ const {app,score,time}=await proceduralModFixture();
+ try{await app.click('configure-song-mod');set(app,'live-instrument',score.parts[0].id,'guitar');await apply(app);await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(liveCore(app).state,'ready');time(1120);const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:98,button:0});await app.tick();time(1160);assert.equal(manualPlays(app).length,1);assert.equal(manualPlays(app)[0][4],'guitar');assert.equal(liveCore(app).activeNotes,1);assert.ok(liveCore(app).pcmEnergy>0);assert.equal((await app.exported('export-takes')).passes[0].inputs.length,1);}finally{await app.close();}
 });

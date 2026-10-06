@@ -21,6 +21,7 @@ import {setupGameShell} from './game-shell.js';
 import {setupNoticeView} from './notice-view.js';
 import {resolvePracticeSelection,humanPracticePartIds} from './practice-selection.js';
 import {SongModStore,createSongMod,songModChanges,songModOptions,songModCapabilities,assertSongModSupported,validateSongMod} from './song-mod.js';
+import {createPartInstrumentPolicy,assertPartInstrumentPolicyCurrent,assertPartInstrumentPolicyReady,resolvePartInstrumentInput,partInstrumentPolicyIssue} from './part-instrument-policy.js';
 import {setupSongModView} from './song-mod-view.js';
 import {setupCompletePracticeView} from './complete-practice-view.js';
 import {CanonicalPracticeSession,canonicalPracticeOptions,canonicalDisplayNotes} from './canonical-practice-session.js';
@@ -228,9 +229,10 @@ function updateButtons() {
   const activePass = state.recorder.active;
   const checkingCurrent = Boolean(activePass && (activePass.manualDeadline !== null || activePass.inFlight || (activePass.closedWall !== null && activePass.assessedRevision < activePass.revision && !activePass.error)));
   const allowed = (!isBasicKeysSong(state.cleanSong)||hasBasicKeyRendition(state.cleanSong)||state.mode==='practice')&&(state.mode !== 'practice' || state.compatibility.status === 'ready');
-  const audioUnavailable=(!state.cleanSong||hasAudioThreadRendition(state.cleanSong))&&!synth.muted&&(typeof globalThis.AudioWorkletNode!=='function'||Boolean(synth.context&&!synth.context.audioWorklet));
-  $('play-button').disabled = !ready || canonicalSession.pausePending || (!transport.running && (!allowed || checkingCurrent || audioUnavailable));
-  bindAttribute($('play-button'),'title',()=>audioUnavailable?cleanErrorText(i18n.locale,{code:'clean_audio_worklet_unavailable'}):'');
+  const liveSoundIssue=state.songMod?partInstrumentPolicyIssue(modInputPolicy(state.songMod,state,state.mode),state.score.parts,i18n.locale):'';
+  const audioUnavailable=(!state.cleanSong||hasAudioThreadRendition(state.cleanSong)||modNeedsLiveAudio(state.songMod,state.mode))&&!synth.muted&&liveAudioUnavailable();
+  $('play-button').disabled = !ready || canonicalSession.pausePending || (!transport.running && (!allowed || checkingCurrent || audioUnavailable || Boolean(liveSoundIssue)));
+  bindAttribute($('play-button'),'title',()=>liveSoundIssue||(audioUnavailable?liveAudioUnavailableReason():''));
   $('reset-button').disabled = !ready;
   $('export-takes').disabled = state.recorder.passes.length === 0||canonicalSession.pausePending;
   $('retry-assessments').hidden = !state.recorder.passes.some(pass=>pass.error);
@@ -504,26 +506,36 @@ function renderScore() {
 }
 function humanPartIds(){if(!state.score||!state.practiceSelection)return new Set();return humanPracticePartIds(state.score?.parts||[],{mode:state.mode,practiceSelection:state.practiceSelection,targetPart:state.practicePart});}
 function refreshPracticeView(){$('practice-part')?.closest('label')?.toggleAttribute('hidden',state.mode==='practice'&&state.practiceLayout==='complete');const available=value=>Boolean(value?.compiled)&&(!value.cleanSong||hasBasicKeyRendition(value.cleanSong)||isVsqSong(value.cleanSong)&&Boolean(value.cleanSong.runtime));completePracticeView?.update({previewAvailable:available(preview?.value),previewReady:!startingPreview&&preview?.value.status==='ready'&&available(preview.value),stageReady:available(state),mode:state.mode,layout:state.practiceLayout,selection:state.practiceSelection,parts:state.score?.parts||[],showOthers:state.showOtherParts});refreshSongModView();}
+function proceduralMachineOnly(song,mode){return Boolean(song&&mode==='listen'&&!hasAudioThreadRendition(song)&&inspectCleanRendition(song).supported);}
+function modNeedsLiveAudio(mod,mode=mod?songModOptions(mod).mode:'listen'){return Boolean(mod&&mode==='practice'&&mod.config.parts.some(part=>part.performer==='human'));}
+function liveAudioUnavailable(){return Boolean(synth.liveError)||typeof globalThis.AudioWorkletNode!=='function'||Boolean(synth.context&&!synth.context.audioWorklet);}
+function liveAudioUnavailableReason(){return synth.liveError?liveAudioErrorText(synth.liveError):cleanErrorText(i18n.locale,{code:'clean_audio_worklet_unavailable'});}
+function assertModLiveAudioSupported(mod,mode){if(!synth.muted&&modNeedsLiveAudio(mod,mode)&&liveAudioUnavailable())throw synth.liveError||Object.assign(new Error(liveAudioUnavailableReason()),{code:'clean_audio_worklet_unavailable'});}
+function modInputBinding(mod,context,mode=songModOptions(mod).mode){return {mod,identity:songMods.identity(context),parts:context.score.parts,performanceInstrument:state.instrument,mode};}
+function modInputPolicy(mod,context,mode){return createPartInstrumentPolicy(mod,modInputBinding(mod,context,mode));}
 function modContext(origin) {
   const value=origin==='preview'?preview.value:{score:state.score,compiled:state.compiled,cleanSong:state.cleanSong,mode:state.mode,practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts};
   if(!value?.score||!value.compiled||value.score.parts.length>128)return null;
   const entry=songMods.read(value);
-  return {...value,...entry,mod:origin==='stage'&&state.songMod?state.songMod:entry.mod,capabilities:songModCapabilities(value),previewVersion:preview.version,navigation:scoreSaveNavigation,generation:state.generation,hasTakes:origin==='stage'&&(transport.hasStarted||state.recorder.passes.length>0)};
+  return {...value,...entry,performanceInstrument:state.instrument,mod:origin==='stage'&&state.songMod?state.songMod:entry.mod,capabilities:{...songModCapabilities(value),liveAudio:synth.muted||!liveAudioUnavailable(),liveAudioReason:synth.liveError?liveAudioErrorText(synth.liveError):''},previewVersion:preview.version,navigation:scoreSaveNavigation,generation:state.generation,hasTakes:origin==='stage'&&(transport.hasStarted||state.recorder.passes.length>0)};
 }
 function scoreAdmissionPending(){return Boolean(state.compileController&&!state.compileController.signal.aborted);}
 function refreshSongModView(){
   if(!songModView)return;
   const candidate=modContext('preview'),active=modContext('stage');let reason='',canStart=false;
-  if(candidate){try{assertSongModSupported(candidate.mod,candidate.capabilities);const options=songModOptions(candidate.mod);canStart=!startingPreview&&preview.canStart(options.mode);if(!canStart)reason=compatibilityText(preview.value.compatibility);if(candidate.capabilities.audioThread&&!synth.muted&&(typeof globalThis.AudioWorkletNode!=='function'||Boolean(synth.context&&!synth.context.audioWorklet))){canStart=false;reason=cleanErrorText(i18n.locale,{code:'clean_audio_worklet_unavailable'});}}catch(error){reason=i18n.locale==='en'?error.message:'当前 Mod 无法播放：'+error.message;}}
-  if(preview.value.score?.parts.length>128)reason=i18n.locale==='en'?'This source exceeds the 128-part Mod budget. Inspect the complete source below.':'此来源超出 Mod 的 128 声部预算；可在下方查看完整来源。';if(!candidate&&preview.value.status==='choice')reason=i18n.locale==='en'?'Choose the basic instrumental renderer below to configure this source.':'请先在下方选择基础器乐渲染器，再配置此来源。';songModView.update({preview:candidate,stage:active,canStart:canStart&&!scoreAdmissionPending(),admitting:scoreAdmissionPending(),reason:scoreAdmissionPending()?t('app.preparingScore'):reason,inspectionOnly:(preview.value.status==='inspection'||preview.value.score?.parts.length>128)&&Boolean(preview.value.score)});
+  if(candidate){try{assertSongModSupported(candidate.mod,candidate.capabilities);assertPartInstrumentPolicyReady(modInputPolicy(candidate.mod,candidate),candidate.score.parts,i18n.locale);const options=songModOptions(candidate.mod);canStart=!startingPreview&&preview.canStart(options.mode);if(!canStart)reason=compatibilityText(preview.value.compatibility);if((candidate.capabilities.audioThread||modNeedsLiveAudio(candidate.mod))&&!synth.muted&&liveAudioUnavailable()){canStart=false;reason=liveAudioUnavailableReason();}}catch(error){reason=i18n.locale==='en'?error.message:'当前 Mod 无法播放：'+error.message;}}
+  if(preview.value.score?.parts.length>128)reason=i18n.locale==='en'?'This source exceeds the 128-part Mod budget. Inspect the complete source below.':'此来源超出 Mod 的 128 声部预算；可在下方查看完整来源。';if(!candidate&&preview.value.status==='choice')reason=i18n.locale==='en'?'Choose the basic instrumental renderer below to configure this source.':'请先在下方选择基础器乐渲染器，再配置此来源。';songModView.update({preview:candidate,stage:active,stageReason:active?partInstrumentPolicyIssue(modInputPolicy(active.mod,active,state.mode),active.score.parts,i18n.locale):'',canStart:canStart&&!scoreAdmissionPending(),admitting:scoreAdmissionPending(),reason:scoreAdmissionPending()?t('app.preparingScore'):reason,inspectionOnly:(preview.value.status==='inspection'||preview.value.score?.parts.length>128)&&Boolean(preview.value.score)});
 }
 async function applySongMod({origin,context,mod,isCurrent=()=>true,commit=()=>true}) {
-  validateSongMod(mod,{identity:songMods.identity(context),parts:context.score.parts});assertSongModSupported(mod,songModCapabilities(context));
-  const options=songModOptions(mod),changes=songModChanges(context.mod,mod),current=()=>isCurrent()&&!scoreAdmissionPending()&&context.generation===state.generation&&!document.hidden&&context.navigation===scoreSaveNavigation&&(origin==='stage'?context.score===state.score&&shell.screen()==='stage':context.score===preview.value.score&&context.identity===preview.value.identity&&context.previewVersion===preview.version&&shell.screen()==='library');
+  validateSongMod(mod,{identity:songMods.identity(context),parts:context.score.parts});assertSongModSupported(mod,songModCapabilities(context));assertModLiveAudioSupported(mod);
+  const livePolicy=assertPartInstrumentPolicyReady(modInputPolicy(mod,context),context.score.parts,i18n.locale);
+  const options=songModOptions(mod),changes=songModChanges(context.mod,mod),current=()=>isCurrent()&&!scoreAdmissionPending()&&context.generation===state.generation&&!document.hidden&&context.navigation===scoreSaveNavigation&&(origin==='stage'?context.mode===state.mode&&context.score===state.score&&shell.screen()==='stage':context.score===preview.value.score&&context.identity===preview.value.identity&&context.previewVersion===preview.version&&shell.screen()==='library');
   if(!current())return;
   const compatibility=options.mode==='practice'&&(origin==='preview'||changes.requiresReset)?await checkPreview(context.compiled,options.practiceSelection):origin==='preview'?{status:'ready'}:state.compatibility;
   if(origin==='stage'&&changes.mix&&canonicalSession.pendingPause){await canonicalSession.pendingPause;await Promise.resolve();}
-  if(!current()||!commit())return;
+  if(!current())return;
+  assertPartInstrumentPolicyCurrent(livePolicy,modInputBinding(mod,context));assertModLiveAudioSupported(mod);
+  if(!commit())return;
   songMods.save(context,mod);
   if(origin==='preview'){
     preview.cancel();preview.publish({...preview.value,...options,songMod:mod,compatibility});
@@ -551,7 +563,7 @@ async function applySongMod({origin,context,mod,isCurrent=()=>true,commit=()=>tr
 }
 async function startUnifiedPerformance(){
   if(startingPreview||scoreAdmissionPending())return;const context=modContext('preview');if(!context)return;
-  try{assertSongModSupported(context.mod,context.capabilities);const options=songModOptions(context.mod);preview.publish({...preview.value,...options,songMod:context.mod});await startPreview(options.mode);}
+  try{assertSongModSupported(context.mod,context.capabilities);assertModLiveAudioSupported(context.mod);assertPartInstrumentPolicyReady(modInputPolicy(context.mod,context),context.score.parts,i18n.locale);const options=songModOptions(context.mod);preview.publish({...preview.value,...options,songMod:context.mod});await startPreview(options.mode);}
   catch(error){notice(()=>error.message,true);}
 }
 function markNotationRoles(){markPracticeNotation($('workspace'),{sourceNotes:state.sourceNotes,humanPartIds:humanPartIds(),mode:state.mode});}
@@ -928,13 +940,19 @@ async function pressNote(source, midi, velocity = 90, eventTime = null, options 
   const freeLive=freeLiveInputAllowed(route,captureTime,options);
   const scoreLive=route.kind==='score' && shell.screen()==='stage'&&captureTime>=scoreLiveStart;
   if(options.liveInput===false || document.hidden || document.querySelector('dialog[open]') || (!freeLive&&!scoreLive))return;
+  const livePolicy=scoreLive&&state.songMod?modInputPolicy(state.songMod,state,state.mode):null;
+  const liveRoute=livePolicy?resolvePartInstrumentInput(livePolicy):null;
+  if(liveRoute&&liveRoute.status!=='ready')return;
+  const liveInstrument=liveRoute?.instrument||state.instrument;
   const audioToken={route,eventWall:captureTime,liveOwner:freeLive?freeSession.liveOwner():null};heldAudioTokens.set(source,audioToken);
   state.held.set(source,midi);highlightKeys();
   // Silent capture never constructs or resumes an AudioContext.
   if(synth.muted)return;
   try{
     await synth.unlock();
-    if(!synth.muted && heldAudioTokens.get(source)===audioToken && state.held.get(source)===midi && (!freeLive || (freeSession.liveOwner()===audioToken.liveOwner && freeLiveInputAllowed(route,captureTime,options))))synth.play(`manual:${source}`,midi,null,0,state.instrument,velocity);
+    if(synth.muted||heldAudioTokens.get(source)!==audioToken||state.held.get(source)!==midi)return;
+    if(livePolicy){await synth.prepareLiveAudio();if(synth.muted||heldAudioTokens.get(source)!==audioToken||state.held.get(source)!==midi)return;assertPartInstrumentPolicyCurrent(livePolicy,modInputBinding(state.songMod,state,state.mode));}
+    if(!synth.muted && heldAudioTokens.get(source)===audioToken && state.held.get(source)===midi && (!freeLive || (freeSession.liveOwner()===audioToken.liveOwner && freeLiveInputAllowed(route,captureTime,options))))synth.play(`manual:${source}`,midi,null,0,liveInstrument,velocity);
   }catch(error){notice(synth.liveError===error?()=>liveAudioErrorText(error):route.kind==='free'?()=>i18n.t('error.audioUnavailable'):()=>errorDetail(error),true);}
 }
 function releaseMatching(prefix, eventTime = null, options = {}) {
@@ -1004,15 +1022,16 @@ async function togglePlayback() {
   if (transport.running || state.playPending) { pausePlayback(undefined,'pause',{preserveCanonical:transport.running}); return; }
   if(state.cleanSong&&!inspectCleanRendition(state.cleanSong).supported&&!(isBasicKeysSong(state.cleanSong)&&state.mode==='practice'&&state.targetTimeline?.notes.length)){notice(()=>cleanErrorText(i18n.locale,{code:'clean_renderer_unsupported'}),true);return;}
   if (state.mode === 'practice' && state.compatibility.status !== 'ready') { notice(compatibilityNotice(state.compatibility), true); return; }
+  if(state.songMod){try{assertModLiveAudioSupported(state.songMod,state.mode);assertPartInstrumentPolicyReady(modInputPolicy(state.songMod,state,state.mode),state.score.parts,i18n.locale);}catch(error){notice(()=>error.message,true);return;}}
   const waiting=state.recorder.active;
   if(waiting&&(waiting.manualDeadline!==null||waiting.inFlight||(transport.completed&&state.recorder.pending))){notice(() => t('app.assessmentWaiting'));return}
   if (transport.completed) { if(state.mode==='practice') { transport.reset(); if(state.loop)transport.seek(state.loop.start_ms); state.lastHighlight=''; } else resetPlayback(); }
-  const generation=state.generation,ticket=++state.playTicket,song=state.cleanSong,score=state.score,mode=state.mode,targetPart=state.practicePart,practiceSelection=state.practiceSelection,instrument=state.instrument,muted=synth.muted;
-  const current=()=>generation===state.generation&&ticket===state.playTicket&&song===state.cleanSong&&score===state.score&&mode===state.mode&&targetPart===state.practicePart&&practiceSelection===state.practiceSelection&&instrument===state.instrument&&muted===synth.muted&&!transport.running&&Boolean(state.compiled)&&shell.screen()==='stage'&&!document.hidden&&!document.querySelector('dialog[open]')&&(mode!=='practice'||state.compatibility.status==='ready');
+  const generation=state.generation,ticket=++state.playTicket,song=state.cleanSong,score=state.score,mode=state.mode,targetPart=state.practicePart,practiceSelection=state.practiceSelection,instrument=state.instrument,mod=state.songMod,muted=synth.muted;
+  const current=()=>generation===state.generation&&ticket===state.playTicket&&song===state.cleanSong&&score===state.score&&mode===state.mode&&targetPart===state.practicePart&&practiceSelection===state.practiceSelection&&instrument===state.instrument&&mod===state.songMod&&muted===synth.muted&&!transport.running&&Boolean(state.compiled)&&shell.screen()==='stage'&&!document.hidden&&!document.querySelector('dialog[open]')&&(mode!=='practice'||state.compatibility.status==='ready');
   state.playPending=true;
   const admissionController=new AbortController();state.audioAdmissionController=admissionController;let admissionLease=null;
   try {
-    if(!muted)await synth.unlock();
+    if(!muted)await synth.unlock({live:!proceduralMachineOnly(song,mode)});
     if(!current())return;
     const audioThread=!muted&&(!song||hasAudioThreadRendition(song)),beatMs=60000/(Number($('tempo').value)||100),countIn=$('count-in').checked&&!isBasicKeysSong(song)?beatMs*4:0;
     // Count-in belongs to the same prepared source position as every audio gate,
@@ -1020,11 +1039,10 @@ async function togglePlayback() {
     const modOptions=state.songMod?songModOptions(state.songMod):null;
     const options={context:synth.context,output:synth.output,mode,targetPart,practiceSelection,...(modOptions?{instrumentOverrides:modOptions.instrumentOverrides,mutedPartIds:modOptions.mutedPartIds}:{}),mutedParts:[...cleanMutedParts],soloParts:[...cleanSoloParts],instrument,resumePositionMs:!song&&state.loop&&!transport.hasStarted?undefined:transport.position-(audioThread&&!transport.hasStarted?countIn:0),acceptedPolicyId:song?inspectCleanRendition(song).rendition:null};
     let now;
+    // Human live sound needs its worklet even when the unchanged source
+    // renderer is procedural. Admit it before starting a clock or human take.
+    if(audioThread||(!muted&&modNeedsLiveAudio(mod,mode))){await synth.prepareLiveAudio();if(!current())return;}
     if(audioThread){
-      // Admit the fixed live-input graph before building the source plan or
-      // choosing its 50 ms anchor. Human keys and clicks then use only messages.
-      await synth.prepareLiveAudio();
-      if(!current())return;
       const resumeCanonical=!song&&canonicalSession.paused;
       if(!resumeCanonical){const prepared=await (song?cleanPlayer.prepare(options):canonicalSession.prepare({...options,soundEnabled:true,audiblePartIds:mode==='listen'&&targetPart&&!state.songMod?[targetPart]:undefined,range:state.loop?{startMs:state.loop.start_ms,endMs:state.loop.end_ms}:undefined,countInMs:countIn,loop:state.loop?{enabled:true}:undefined}));if(!prepared||!current())return;}
       // All plan building, transfer and renderer preparation precede this lead.
@@ -1415,7 +1433,7 @@ $('engraved-button').addEventListener('click', () => {engravedView.show();drawFr
 function setSoundEnabled(enabled){
   const resumeCanonical=!state.cleanSong&&transport.running;
   if(transport.running||state.playPending)pausePlayback();
-  synth.muted=!enabled;if(enabled&&transport.running)synth.unlock().catch(error=>notice(()=>errorDetail(error),true));if(synth.muted){synth.silence();heldAudioTokens.clear();freePreview?.stop('muted');}
+  synth.muted=!enabled;if(enabled&&transport.running)synth.unlock({live:!proceduralMachineOnly(state.cleanSong,state.mode)}).catch(error=>notice(()=>errorDetail(error),true));if(synth.muted){synth.silence();heldAudioTokens.clear();freePreview?.stop('muted');}
   bindText($('sound-button'),()=>synth.muted?t('app.soundOff'):t('app.soundOn'));bindAttribute($('sound-button'),'title',()=>synth.muted?t('app.soundOff'):t('app.soundOn'));$('sound-button').setAttribute('aria-pressed',String(synth.muted));metronome?.updateMute();referenceListening?.soundChanged();performanceListening?.soundChanged();
   updateButtons();
   try{freeSession?.configure('sound',enabled);}catch{/* Session reports configuration failures without losing retained input. */}freeView?.render();
@@ -1601,7 +1619,7 @@ async function startPreview(mode){
   lobbyPreview?.stop();
   const candidate=preview.value,version=preview.version,request=++startRequest;startingPreview=true;renderPreview();
   try{
-    if(!synth.muted)await synth.unlock();if(request!==startRequest||version!==preview.version||candidate.score!==preview.value.score)return;
+    if(!synth.muted)await synth.unlock({live:!proceduralMachineOnly(candidate.cleanSong,mode)});if(request!==startRequest||version!==preview.version||candidate.score!==preview.value.score)return;
     if(candidate.identity?.startsWith('native:')){await (await scoreStorage.storage()).requireActive(candidate.identity);if(request!==startRequest||version!==preview.version||candidate!==preview.value)return;}
     const intent=++state.loadIntent;
     const loaded=await compileScore(candidate.score,false,intent,candidate.compiled.diagnostics||[],candidate.part,mode,candidate.identity,candidate.cleanSong,false,candidate);

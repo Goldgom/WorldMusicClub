@@ -55,7 +55,7 @@ test('source-bound input policy keeps the complete human group and explicitly re
  const mod=createSongMod(base,config),policy=createPartInstrumentPolicy(mod,{identity:songModIdentity(value),parts:value.score.parts});
  assert.equal(policy.policyId,PART_INSTRUMENT_POLICY);assert.equal(policy.configFingerprint,mod.configFingerprint);assert.deepEqual(policy.sourceRevision,mod.sourceRevision);
  assert.equal(policy.human.kind,'shared-group');assert.deepEqual(policy.human.partIds,config.parts.map(part=>part.partId));assert.deepEqual(policy.machineInstrumentOverrides,{});
- assert.deepEqual(resolvePartInstrumentInput(policy),{status:'ready',ownership:'shared-group',partIds:config.parts.map(part=>part.partId),instrument:'current-shared-live-instrument'});
+ assert.deepEqual(resolvePartInstrumentInput(policy),{status:'ready',ownership:'shared-group',partIds:config.parts.map(part=>part.partId),instrument:'piano'});
  assert.equal(resolvePartInstrumentInput(policy,{kind:'part',partId:config.parts[0].partId}).reason,'ambiguous_shared_human_input');
  assert.equal(resolvePartInstrumentInput(policy,{kind:'part',partId:'invented'}).reason,'unknown_source_part');
  for(const request of [null,{kind:'midi',channel:0},{kind:'part'},{kind:'shared',midi:60},{kind:'shared',source_note_id:'deduplicated-representative'},{kind:'part',partId:config.parts[0].partId,instrument:'guitar'},Object.create({kind:'shared'}),{kind:'shared',[Symbol('channel')]:0},Object.defineProperty({},'kind',{get(){throw Error('Do not invoke routing getters');},enumerable:true})])assert.equal(resolvePartInstrumentInput(policy,request).reason,'unsupported_input_route');
@@ -79,10 +79,10 @@ test('canonical, Basic and VSQ plans ignore dormant human recipes while retainin
   ['Basic',{score:basic.notation,compiled:basic.compilation,cleanSong:basic},options=>buildBasicKeyAudioPlan(basic,{sampleRate:48000,...options})],
   ['VSQ',{score:vsq.notation,compiled:vsq.compilation,cleanSong:vsq},options=>buildVsqAudioPlan(vsq,{sampleRate:48000,...options})],
  ]){
-  const sourceBefore=JSON.stringify(value),base=defaultSongMod(value),baseline=build(songModOptions(base)),config=structuredClone(base.config);config.parts[0].instrument='reed';
+  const sourceBefore=JSON.stringify(value),base=defaultSongMod(value),baseline=build(songModOptions(base)),config=structuredClone(base.config);config.parts[0].instrument='reed';config.parts[0].liveInstrument='guitar';
   const human=createSongMod(base,config),policy=createPartInstrumentPolicy(human,{identity:songModIdentity(value),parts:value.score.parts});
   assert.deepEqual(build(songModOptions(human)),baseline,`${name}: exact source plan retained, with no dormant synthesis identity`);
-  assert.equal(policy.human.kind,'single-part');assert.equal(policy.parts[0].storedMachineInstrument,'reed');assert.equal(policy.parts[0].sound,'current-shared-live-instrument');
+  assert.equal(policy.human.kind,'single-part');assert.equal(policy.parts[0].storedMachineInstrument,'reed');assert.equal(policy.parts[0].sound,'guitar');
   config.parts[0].performer='machine';const machine=createSongMod(base,config),machinePlan=build(songModOptions(machine));
   assert.ok(machinePlan.synthesisPolicyId||machinePlan.timbreProfile,`${name}: saved machine recipe activates`);
   assert.equal(machinePlan.durationFrames,baseline.durationFrames);assert.equal(machinePlan.sourceNotes,baseline.sourceNotes);

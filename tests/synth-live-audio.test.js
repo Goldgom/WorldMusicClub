@@ -93,3 +93,12 @@ test('closed context is terminal before resume and does not rebuild the persiste
   await assert.rejects(synth.unlock(),{code:'live_audio_closed'});await assert.rejects(synth.prepareLiveAudio(),{code:'live_audio_closed'});
   assert.equal(f.count(),1);assert.deepEqual(f.graph,graph);assert.equal(f.commands.some(([kind])=>kind==='resume'),false);
 });
+
+
+test('machine-only output unlock preserves a terminal live error without admitting any manual oscillator fallback',async()=>{
+ const failure=Object.assign(new Error('Live processor unavailable'),{code:'live_audio_unavailable'}),f=fixture({failure}),{synth}=f;
+ await assert.rejects(synth.prepareLiveAudio(),error=>error===failure);const graph=structuredClone(f.graph);
+ await synth.unlock({live:false});assert.equal(synth.liveError,failure);assert.deepEqual(f.graph,graph);
+ assert.throws(()=>synth.play('manual:key',60),error=>error===failure);await assert.rejects(synth.unlock(),error=>error===failure);await assert.rejects(synth.prepareLiveAudio(),error=>error===failure);
+ assert.equal(f.count(),1);assert.deepEqual(f.commands,[]);
+});
