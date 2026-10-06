@@ -42,7 +42,7 @@ import {fixture} from './frontend-fixtures.js';
 import {densePianoforte} from './numbered-layout-fixtures.js';
 import {originalGuitarChordTransitions} from './guitar-live-fixtures.js';
 import {connectionDiagnostics} from './browser-connection-diagnostics.js';
-import {prepareAudioAdmissionDiagnostics, installAudioAdmissionDiagnostics, readAudioAdmissionDiagnostics} from './browser-audio-admission-diagnostics.js';
+import {prepareAudioAdmissionDiagnostics, installAudioAdmissionDiagnostics, readAudioAdmissionDiagnostics, readPlaybackFailureState} from './browser-audio-admission-diagnostics.js';
 import {validatePerformanceRecord} from '../web/performance-library.js';
 import {assertAddedLibraryCopies} from './library-copy-assertions.js';
 import {settlePianoViewportBudget} from './browser-piano-budget.js';
@@ -368,7 +368,8 @@ async function captureFailureState(stage,error=null) {
   const name=`worldmusichub-live-${stage}-${currentTestName.replace(/[^a-zA-Z0-9]+/g,'-').slice(0,85)}`;
   const observed=await page.evaluate(()=>({scoreTitle:document.querySelector('#score-title')?.textContent,notice:document.querySelector('#notice')?.textContent,engravingStatus:document.querySelector('#engraving-status')?.textContent,engravingFallback:document.querySelector('#engraving-fallback')?.textContent,fallbackHidden:document.querySelector('#engraving-fallback')?.hidden,engravedSelected:document.querySelector('#engraved-button')?.getAttribute('aria-pressed'),svgCount:document.querySelectorAll('#engraved-staff svg').length,followStatus:document.querySelector('#engraving-follow-status')?.textContent,practiceGate:document.querySelector('#practice-gate-reason')?.textContent,transport:document.querySelector('#transport-status')?.textContent})).catch(error=>({observationError:error.message}));
   const audioAdmission=await readAudioAdmissionDiagnostics(page);
-  const diagnostics={test:currentTestName,failure:error?{name:error.name,code:error.code,causeName:error.cause?.name,frames:String(error.stack||'').split('\n').filter(line=>/^\s*at /.test(line)).slice(0,6)}:null,observed,audioAdmission,pageErrors,apiFailures,browserConsole,failedResources,resourceFailures,apiRequests:requests.map(request=>({path:request.path,method:request.method})),serverOutput:serverOutput.slice(-4000)};
+  const playback=await page.evaluate(readPlaybackFailureState).catch(error=>({observationError:error.message}));
+  const diagnostics={test:currentTestName,failure:error?{name:error.name,code:error.code,message:String(error.cause?.message??error.message??'').slice(0,4096),causeName:error.cause?.name,frames:String(error.stack||'').split('\n').filter(line=>/^\s*at /.test(line)).slice(0,6)}:null,observed,playback,audioAdmission,pageErrors,apiFailures,browserConsole,failedResources,resourceFailures,apiRequests:requests.map(request=>({path:request.path,method:request.method})),serverOutput:serverOutput.slice(-4000)};
   await writeFile(join(artifactDirectory,`${name}.json`),JSON.stringify(diagnostics,null,2));
   await page.screenshot({path:join(artifactDirectory,`${name}.png`),fullPage:true,timeout:3000}).catch(()=>{});
 }
@@ -577,12 +578,15 @@ test('embedded browser UI selects all exercises and plays, pauses, resumes and r
     await ui('#key-count').selectOption(String(count));
     assert.equal(await ui('#keyboard .piano-key').count(), count);
   }
+  // The idle held-key check needs a Human owner; transport below still covers Listen.
+  await setSessionMode('practice');
   await ui('#stage-title').click();
   await page.keyboard.down('r');
   assert.equal(await ui('#keyboard .piano-key.pressed').count(), 1);
   assert.equal(await ui('#keyboard .piano-key[data-midi="60"]').getAttribute('aria-pressed'), 'true');
   await page.keyboard.up('r');
   assert.equal(await ui('#keyboard .piano-key.pressed').count(), 0);
+  await setSessionMode('listen');
   await ui('#count-in').uncheck();
   await ui('#stage-title').click();
   await page.keyboard.press('Space');
@@ -2080,7 +2084,7 @@ async function installSelectableMidiInputs() {
 }
 
 test('real settings select one MIDI device, persist unavailable identity and keep source exports private',testOptions,async()=>{
- await installSelectableMidiInputs();await closeShellPanels();
+ await installSelectableMidiInputs();await setSessionMode('practice');await closeShellPanels();
  await page.evaluate(()=>{const t=performance.now();midiOne.onmidimessage({data:[0x90,60,93],timeStamp:t});midiTwo.onmidimessage({data:[0x90,60,88],timeStamp:t})});
  assert.equal(await page.locator('#keyboard .piano-key.pressed').count(),1);
  await page.evaluate(()=>midiOne.onmidimessage({data:[0x80,60,0],timeStamp:performance.now()}));assert.equal(await page.locator('#keyboard .piano-key.pressed').count(),1,'The second device still holds the same pitch');

@@ -5,7 +5,7 @@ import {humanModTimbreFixture} from '../scripts/prepare-human-mod-timbre-fixture
 import {humanModFixtureCompilation} from '../scripts/human-mod-timbre-sample-proof.mjs';
 import {CanonicalPlayer} from '../web/canonical-player.js';
 import {readPlaybackClock} from '../web/playback-clock-view.js';
-import {admitHumanModPlayback} from './human-mod-timbre-browser-regression.js';
+import {admitHumanModPlayback,readHumanModExport} from './human-mod-timbre-browser-regression.js';
 
 // Real app/transport/DSP in the existing in-memory DOM fixture. This opens no
 // browser/server and does not claim native input or hosted audio acceptance.
@@ -59,4 +59,67 @@ test('navigation cancels the owned Start without any replacement toggle or late 
   await app.until(held.ready);await app.until(driver.waiting);await app.click('back-to-library');held.resolve();await app.tick();f.time(1250);driver.cancelWait();await rejected;
   assert.deepEqual(driver.clicks,['start-performance']);assert.equal(held.starts(),0);assert.equal(app.sourceStartWall(),null);assert.equal(readPlaybackClock(app.document).running,false);assert.equal((await app.exported('export-takes')).passes.length,0);assert.equal(app.document.body.dataset.screen,'library');
  }finally{held.resolve();held.restore();await f.close();}
+});
+
+
+function exportPanelPage(app){
+ const closed=[];
+ return{closed,page:{locator(selector){
+  const dialog=app.document.querySelector(selector);assert.ok(['results-dialog','score-tools-dialog'].includes(dialog?.id));
+  return{isVisible:async()=>dialog.open,locator(child){assert.equal(child,'[data-close-panel]');return{async click(){assert.equal(dialog.open,true,'Close must belong to the visible export panel');closed.push(dialog.id);dialog.querySelector(child).click();await app.tick();}};},async waitFor({state}){assert.equal(state,'hidden');await app.until(()=>!dialog.open);}};
+ }}};
+}
+async function panelExport(app,id){
+ const panel=id==='export-button'?'score-tools':'results';
+ assert.equal(app.document.querySelector('dialog[open]'),null,'A real export opener must not be covered');
+ await app.click(`${panel}-button`);assert.equal(app.$(`${panel}-dialog`).open,true);
+ return app.exported(id);
+}
+async function pausedHumanTake(f){
+ const {app}=f;await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');f.time(app.sourceStartWall()+100);
+ const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:55,button:0});await app.tick();f.time(app.sourceStartWall()+140);app.emit(key,'pointerup',{pointerId:55,button:0});await app.click('play-button');f.time(1400);await app.tick();
+ return app.exported('export-takes');
+}
+
+test('human source and take exports close their visible panels before repeated Mod Cancel/Apply/navigation',async()=>{
+ const f=await fixture(),{app}=f,driver=exportPanelPage(app);
+ try{
+  const before=await pausedHumanTake(f),clock=readPlaybackClock(app.document);
+  for(let repeat=0;repeat<2;repeat++){
+   const take=await readHumanModExport(driver.page,()=>panelExport(app,'export-takes'));assert.deepEqual(take,before);
+   assert.deepEqual(await readHumanModExport(driver.page,()=>panelExport(app,'export-button')),f.score);
+   assert.equal(app.document.querySelector('dialog[open]'),null);assert.deepEqual(readPlaybackClock(app.document),clock);
+   await app.click('edit-song-mod');assert.equal(app.$('song-mod-dialog').open,true);
+   if(!repeat){app.$('song-mod-unify-sound').value='piano';app.emit(app.$('song-mod-unify-sound'),'change');await app.click('song-mod-unify-human');await app.click('song-mod-cancel');}
+   else{await app.click('song-mod-apply');await app.until(()=>!app.$('song-mod-dialog').open);}
+   assert.deepEqual(await readHumanModExport(driver.page,()=>panelExport(app,'export-takes')),before);
+  }
+  assert.deepEqual(driver.closed,['results-dialog','score-tools-dialog','results-dialog','results-dialog','score-tools-dialog','results-dialog']);
+  await app.click('back-to-library');assert.equal(app.document.body.dataset.screen,'library');assert.equal(app.document.querySelector('dialog[open]'),null);assert.equal(readPlaybackClock(app.document).running,false);
+  assert.equal(app.document.querySelectorAll('#keyboard .pressed').length,0);assert.equal(app.plays.filter(call=>String(call[0]).startsWith('manual:')).length,1);
+  assert.deepEqual(await app.exported('export-button'),f.score);assert.deepEqual((await app.exported('export-takes')).passes,before.passes);
+ }finally{await f.close();}
+});
+
+for(const panel of ['results','score-tools'])test(`failed ${panel} export closes its actual panel while retaining the paused take`,async()=>{
+ const f=await fixture(),{app}=f,driver=exportPanelPage(app),failure=Error('Original export read failure');
+ try{
+  const before=await pausedHumanTake(f),clock=readPlaybackClock(app.document);
+  await assert.rejects(readHumanModExport(driver.page,async()=>{await app.click(`${panel}-button`);assert.equal(app.$(`${panel}-dialog`).open,true);throw failure;}),error=>error===failure);
+  assert.deepEqual(driver.closed,[`${panel}-dialog`]);assert.equal(app.document.querySelector('dialog[open]'),null);assert.deepEqual(readPlaybackClock(app.document),clock);
+  assert.deepEqual(await app.exported('export-takes'),before);await app.click('edit-song-mod');assert.equal(app.$('song-mod-dialog').open,true);await app.click('song-mod-cancel');
+ }finally{await f.close();}
+});
+
+test('export panel pause drains a held human voice and Close cannot resume or recapture it',async()=>{
+ const f=await fixture(),{app}=f,driver=exportPanelPage(app);
+ try{
+  await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');f.time(app.sourceStartWall()+100);
+  const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:56,button:0});await app.tick();f.time(app.sourceStartWall()+140);
+  const live=app.audioNodes.find(node=>node.kind==='live-audio-worklet').core;assert.equal(live.activeNotes,1);assert.equal(key.classList.contains('pressed'),true);
+  assert.deepEqual(await readHumanModExport(driver.page,()=>panelExport(app,'export-button')),f.score);f.time(1500);await app.tick();
+  assert.equal(readPlaybackClock(app.document).running,false);assert.equal(app.document.querySelector('dialog[open]'),null);assert.equal(live.activeNotes,0);assert.equal(key.classList.contains('pressed'),false);
+  const take=await readHumanModExport(driver.page,()=>panelExport(app,'export-takes'));assert.equal(take.passes[0].inputs.length,1);const count=app.plays.filter(call=>String(call[0]).startsWith('manual:')).length;assert.equal(count,1);
+  app.emit(key,'pointerup',{pointerId:56,button:0});await app.tick();assert.equal(live.activeNotes,0);assert.equal(app.plays.filter(call=>String(call[0]).startsWith('manual:')).length,count);assert.deepEqual((await app.exported('export-takes')).passes,take.passes);
+ }finally{await f.close();}
 });

@@ -1,4 +1,5 @@
 import {installPlaybackClockReader, waitForPlaybackClock} from './browser-playback-clock.js';
+import {waitForOverlayPlayback} from './browser-audio-admission-diagnostics.js';
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -274,8 +275,8 @@ export function registerSharedPianoStageBrowserRegressions({test,getPage,ui,setS
     await ui('#interface-language').selectOption('zh-CN');await ui('#theme-mode').selectOption('light');await page.emulateMedia({reducedMotion:'no-preference'});
     for(const viewport of [{width:1280,height:720},{width:1920,height:1080},{width:1033,height:403},{width:844,height:390},{width:390,height:844}])for(const [button,view]of [['#engraved-button','staff'],['#jianpu-button','jianpu']]){
       await closeShellPanels();await page.setViewportSize(viewport);await page.locator('#settings-button').click();await page.locator('#settings-dialog').waitFor({state:'visible'});await page.locator('#interface-language').selectOption([1920,844].includes(viewport.width)?'zh-CN':'en');await closeShellPanels();await ui(button).click();await ui('#engraving-follow').check();await closeShellPanels();if(view==='staff')await waitForEngraving();
-      if(await page.locator('#notice-dismiss').isVisible())await page.locator('#notice-dismiss').click();await page.locator('#reset-button').click();await page.locator('#play-button').click();
-      await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>300&&document.querySelector('#stage-cue').hidden);
+      if(await page.locator('#notice-dismiss').isVisible())await page.locator('#notice-dismiss').click();await page.locator('#reset-button').click();const startedAfter=await page.evaluate(()=>performance.now());await page.locator('#play-button').click();
+      await waitForOverlayPlayback(page,startedAfter);
       const toolbar=await readSharedPianoGeometry(page);assertPianoToolbarLabels(toolbar);
       const geometry=await readLaneOverlayGeometry(page);assertLaneOverlay(geometry);assert.ok(geometry.canvasAlpha.opaque>20,'The real canvas contains painted falling blocks');
       const selector=view==='staff'?'.engraving-expected-cue:not([hidden])':'#notation .score-note.active',current=await page.locator(selector).count();assert.equal(current,2,'Both original staff voices are visibly followed while playing');

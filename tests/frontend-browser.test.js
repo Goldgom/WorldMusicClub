@@ -158,7 +158,10 @@ test('complete exercise UI, notation modes, all keyboard ranges and guitar',asyn
  await ui('#instrument').selectOption('piano');await closeShellPanels();await page.screenshot({path:'/tmp/worldmusichub-desktop.png',fullPage:true});
 });
 test('keyboard notes are released on blur; pause/reset remain repeatable',async()=>{
+ // Held human contacts require an explicit Human performer; default Listen has none.
+ await setSessionMode('practice');
  await ui('#stage-title').click();await page.keyboard.down('a');assert.equal(await ui('#keyboard .piano-key.pressed').count(),1);await page.evaluate(()=>window.dispatchEvent(new Event('blur')));assert.equal(await ui('#keyboard .piano-key.pressed').count(),0);await page.keyboard.up('a');
+ await setSessionMode('listen');
  await ui('#count-in').uncheck();await ui('#play-button').click();await waitForPlaybackClockAdvance(page);await ui('#play-button').click();assert.match(await ui('#transport-status').textContent(),/Paused/);await page.waitForFunction(()=>!globalThis.__wmhReadPlaybackClock().running);const paused=(await ui('#progress').evaluate(readPlaybackClock)).positionMs;await ui('#play-button').click();await waitForPlaybackClockAdvance(page,paused);await ui('#reset-button').click();assert.equal((await ui('#progress').evaluate(readPlaybackClock)).positionMs,0);assert.equal(await ui('#keyboard .piano-key.pressed').count(),0);
 });
 test('practice records input only after playback begins and submits canonical clock',async()=>{
@@ -203,6 +206,7 @@ test('MusicXML import submits raw XML and preserves the returned source',async()
 });
 test('MIDI access is user-triggered; simulated note on/off drives the piano',async()=>{
  await page.addInitScript(()=>{window.midiRequests=0;window.testMidiInput={id:'test-input',name:'Simulated piano',state:'connected',onmidimessage:null};Object.defineProperty(navigator,'requestMIDIAccess',{configurable:true,value:async(options)=>{window.midiRequests++;window.midiOptions=options;return{inputs:new Map([['test-input',window.testMidiInput]]),onstatechange:null}}})});await reloadStage();await ui('#play-button:not([disabled])').waitFor();assert.equal(await page.evaluate(()=>window.midiRequests),0);await ui('#midi-button').click();await closeShellPanels();assert.equal(await page.evaluate(()=>window.midiRequests),1);assert.equal(await page.evaluate(()=>window.midiOptions.sysex),false);
+ await setSessionMode('practice');
  await page.evaluate(()=>window.testMidiInput.onmidimessage({data:[0x90,60,90],timeStamp:performance.now()}));assert.equal(await ui('#keyboard .piano-key.pressed').count(),1);await page.evaluate(()=>window.testMidiInput.onmidimessage({data:[0x90,60,0],timeStamp:performance.now()}));assert.equal(await ui('#keyboard .piano-key.pressed').count(),0);
 });
 test('newer catalog navigation wins over a delayed MusicXML import',async()=>{
@@ -210,6 +214,8 @@ test('newer catalog navigation wins over a delayed MusicXML import',async()=>{
  await ui('#score-file').setInputFiles({name:'slow.musicxml',mimeType:'application/xml',buffer:Buffer.from('<score-partwise/>')});await ui('.catalog-item').click();await startPreview();release();await page.waitForTimeout(100);assert.equal(await ui('#score-title').textContent(),'Test <score>');
 });
 test('keyboard-accessible piano note is released when focus leaves the instrument',async()=>{
+ // Held human contacts require an explicit Human performer; default Listen has none.
+ await setSessionMode('practice');
  const key=ui('#keyboard .piano-key[data-midi="60"]');await key.focus();await page.keyboard.down('Enter');assert.equal(await ui('#keyboard .piano-key.pressed').count(),1);await ui('#tempo').focus();assert.equal(await ui('#keyboard .piano-key.pressed').count(),0);await page.keyboard.up('Enter');
 });
 test('loop boundaries use Rust responses, reject invalid ranges and clear take inputs each cycle',async()=>{
@@ -692,6 +698,8 @@ test('lobby starts silent with separate preview validation and only explicit Sta
 });
 
 test('Back and Resume preserve a paused clock and suppress musical shortcuts in lobby and dialogs',async()=>{
+ // Held human contacts require an explicit Human performer; default Listen has none.
+ await setSessionMode('practice');
  await ui('#count-in').uncheck();await ui('#play-button').click();await page.waitForFunction(()=>globalThis.__wmhReadPlaybackClock().positionMs>0);await page.locator('#stage-title').click();await page.keyboard.down('a');assert.equal(await page.locator('#keyboard .piano-key.pressed').count(),1);
  await page.locator('#back-to-library').click();await page.keyboard.up('a');const paused=(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs;assert.ok(paused>0);assert.equal(await page.locator('#keyboard .piano-key.pressed').count(),0);assert.match(await page.locator('#play-button').textContent(),/Play/);
  await page.locator('#lobby-title').click();await page.keyboard.press('a');await page.keyboard.press('Space');assert.equal(await page.locator('#keyboard .piano-key.pressed').count(),0);assert.equal((await page.locator('#progress').evaluate(readPlaybackClock)).positionMs,paused);
