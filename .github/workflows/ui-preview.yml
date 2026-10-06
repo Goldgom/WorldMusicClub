@@ -28,7 +28,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p ui-preview
-          node --test --test-reporter=tap --test-name-pattern='^(real free piano fills desktop|original grand staff and Jianpu follow|game menu and audible song preview|normal and free piano share|original falling bars visibly cross|real D768 lobby and compact performance fit|short-landscape following reveals|real guitar current and next six-note|real initial compact guide stays|real compact 88-key and custom extreme guides|real piano hands preserve merged ties)' tests/full-app-browser.test.js | tee ui-preview/tests.tap
+          node --test --test-reporter=tap --test-name-pattern='^(real free piano fills desktop|original grand staff and Jianpu follow|game menu and audible song preview|normal and free piano share|original falling bars visibly cross|real D768 lobby and compact performance fit|short-landscape following reveals|real guitar current and next six-note|real initial compact guide stays|real compact 88-key and custom extreme guides|real piano hands preserve merged ties|real short-landscape guitar keeps a complete labelled row and transport beside notation)' tests/full-app-browser.test.js | tee ui-preview/tests.tap
       - name: Verify preview provenance and required real screenshots
         run: node scripts/verify-ui-preview.mjs ui-preview
       - name: Retain compact failure pixels and geometry before the full preview
@@ -42,6 +42,10 @@ jobs:
             ui-preview/worldmusichub-live-bootstrap*.json
             ui-preview/worldmusichub-compact-*-precheck.json
             ui-preview/worldmusichub-live-piano-notice-layout.json
+            ui-preview/worldmusichub-live-guitar-render-*.json
+            ui-preview/worldmusichub-live-guitar-render-*.png
+            ui-preview/worldmusichub-live-simultaneous-844x390-guitar*.json
+            ui-preview/worldmusichub-live-simultaneous-844x390-guitar*.png
           if-no-files-found: warn
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()

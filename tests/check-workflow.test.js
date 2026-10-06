@@ -279,3 +279,24 @@ test('UI preview verification refuses the old passing subset or a skipped or fai
     assert.notEqual(checked.status,0);assert.match(checked.stderr,/Missing executed passing preview case: real piano hands preserve merged ties/);
   }
 });
+
+
+const guitarNotationPreviewCase='real short-landscape guitar keeps a complete labelled row and transport beside notation';
+test('UI preview executes original compact guitar render completion and keeps its pending, first-paint and clipping evidence',()=>{
+  const parsed=spawnSync(python,['scripts/check-authoring-workflow.py','.github/workflows/ui-preview.yml','--json'],{cwd:root,encoding:'utf8'});
+  assert.equal(parsed.status,0,parsed.stderr);const preview=JSON.parse(parsed.stdout);validateNoticePreview(preview);
+  const steps=preview.jobs['ui-preview'].steps,run=steps.find(row=>row.run?.includes('tests/full-app-browser.test.js'));
+  const pattern=run.run.match(/--test-name-pattern='([^']+)'/)?.[1];assert.ok(new RegExp(pattern).test(guitarNotationPreviewCase));
+  const retained=steps.find(row=>row.with?.name==='game-ui-failures-${{ github.sha }}').with.path.split('\n');
+  for(const name of ['worldmusichub-live-guitar-render-*.json','worldmusichub-live-guitar-render-*.png','worldmusichub-live-simultaneous-844x390-guitar*.json','worldmusichub-live-simultaneous-844x390-guitar*.png'])assert.ok(retained.includes('ui-preview/'+name),`Missing first-paint failure evidence: ${name}`);
+});
+
+test('UI preview refuses the previous subset and skipped or failed compact guitar completion',t=>{
+  const directory=mkdtempSync(join(tmpdir(),'wmh-guitar-preview-contract-'));t.after(()=>rmSync(directory,{recursive:true,force:true}));
+  const previous=[...priorPreviewCases,noticePreviewCase].map((name,index)=>`ok ${index+1} - ${name}`).join('\n');
+  for(const guitar of ['',`ok 15 - ${guitarNotationPreviewCase} # SKIP test name does not match pattern`,`not ok 15 - ${guitarNotationPreviewCase}`]){
+    writeFileSync(join(directory,'tests.tap'),previous+'\n'+guitar+'\n');
+    const checked=spawnSync(process.execPath,['scripts/verify-ui-preview.mjs',directory],{cwd:root,encoding:'utf8'});
+    assert.notEqual(checked.status,0);assert.match(checked.stderr,/Missing executed passing preview case: real short-landscape guitar/);
+  }
+});

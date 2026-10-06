@@ -23,9 +23,10 @@ export function mappedPartIds(exported, canonicalId) {
   return [map[canonicalId]];
 }
 /** Optional presentation surface. All score conversion and timing stay in Rust. */
-export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticePart,getPracticeSelection=()=>null,getPracticeDisplay=()=>null,getMode=()=>null, onVisibility, onFallback, notice, onManualNavigation=()=>{},onBasicPage=()=>{},isVisible=()=>true,loadAdapter=()=>import('./engraving.js'),document=globalThis.document,i18n=getAppI18n(document)}) {
+export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticePart,getPracticeSelection=()=>null,getPracticeDisplay=()=>null,getMode=()=>null, onVisibility, onFallback, onRenderComplete=()=>{}, notice, onManualNavigation=()=>{},onBasicPage=()=>{},isVisible=()=>true,loadAdapter=()=>import('./engraving.js'),document=globalThis.document,i18n=getAppI18n(document)}) {
   const $ = id => document.getElementById(id);
-  const loadAdmittedAdapter = signal => notationAudioAdmission(document.defaultView ?? globalThis).prepareVisual(loadAdapter, signal);
+  const visualAdmission=notationAudioAdmission(document.defaultView ?? globalThis);
+  const loadAdmittedAdapter = signal => visualAdmission.prepareVisual(loadAdapter, signal);
   const t=(key,params)=>i18n.t(`notationRuntime.${key}`,params);
   const errorText=value=>{
     const own=value?.messageKey&&Object.hasOwn(notationMessages,value.messageKey);
@@ -231,6 +232,26 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
       return prepared;
     });
   }
+  async function completePaint(current,target,signal,publish=()=>{}) {
+    const owns=()=>current===generation&&!signal?.aborted&&active&&target===getScore()&&Boolean(rendered)&&isVisible();
+    if(!owns())return false;
+    // The renderer releases its own lease before its promise settles. Queued
+    // audio may own the gate now; publication and reveal need a fresh lease.
+    const lease=visualAdmission.tryVisual()??await visualAdmission.acquireVisual(signal);
+    if(!lease)return false;
+    try{
+      if(!owns())return false;
+      publish();rendering=false;
+      // A display callback is optional and cannot reject a fire-and-forget
+      // render, discard good notation, or create a transport frame.
+      try{onRenderComplete();}catch{/* Retain the completed staff on presentation failure. */}
+      return owns();
+    }finally{lease.release();}
+  }
+  function refreshCompletedPaint(){
+    if(rendering||!rendered)return Promise.resolve(false);
+    return completePaint(generation,score,controller?.signal).catch(()=>false);
+  }
   function fallback(reason) {
     if (!active) return;
     hide(); fallbackReason=reason??presentationError('unknownFailure'); redrawLocale(); $('engraving-fallback').hidden = false; onFallback();
@@ -266,8 +287,10 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
           // only the generation that adopted them owns status/error callbacks.
           prepared.ownerGeneration=current;
           rendered=prepared.renderer;
-          if(expectedScore===target&&expected)rendered.setExpectedWrittenNotes(expected);
-          statusMessage={key:'preview',params:{from,to:from+sourcePage.measure_count-1}};redrawLocale();showNotices(exported,mappingStatus());publishScope(sourceBatch.status,sourcePages.filter(usablePage).map(page=>page.part_id));$('engraving-license-note').hidden=false;prefetchNext();return;
+          await completePaint(current,target,signal,()=>{
+            if(expectedScore===target&&expected)rendered.setExpectedWrittenNotes(expected);
+            statusMessage={key:'preview',params:{from,to:from+sourcePage.measure_count-1}};redrawLocale();showNotices(exported,mappingStatus());publishScope(sourceBatch.status,sourcePages.filter(usablePage).map(page=>page.part_id));$('engraving-license-note').hidden=false;prefetchNext();
+          });return;
         }
         prepared=null;
       }
@@ -285,8 +308,10 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
           if(!result.ok){if(result.status!=='cancelled')fallback(result);return;}
           members.push({renderer:result,mount,noteIds:new Set(page.score.parts[0].notes.map(note=>note.id))});
         }
-        if(expectedScore===target&&expected)rendered.setExpectedWrittenNotes(expected);
-        statusMessage={key:'preview',params:{from,to:from+sourcePage.measure_count-1}};redrawLocale();showNotices(exported,mappingStatus());publishScope(sourceBatch.status,sourcePages.filter(usablePage).map(page=>page.part_id));$('engraving-license-note').hidden=false;prefetchNext();return;
+        await completePaint(current,target,signal,()=>{
+          if(expectedScore===target&&expected)rendered.setExpectedWrittenNotes(expected);
+          statusMessage={key:'preview',params:{from,to:from+sourcePage.measure_count-1}};redrawLocale();showNotices(exported,mappingStatus());publishScope(sourceBatch.status,sourcePages.filter(usablePage).map(page=>page.part_id));$('engraving-license-note').hidden=false;prefetchNext();
+        });return;
       }
       const {total,to} = rangeControls();
       if (!total) throw presentationError('missingMap');
@@ -299,10 +324,12 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
       if (signal.aborted || current !== generation || !active || target !== getScore()) { result.dispose?.(); return; }
       if (!result.ok) { if (result.status !== 'cancelled') fallback(result); return; }
       rendered = result;
-      if(expectedScore===target&&expected&&hasNoteMapping())rendered.setExpectedWrittenNotes(expected);
-      statusMessage={key:'preview',params:{from:exported.basicPage?from:result.metadata.fromMeasure,to:exported.basicPage?from+viewScore.measures.length-1:result.metadata.toMeasure}};$('engraving-status').textContent = t(statusMessage.key,statusMessage.params);
-      showNotices(exported,mappingStatus());
-      $('engraving-license-note').hidden = false;publishScope(sourceBatch?.status||'ready',basicSong()?sourcePages.map(page=>page.part_id):partBatch().partIds);prefetchNext();
+      await completePaint(current,target,signal,()=>{
+        if(expectedScore===target&&expected&&hasNoteMapping())rendered.setExpectedWrittenNotes(expected);
+        statusMessage={key:'preview',params:{from:exported.basicPage?from:result.metadata.fromMeasure,to:exported.basicPage?from+viewScore.measures.length-1:result.metadata.toMeasure}};$('engraving-status').textContent = t(statusMessage.key,statusMessage.params);
+        showNotices(exported,mappingStatus());
+        $('engraving-license-note').hidden = false;publishScope(sourceBatch?.status||'ready',basicSong()?sourcePages.map(page=>page.part_id):partBatch().partIds);prefetchNext();
+      });
     } catch (error) { if (current === generation && !signal.aborted && error.name !== 'AbortError'){if(basicSong())followFailure=error;if(active)fallback(error);else if(basicSong()){statusMessage={key:'basicFollowUnavailable'};redrawLocale();onBasicPage(null,{pages:[],scope:resolvedScope().scope,status:'error'});}publishScope('error',[]);} }
     finally{if(prepared&&!prepared.active)prepared.dispose();if(current===generation)rendering=false;}
   }
@@ -400,7 +427,8 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
       // Jianpu needs its native page even when Staff and optional Follow are off.
       if(isVisible()){if(active){if(!controller)render();}else if(sourcePage){onBasicPage(sourcePage,{...sourceBatch,scope:resolvedScope().scope});publishScope(sourceBatch?.status||'ready',sourcePages.filter(usablePage).map(page=>page.part_id));prefetchNext();}else if(basicSong()){if(!controller)void render(null,true);}else publishScope(resolvedScope().status,partBatch().partIds);}else{cancel();publishScope('hidden',[]);}
     },
-    navigationState:()=>({from,ready:Boolean(rendered)||isRenditionPage()&&usablePage(sourcePage)&&!needsEngraving(sourcePage)}),
+    refreshCompletedPaint,
+    navigationState:()=>({from,ready:!rendering&&(Boolean(rendered)||isRenditionPage()&&usablePage(sourcePage)&&!needsEngraving(sourcePage))}),
     followMeasure(index){if(!active||!score||!Number.isInteger(index)||index<0||index>=score.measures.length)return false;const page=sourceMeasurePage(index,pageSize);if(page===from)return false;from=page;render();return true}
   };
 }

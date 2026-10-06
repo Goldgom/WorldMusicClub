@@ -9,13 +9,15 @@ import {basicKeyWrittenAt} from '../web/basic-key-notation.js';
 import {planEngravingReveal} from '../web/engraving-reveal.js';
 import {NotationNavigationIndex,setupNotationFollowing} from '../web/notation-follow.js';
 import {originalAboveKeyboardScore} from './above-keyboard-browser-regression.js';
+import {notationAudioAdmission} from '../web/engraving-render-scheduler.js';
+import {setupWrittenCursor} from '../web/written-cursor.js';
 const deferred=()=>{let resolve;const promise=new Promise(done=>resolve=done);return{promise,resolve}};
-function environment({loadAdapter,onManualNavigation,onBasicPage,isVisible,getCleanSong,getPracticePart=()=>null,getMode,observeResize=false,i18n=createI18n({locale:'en'})}={}){
+function environment({loadAdapter,onManualNavigation,onBasicPage,onRenderComplete,isVisible,getCleanSong,getPracticePart=()=>null,getMode,observeResize=false,i18n=createI18n({locale:'en'})}={}){
  const prior=Object.fromEntries(['document','window','MutationObserver','ResizeObserver','fetch'].map(key=>[key,globalThis[key]]));const elements=new Map(),calls=[],visible=[],failures=[],resizeObservers=[],windowListeners=new Map();let score=null,pauses=0;const failure=deferred();
  const element=id=>{if(!elements.has(id))elements.set(id,{textContent:'',hidden:true,value:'',children:[],listeners:new Map(),addEventListener(type,handler){this.listeners.set(type,handler)},replaceChildren(){this.children=[]},append(item){this.children.push(item)}});return elements.get(id)};
  globalThis.document={getElementById:element,createElement:()=>({children:[],dataset:{},append(item){this.children.push(item)},replaceChildren(){this.children=[]}}),documentElement:{dataset:{theme:'light'}}};globalThis.window={addEventListener(type,handler){if(!windowListeners.has(type))windowListeners.set(type,[]);windowListeners.get(type).push(handler)}};globalThis.MutationObserver=class{observe(){}};globalThis.fetch=(path,options)=>{const response=deferred();calls.push({path,options,...response});return response.promise};
  if(observeResize)globalThis.ResizeObserver=class{constructor(callback){this.callback=callback;this.observed=[];resizeObservers.push(this)}observe(element){this.observed.push(element)}disconnect(){this.observed=[]}};
- const view=setupEngravedView({i18n,getScore:()=>score,getCleanSong,getPracticePart,getMode,isVisible,pausePlayback(){pauses++},onVisibility:value=>visible.push(value),onFallback(){failures.push(element('engraving-fallback').textContent);failure.resolve()},notice(){},loadAdapter,onManualNavigation,onBasicPage});
+ const view=setupEngravedView({i18n,getScore:()=>score,getCleanSong,getPracticePart,getMode,isVisible,pausePlayback(){pauses++},onVisibility:value=>visible.push(value),onFallback(){failures.push(element('engraving-fallback').textContent);failure.resolve()},notice(){},loadAdapter,onManualNavigation,onBasicPage,onRenderComplete});
  return{view,elements,calls,visible,failures,failure,resizeObservers,windowListeners,get pauses(){return pauses},setScore(next=structuredClone(fixture)){score=next;view.updateScore();return score},close(){view.hide();for(const[key,value]of Object.entries(prior))if(value===undefined)delete globalThis[key];else globalThis[key]=value}};
 }
 test('the first score requests engraved presentation by default, without starting playback',()=>{const env=environment();try{assert.equal(env.calls.length,0);env.setScore();assert.equal(env.calls.length,1);assert.equal(env.view.isActive(),true);assert.equal(env.visible.at(-1),true);assert.equal(JSON.parse(env.calls[0].options.body).id,fixture.id);env.view.updateScore();assert.equal(env.calls.length,1,'Ordinary UI refreshes must not re-render an unchanged score');}finally{env.close()}});
@@ -155,6 +157,127 @@ test('following reveals fresh verified bounds once per identity or geometry chan
   const readCount=reads;env.elements.get('engraving-follow').checked=false;env.view.revealExpectedWrittenNotes('repeat-3');assert.equal(reads,readCount);assert.equal(env.calls.length,1);assert.equal(env.pauses,0);assert.equal(JSON.stringify(score),before);
   assert.deepEqual(env.resizeObservers[0].observed,[dock]);for(const listener of env.windowListeners.get('pagehide'))listener();assert.deepEqual(env.resizeObservers[0].observed,[]);for(const listener of env.windowListeners.get('pageshow'))listener({persisted:true});assert.deepEqual(env.resizeObservers[0].observed,[dock]);
  }finally{env.close()}
+});
+
+test('completed original guitar staff reveals its current note before another idle frame without changing the paused take',async()=>{
+ const score=structuredClone(fixture),original=JSON.stringify(score),expected={sourceNoteIds:['c4'],sourceMeasureIndex:0};
+ const timeline={duration_ms:2000,notes:score.parts[0].notes.map((note,index)=>({id:note.id,source_note_ids:[note.id],part_id:'piano',start_ms:index*500,duration_ms:500}))};
+ const navigation=new NotationNavigationIndex({version:1,source_measure_count:1,duration_ms:2000,diagnostics:[],occurrences:[{id:'original-first-measure',source_measure_index:0,measure_number:1,source_from:{numerator:0,denominator:1},source_to:{numerator:4,denominator:1},start_ms:0,end_ms:2000,repeat_region_index:null,repeat_pass:null,repeat_times:null,written_note_ids:['c4','e4'],continuing_note_ids:[]}],sounding_groups:timeline.notes.map(note=>({occurrence_id:note.id,source_note_ids:note.source_note_ids,part_id:note.part_id,start_ms:note.start_ms,end_ms:note.start_ms+note.duration_ms}))},score,timeline);
+ const take=Object.freeze({position:0,running:false,inputs:Object.freeze([{midi:64,at:0}])}),before=JSON.stringify(take);
+ let current=null,completions=0,renders=0,follow;
+ const env=environment({onRenderComplete(){
+  completions++;assert.equal(env.view.navigationState().ready,true,'The owned renderer is installed before notification');
+  // The app first refreshes exact written IDs in display-only mode, then asks
+  // the existing follower to reveal them. No idle tick or transport action runs.
+  env.view.setExpectedWrittenNotes(expected);follow.viewportChanged();
+ },loadAdapter:async()=>({disposeEngravedStaff(){},async renderEngravedStaff(){
+  renders++;return{ok:true,metadata:{fromMeasure:1,toMeasure:1},dispose(){},mappingStatus:()=>({status:'ready',verifiedGlyphCount:2,diagnostics:[]}),setExpectedWrittenNotes(value){current=value;return true},clearExpectedWrittenNotes(){current=null;return true},expectedNoteBounds(){return{status:current?'ready':'unavailable',rects:current?[{left:639.55,right:651.57,top:436.67-dock.scrollTop,bottom:447.14-dock.scrollTop}]:[]}}};
+ }})});
+ const dock=document.getElementById('notation-dock'),status=document.getElementById('engraving-follow-status');status.setAttribute=()=>{};
+ const scroller={clientLeft:0,clientWidth:372,scrollLeft:0,scrollTop:0,scrollWidth:372,getBoundingClientRect:()=>({left:452.52,right:824.52,top:326.39-dock.scrollTop,bottom:862.89-dock.scrollTop})};
+ Object.assign(dock,{clientTop:1,clientLeft:1,clientHeight:348,clientWidth:388,scrollTop:0,scrollLeft:0,scrollHeight:920,getBoundingClientRect:()=>({left:443.52,right:834,top:38,bottom:388}),querySelector:()=>({getBoundingClientRect:()=>({height:61.39})}),scrollTo(value){this.scrollTop=value.top;this.scrollLeft=value.left;}});
+ env.elements.get('engraved-staff').closest=()=>scroller;
+ try{
+  env.setScore(score);
+  follow=setupNotationFollowing({getContext:()=>({score,timeline}),getPlayback:()=>take,prepareNavigation:async()=>navigation,view:{isActive:()=>true,navigationState:env.view.navigationState,followMeasure:env.view.followMeasure,revealExpectedWrittenNotes:env.view.revealExpectedWrittenNotes,resetReveal:env.view.resetReveal}});
+  await follow.prepare();assert.equal(completions,0);assert.equal(dock.scrollTop,0,'The retained failure geometry starts with every note below the pane');
+  env.calls[0].resolve({ok:true,json:async()=>({xml:'<score-partwise/>',part_id_map:{piano:'P1'},diagnostics:[]})});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(completions,1);assert.equal(renders,1);assert.equal(env.calls.length,1);assert.ok(dock.scrollTop>60);
+  assert.ok(436.67-dock.scrollTop>=100.39&&447.14-dock.scrollTop<=387,'The complete real-sized head fits under Follow and above the dock clip');
+  assert.deepEqual(current,expected);assert.equal(JSON.stringify(take),before);assert.equal(JSON.stringify(score),original);assert.equal(env.pauses,0);
+  const settled=dock.scrollTop;for(let frame=0;frame<10;frame++)follow.tick(take.position,take.running);
+  assert.equal(completions,1);assert.equal(renders,1);assert.equal(env.calls.length,1);assert.equal(dock.scrollTop,settled,'Notification does not start a render/reveal loop');
+  follow.suspend();dock.scrollTop=0;env.view.hide();env.view.show();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(completions,2);assert.equal(dock.scrollTop,0,'Manual scrolling remains authoritative after another completed render');
+ }finally{env.close()}
+});
+
+test('a superseded or hidden renderer completion cannot notify the current score',async()=>{
+ for(const invalidate of ['replace','hide']){
+  const gate=deferred();let completions=0,disposed=0;
+  const env=environment({onRenderComplete(){completions++},loadAdapter:async()=>({disposeEngravedStaff(){},async renderEngravedStaff(){await gate.promise;return{ok:true,metadata:{fromMeasure:1,toMeasure:1},dispose(){disposed++}}}})});
+  try{
+   env.setScore();env.calls[0].resolve({ok:true,json:async()=>({xml:'<score-partwise/>',part_id_map:{piano:'P1'},diagnostics:[]})});await new Promise(resolve=>setImmediate(resolve));
+   if(invalidate==='hide')env.view.hide();else env.setScore({...structuredClone(fixture),id:'new-original-score'});
+   gate.resolve();await new Promise(resolve=>setImmediate(resolve));
+   assert.equal(completions,0,`${invalidate} invalidates notification as well as paint`);assert.equal(disposed,1);
+  }finally{gate.resolve();env.close()}
+ }
+});
+
+test('renderer completion waits outside the audio ACK window and keeps readiness pending until admitted',async()=>{
+ const entered=deferred(),finish=deferred(),gate=notationAudioAdmission(globalThis),events=[];let audioLease=null,completions=0;
+ const env=environment({onRenderComplete(){completions++;events.push('completed paint');assert.equal(audioLease,null);const lease=gate.tryVisual();assert.ok(lease);lease.release();},loadAdapter:async()=>({disposeEngravedStaff(){},async renderEngravedStaff(){
+  const lease=gate.tryVisual();assert.ok(lease);entered.resolve();try{await finish.promise;return{ok:true,metadata:{fromMeasure:1,toMeasure:1},dispose(){}}}finally{lease.release()}
+ }})});
+ try{
+  env.setScore();env.calls[0].resolve({ok:true,json:async()=>({xml:'<score-partwise/>',part_id_map:{piano:'P1'},diagnostics:[]})});await entered.promise;
+  const admitted=gate.acquireAudio().then(lease=>{audioLease=lease;events.push('audio admitted');return lease});finish.resolve();await admitted;await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(events,['audio admitted']);assert.equal(completions,0);assert.equal(env.view.navigationState().ready,false);assert.match(env.elements.get('engraving-status').textContent,/Preparing exact MusicXML/);
+  const owned=audioLease;audioLease=null;owned.release();await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(events,['audio admitted','completed paint']);assert.equal(completions,1);assert.equal(env.view.navigationState().ready,true);assert.match(env.elements.get('engraving-status').textContent,/Generated staff preview/);
+ }finally{audioLease?.release();finish.resolve();env.close()}
+});
+
+test('queued completion rechecks source, generation and visibility after audio releases its lease',async()=>{
+ for(const invalidate of ['replace','hide','visibility']){
+  const gate=notationAudioAdmission(globalThis),entered=deferred(),finish=deferred();let completions=0,shown=true,audioLease;
+  const env=environment({isVisible:()=>shown,onRenderComplete(){completions++},loadAdapter:async()=>({disposeEngravedStaff(){},async renderEngravedStaff(){const lease=gate.tryVisual();assert.ok(lease);entered.resolve();try{await finish.promise;return{ok:true,metadata:{fromMeasure:1,toMeasure:1},dispose(){}}}finally{lease.release()}}})});
+  try{
+   env.setScore();env.calls[0].resolve({ok:true,json:async()=>({xml:'<score-partwise/>',part_id_map:{piano:'P1'},diagnostics:[]})});await entered.promise;
+   const admitted=gate.acquireAudio();finish.resolve();audioLease=await admitted;await new Promise(resolve=>setImmediate(resolve));
+   if(invalidate==='replace')env.setScore({...structuredClone(fixture),id:'replacement-original'});else if(invalidate==='hide')env.view.hide();else shown=false;
+   audioLease.release();audioLease=null;await new Promise(resolve=>setImmediate(resolve));assert.equal(completions,0,invalidate);assert.doesNotMatch(env.elements.get('engraving-status').textContent,/Generated staff preview/);
+  }finally{audioLease?.release();finish.resolve();env.close()}
+ }
+});
+
+test('optional completion failure retains valid staff and releases visual ownership',async()=>{
+ const gate=notationAudioAdmission(globalThis);let completions=0;
+ const env=environment({onRenderComplete(){completions++;throw Error('Optional reveal failed')},loadAdapter:async()=>({disposeEngravedStaff(){},async renderEngravedStaff(){return{ok:true,metadata:{fromMeasure:1,toMeasure:1},dispose(){}}}})});
+ try{
+  env.setScore();env.calls[0].resolve({ok:true,json:async()=>({xml:'<score-partwise/>',part_id_map:{piano:'P1'},diagnostics:[]})});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(completions,1);assert.deepEqual(env.failures,[]);assert.equal(env.view.isActive(),true);assert.equal(env.view.navigationState().ready,true);assert.match(env.elements.get('engraving-status').textContent,/Generated staff preview/);
+  const audio=await gate.acquireAudio();audio.release();await env.view.refreshCompletedPaint();assert.equal(completions,2);assert.deepEqual(env.failures,[]);
+ }finally{env.close()}
+});
+
+test('completion requesting a later source page cannot clear that successor render pending state',async()=>{
+ const successor=deferred();let completions=0,renders=0;const env=environment({onRenderComplete(){if(++completions===1)env.view.followMeasure(8)},loadAdapter:async()=>({disposeEngravedStaff(){},async renderEngravedStaff(_container,_xml,options){if(++renders===2)await successor.promise;return{ok:true,metadata:{fromMeasure:options.fromMeasure,toMeasure:options.toMeasure},dispose(){}}}})});
+ try{
+  const score=structuredClone(fixture);score.measures=Array.from({length:12},(_,index)=>({number:index+1,at:{numerator:index*4,denominator:1},length:{numerator:4,denominator:1}}));env.setScore(score);
+  env.calls[0].resolve({ok:true,json:async()=>({xml:'<score-partwise/>',part_id_map:{piano:'P1'},diagnostics:[]})});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(completions,1);assert.equal(renders,2);assert.equal(env.calls.length,1);assert.equal(env.view.navigationState().from,9);assert.equal(env.view.navigationState().ready,false);assert.match(env.elements.get('engraving-status').textContent,/Preparing exact MusicXML/);
+  successor.resolve();await new Promise(resolve=>setImmediate(resolve));assert.equal(completions,2);assert.equal(env.calls.length,1);assert.equal(env.view.navigationState().ready,true);
+ }finally{successor.resolve();env.close()}
+});
+
+for(const navigationFirst of [true,false])test(`cold original guitar reveals without an idle frame when navigation finishes ${navigationFirst?'before':'after'} paint`,async()=>{
+ const score=structuredClone(fixture),timeline={duration_ms:2000,notes:score.parts[0].notes.map((note,index)=>({id:note.id,source_note_ids:[note.id],part_id:'piano',start_ms:index*500,duration_ms:500}))};
+ const response={version:1,source_measure_count:1,duration_ms:2000,diagnostics:[],occurrences:[{id:'original-first-measure',source_measure_index:0,measure_number:1,source_from:{numerator:0,denominator:1},source_to:{numerator:4,denominator:1},start_ms:0,end_ms:2000,repeat_region_index:null,repeat_pass:null,repeat_times:null,written_note_ids:['c4','e4'],continuing_note_ids:[]}],sounding_groups:timeline.notes.map(note=>({occurrence_id:note.id,source_note_ids:note.source_note_ids,part_id:note.part_id,start_ms:note.start_ms,end_ms:note.start_ms+note.duration_ms})),written_cursor:{version:1,source_note_ids:['c4','e4'],spans:[{source_note_index:0,measure_occurrence_index:0,start_ms:0,end_ms:500},{source_note_index:1,measure_occurrence_index:0,start_ms:500,end_ms:1000}]}};
+ const navigation=deferred(),gate=notationAudioAdmission(globalThis),playback=Object.freeze({position:0,running:false}),original=JSON.stringify({score,timeline,playback});let current=null,completions=0,requests=0,follow,cursor,refresh,audioLease,audioRequest;
+ const env=environment({onRenderComplete(){
+  completions++;const written=cursor.at(playback.position);
+  if(written?.occurrence)env.view.setExpectedWrittenNotes({sourceNoteIds:written.entries.map(entry=>entry.sourceNoteId),sourceMeasureIndex:written.occurrence.source_measure_index});else env.view.clearExpectedWrittenNotes();
+  follow.viewportChanged();
+ },loadAdapter:async()=>({disposeEngravedStaff(){},async renderEngravedStaff(){return{ok:true,metadata:{fromMeasure:1,toMeasure:1},dispose(){},mappingStatus:()=>({status:'ready',verifiedGlyphCount:2,diagnostics:[]}),setExpectedWrittenNotes(value){current=value;return true},clearExpectedWrittenNotes(){current=null;return true},expectedNoteBounds(){return{status:current?'ready':'unavailable',rects:current?[{left:639.55,right:651.57,top:436.67-dock.scrollTop,bottom:447.14-dock.scrollTop}]:[]}}}}})});
+ const dock=document.getElementById('notation-dock'),status=document.getElementById('engraving-follow-status');status.setAttribute=()=>{};
+ const scroller={clientLeft:0,clientWidth:372,scrollLeft:0,scrollTop:0,scrollWidth:372,getBoundingClientRect:()=>({left:452.52,right:824.52,top:326.39-dock.scrollTop,bottom:862.89-dock.scrollTop})};
+ Object.assign(dock,{clientTop:1,clientLeft:1,clientHeight:348,clientWidth:388,scrollTop:0,scrollLeft:0,scrollHeight:920,getBoundingClientRect:()=>({left:443.52,right:834,top:38,bottom:388}),querySelector:()=>({getBoundingClientRect:()=>({height:61.39})}),scrollTo(value){this.scrollTop=value.top;this.scrollLeft=value.left;}});env.elements.get('engraved-staff').closest=()=>scroller;
+ cursor=setupWrittenCursor({getContext:()=>({score,timeline}),api:async()=>{requests++;return navigation.promise},onStatus({status}){if(status==='ready'){if(!navigationFirst)audioRequest=gate.acquireAudio().then(lease=>{audioLease=lease});refresh=Promise.resolve().then(()=>follow.prepare()).then(()=>env.view.refreshCompletedPaint());}}});
+ follow=setupNotationFollowing({getContext:()=>({score,timeline}),getPlayback:()=>({...playback,written:cursor.at(playback.position)}),prepareNavigation:async options=>{await cursor.prepare(options);return cursor.navigation()},view:{isActive:()=>true,navigationState:env.view.navigationState,followMeasure:env.view.followMeasure,revealExpectedWrittenNotes:env.view.revealExpectedWrittenNotes,resetReveal:env.view.resetReveal}});
+ try{
+  env.setScore(score);const cursorReady=cursor.prepare(),followReady=follow.prepare();assert.equal(requests,1);
+  if(navigationFirst){navigation.resolve(response);await cursorReady;await followReady;assert.equal(await refresh,false);assert.equal(current,null);}
+  env.calls[0].resolve({ok:true,json:async()=>({xml:'<score-partwise/>',part_id_map:{piano:'P1'},diagnostics:[]})});await new Promise(resolve=>setImmediate(resolve));
+  if(!navigationFirst){
+   assert.equal(current,null);assert.equal(dock.scrollTop,0);assert.equal(cursor.state().status,'loading');assert.match(status.textContent,/准备乐谱跟随|Preparing score following/);
+   navigation.resolve(response);await cursorReady;await followReady;await audioRequest;
+   assert.equal(cursor.state().status,'ready');assert.equal(current,null);assert.equal(dock.scrollTop,0);assert.equal(completions,1,'Late navigation refresh cannot enter the audio ACK window');
+   audioLease.release();audioLease=null;assert.equal(await refresh,true);
+  }
+  assert.deepEqual(current,{sourceNoteIds:['c4'],sourceMeasureIndex:0});assert.ok(dock.scrollTop>60);assert.equal(requests,1);assert.equal(env.calls.length,1);assert.equal(completions,navigationFirst?1:2);assert.equal(JSON.stringify({score,timeline,playback}),original);assert.equal(env.pauses,0);
+ }finally{audioLease?.release();navigation.resolve(response);follow.suspend();cursor.reset();env.close()}
 });
 
 test('paused original grand-staff following reveals and reports a compact viewport before another playback frame',async()=>{
