@@ -1,3 +1,4 @@
+import {assertPitchModContext,pitchModPreferenceKey} from './pitch-mod-context.js';
 import {ASSISTANCE_PLANNER_REVISION,assistanceEqual,admitPracticeAssistance,assertPracticeAssistanceCurrent,practiceAssistanceBinding,defaultAssistanceSettings,validateAssistanceBinding,validateAssistanceSource,validateAssistanceSelection,validateAssistanceSettings,normalizeAssistanceSelection} from './practice-assistance-receipt.js';
 export {defaultAssistanceSettings,assertPracticeAssistanceCurrent,practiceAssistanceBinding};
 export const ASSISTANCE_PREFERENCE_FORMAT='wmc-practice-assistance-recipe';
@@ -8,32 +9,33 @@ const MAX_RECIPE_BYTES=64*1024;
 const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
 const copy=value=>structuredClone(value);
 const fields=(value,names)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===names.length&&names.every(name=>Object.hasOwn(value,name));
-function preferenceKey(context){
-  if(context?.source){const s=validateAssistanceSource(context.source);return JSON.stringify([s.key,s.content_sha256,s.profile,s.choice,s.runtime_policy]);}
+export function assistancePreferenceKey(context){
+  if(context?.pitchMod)assertPitchModContext(context.pitchMod,context.source);
+  if(context?.source){const s=validateAssistanceSource(context.source);return pitchModPreferenceKey(JSON.stringify([s.key,s.content_sha256,s.profile,s.choice,s.runtime_policy]),context.pitchMod);}
   if(typeof context?.preferenceKey!=='string'||!context.preferenceKey||context.preferenceKey.length>2048)fail('assistance_preference_identity','Canonical preferences require a stable, source-revision-specific storage identity.');
-  return context.preferenceKey;
+  return pitchModPreferenceKey(context.preferenceKey,context.pitchMod);
 }
 export function validateAssistanceRecipe(recipe,context){
   if(!fields(recipe,['format','version','preference_key','source','selection','mode','settings','planner_revision','revision','expected_selection_digest'])||recipe.format!==ASSISTANCE_PREFERENCE_FORMAT||recipe.version!==ASSISTANCE_PREFERENCE_VERSION||recipe.planner_revision!==ASSISTANCE_PLANNER_REVISION||recipe.revision!==1||!['original','automatic'].includes(recipe.mode)||typeof recipe.expected_selection_digest!=='string'||!/^[a-f0-9]{64}$/.test(recipe.expected_selection_digest))fail('assistance_preference_invalid','Saved assistance uses an invalid or unsupported recipe. It has been preserved unchanged.');
   validateAssistanceSource(recipe.source);validateAssistanceSelection(recipe.selection);
   if(recipe.mode==='automatic'){validateAssistanceSettings(recipe.settings);if(recipe.selection.profile.kind!=='piano')fail('assistance_preference_invalid','Saved automatic assistance requires its original Piano profile.');}else if(recipe.settings!==null)fail('assistance_preference_invalid','Original mode cannot contain automatic settings.');
-  if(context&&(recipe.preference_key!==preferenceKey(context)||!assistanceEqual(recipe.source,context.source)))fail('assistance_preference_mismatch','Saved assistance belongs to another source revision.');
+  if(context&&(recipe.preference_key!==assistancePreferenceKey(context)||!assistanceEqual(recipe.source,context.source)))fail('assistance_preference_mismatch','Saved assistance belongs to another source revision.');
   return recipe;
 }
-function offRecord(context){return{format:ASSISTANCE_OFF_FORMAT,version:1,preference_key:preferenceKey(context),source:copy(context.source)};}
+function offRecord(context){return{format:ASSISTANCE_OFF_FORMAT,version:1,preference_key:assistancePreferenceKey(context),source:copy(context.source)};}
 function validateOffRecord(value,context){
-  if(!fields(value,['format','version','preference_key','source'])||value.format!==ASSISTANCE_OFF_FORMAT||value.version!==1||value.preference_key!==preferenceKey(context)||!assistanceEqual(value.source,context.source))fail('assistance_preference_invalid','The saved assistance-off choice belongs to another source or schema.');
+  if(!fields(value,['format','version','preference_key','source'])||value.format!==ASSISTANCE_OFF_FORMAT||value.version!==1||value.preference_key!==assistancePreferenceKey(context)||!assistanceEqual(value.source,context.source))fail('assistance_preference_invalid','The saved assistance-off choice belongs to another source or schema.');
   validateAssistanceSource(value.source);return value;
 }
 function recipeFrom(assistance,context){
   const p=assistance.plan;
-  return validateAssistanceRecipe({format:ASSISTANCE_PREFERENCE_FORMAT,version:ASSISTANCE_PREFERENCE_VERSION,preference_key:preferenceKey(context),source:copy(context.source),selection:copy(p.selection),mode:p.mode,settings:copy(p.settings),planner_revision:p.planner_revision,revision:p.revision,expected_selection_digest:p.selection_digest},context);
+  return validateAssistanceRecipe({format:ASSISTANCE_PREFERENCE_FORMAT,version:ASSISTANCE_PREFERENCE_VERSION,preference_key:assistancePreferenceKey(context),source:copy(context.source),selection:copy(p.selection),mode:p.mode,settings:copy(p.settings),planner_revision:p.planner_revision,revision:p.revision,expected_selection_digest:p.selection_digest},context);
 }
 /** Compact recipes only. A persisted recipe is never a usable ownership plan. */
 export class PracticeAssistanceStore {
   constructor({storage}={}){this.storage=storage;}
   target(){return this.storage===undefined?globalThis.localStorage:this.storage;}
-  key(context){return ASSISTANCE_STORAGE_PREFIX+encodeURIComponent(preferenceKey(context));}
+  key(context){return ASSISTANCE_STORAGE_PREFIX+encodeURIComponent(assistancePreferenceKey(context));}
   read(context){
     try{
       const storage=this.target();if(typeof storage?.getItem!=='function')return{status:'unavailable',recipe:null,raw:null};
@@ -65,13 +67,15 @@ export class PracticeAssistanceStore {
 }
 function contextSnapshot(context){
   if(!context)return null;
-  return{source:copy(context.source),selection:normalizeAssistanceSelection(context.selection),sourceToken:context.sourceToken,runtimeToken:context.runtimeToken,score:context.score,preferenceKey:context.preferenceKey,receipt:context.receipt};
+  if(context.pitchMod)assertPitchModContext(context.pitchMod,context.source,context);
+  return{source:copy(context.source),selection:normalizeAssistanceSelection(context.selection),sourceToken:context.sourceToken,runtimeToken:context.runtimeToken,score:context.score,preferenceKey:context.preferenceKey,receipt:copy(context.receipt),...(context.pitchMod?{pitchMod:context.pitchMod}:{})};
 }
-function sameContext(a,b){if(a===null&&b===null)return true;return Boolean(a&&b&&assistanceEqual(a.source,b.source)&&assistanceEqual(a.selection,b.selection)&&a.sourceToken===b.sourceToken&&a.runtimeToken===b.runtimeToken&&a.score===b.score&&a.preferenceKey===b.preferenceKey&&assistanceEqual(a.receipt,b.receipt));}
-function recipeBinding(context,recipe){return{source:context.source,selection:recipe.selection,mode:recipe.mode,settings:recipe.settings,revision:recipe.revision??1,sourceToken:context.sourceToken,runtimeToken:context.runtimeToken,...(context.receipt?{receipt:context.receipt}:{}),...(recipe.expected_selection_digest?{expected_selection_digest:recipe.expected_selection_digest}:{})};}
+function sameContext(a,b){if(a===null&&b===null)return true;return Boolean(a&&b&&assistanceEqual(a.source,b.source)&&assistanceEqual(a.selection,b.selection)&&a.sourceToken===b.sourceToken&&a.runtimeToken===b.runtimeToken&&a.score===b.score&&a.preferenceKey===b.preferenceKey&&a.pitchMod===b.pitchMod&&assistanceEqual(a.receipt,b.receipt));}
+function recipeBinding(context,recipe){return{source:context.source,selection:recipe.selection,mode:recipe.mode,settings:recipe.settings,revision:recipe.revision??1,sourceToken:context.sourceToken,runtimeToken:context.runtimeToken,...(context.pitchMod?{pitchMod:context.pitchMod}:{}),...(context.receipt?{receipt:context.receipt}:{}),...(recipe.expected_selection_digest?{expected_selection_digest:recipe.expected_selection_digest}:{})};}
 export function assistanceRequest(context,recipe){
   const binding=recipeBinding(context,recipe);validateAssistanceBinding(binding);
   const body=context.source?{source:copy(context.source)}:{score:context.score};
+  if(context.pitchMod)body.pitch_mod=copy(context.pitchMod.configuration);
   body.selection=normalizeAssistanceSelection(recipe.selection);if(recipe.mode==='automatic')body.settings=copy(recipe.settings);
   return{path:`${context.source?'/api/library/assistance':'/api/practice-assistance'}/${recipe.mode==='automatic'?'generate':'original'}`,body,binding};
 }

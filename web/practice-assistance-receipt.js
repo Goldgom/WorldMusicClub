@@ -1,3 +1,4 @@
+import {assertPitchModContext} from './pitch-mod-context.js';
 /** Runtime admission only. Rust owns source interpretation and note selection. */
 export const ASSISTANCE_FORMAT='wmc-practice-assistance';
 export const ASSISTANCE_SCHEMA_VERSION=1;
@@ -62,6 +63,7 @@ export function assistancePresetSettings(presetId){
 }
 export function validateAssistanceBinding(binding){
   validateAssistanceSource(binding?.source);validateAssistanceSelection(binding.selection);
+  if(binding.pitchMod)assertPitchModContext(binding.pitchMod,binding.source,binding);
   if(!binding.sourceToken||!binding.runtimeToken)fail('Assistance needs the current source and runtime tokens.');
   if(binding.mode!=='original'&&!binding.selection.selected_part_ids.length)fail('Automatic assistance needs at least one human-selected part.');
   if(!['original','automatic','explicit'].includes(binding.mode)||binding.mode==='automatic'&&binding.selection.profile.kind!=='piano')fail('Automatic assistance currently supports keyboard/Piano only. Choose Original for this profile.');
@@ -71,7 +73,8 @@ export function validateAssistanceBinding(binding){
   return binding;
 }
 export function normalizeAssistanceSelection(selection){validateAssistanceSelection(selection);return{selected_part_ids:[...selection.selected_part_ids].sort(),profile:structuredClone(selection.profile)};}
-function receiptMatches(receipt,source){
+function receiptMatches(receipt,source,pitchMod){
+  if(pitchMod)return assistanceEqual(receipt,assertPitchModContext(pitchMod,source).receipt);
   const expected=source||{profile:'wmc-canonical-score-v1',runtime_policy:'wmc-canonical-practice-v1',choice:null,content_sha256:null};
   return fields(receipt,['source_binding','saved_package_sha256','source_profile','runtime_policy','choice','runtime_digest'])&&fields(receipt.source_binding,['domain','serialization_revision','digest'])&&receipt.source_binding.domain===profiles[expected.profile]?.domain&&receipt.source_binding.serialization_revision===1&&hash(receipt.source_binding.digest)&&receipt.saved_package_sha256===expected.content_sha256&&receipt.source_profile===expected.profile&&receipt.runtime_policy===expected.runtime_policy&&receipt.choice===expected.choice&&hash(receipt.runtime_digest);
 }
@@ -80,13 +83,13 @@ function responseSourceMatches(response,binding){
   return assistanceEqual(response.source,{kind:'canonical',source_binding:response.checked?.receipt?.source_binding,profile:'wmc-canonical-score-v1',choice:null,runtime_policy:'wmc-canonical-practice-v1'});
 }
 function freeze(value){if(value&&typeof value==='object'){for(const child of Object.values(value))freeze(child);Object.freeze(value);}return value;}
-function snapshotBinding(binding){return{source:structuredClone(binding.source),selection:normalizeAssistanceSelection(binding.selection),mode:binding.mode,settings:structuredClone(binding.settings),revision:binding.revision??1,sourceToken:binding.sourceToken,runtimeToken:binding.runtimeToken};}
+function snapshotBinding(binding){return{source:structuredClone(binding.source),selection:normalizeAssistanceSelection(binding.selection),mode:binding.mode,settings:structuredClone(binding.settings),revision:binding.revision??1,sourceToken:binding.sourceToken,runtimeToken:binding.runtimeToken,...(binding.pitchMod?{pitchMod:binding.pitchMod}:{})};}
 /** Only call on a completed Rust route response, never on preferences or JS timelines. */
 export function admitPracticeAssistance(response,binding){
   validateAssistanceBinding(binding);
-  if(!fields(response,['source','checked'])||!responseSourceMatches(response,binding))fail('The native response belongs to another saved source.');
+  if(!fields(response,binding.pitchMod?['source','checked','pitch_mod']:['source','checked'])||binding.pitchMod&&!assistanceEqual(response.pitch_mod,binding.pitchMod.identity)||!responseSourceMatches(response,binding))fail('The native response belongs to another saved source or pitch view.');
   const c=response.checked,p=c?.plan,r=c?.receipt;
-  if(!fields(c,['plan','receipt','human_targets','machine_occurrence_ids','source_ownership','coverage','exclusion_reasons','all_selected_human','scored_mode_allowed','diagnostics'])||!fields(p,['format','schema_version','planner_revision','revision','receipt','selection','mode','settings','human_source_ids','selection_digest'])||p.format!==ASSISTANCE_FORMAT||p.schema_version!==ASSISTANCE_SCHEMA_VERSION||p.planner_revision!==ASSISTANCE_PLANNER_REVISION||p.revision!==(binding.revision??1)||!receiptMatches(r,binding.source)||!assistanceEqual(p.receipt,r)||!assistanceEqual(p.selection,normalizeAssistanceSelection(binding.selection))||p.mode!==binding.mode||!assistanceEqual(p.settings,binding.settings)||!hash(p.selection_digest)||binding.expected_selection_digest!==undefined&&p.selection_digest!==binding.expected_selection_digest||binding.receipt!==undefined&&!assistanceEqual(r,binding.receipt))fail('The checked assistance receipt does not match the current source, runtime, profile, settings or revision.');
+  if(!fields(c,['plan','receipt','human_targets','machine_occurrence_ids','source_ownership','coverage','exclusion_reasons','all_selected_human','scored_mode_allowed','diagnostics'])||!fields(p,['format','schema_version','planner_revision','revision','receipt','selection','mode','settings','human_source_ids','selection_digest'])||p.format!==ASSISTANCE_FORMAT||p.schema_version!==ASSISTANCE_SCHEMA_VERSION||p.planner_revision!==ASSISTANCE_PLANNER_REVISION||p.revision!==(binding.revision??1)||!receiptMatches(r,binding.source,binding.pitchMod)||!assistanceEqual(p.receipt,r)||!assistanceEqual(p.selection,normalizeAssistanceSelection(binding.selection))||p.mode!==binding.mode||!assistanceEqual(p.settings,binding.settings)||!hash(p.selection_digest)||binding.expected_selection_digest!==undefined&&p.selection_digest!==binding.expected_selection_digest||binding.receipt!==undefined&&!assistanceEqual(r,binding.receipt))fail('The checked assistance receipt does not match the current source, runtime, profile, settings or revision.');
   if(!ids(p.human_source_ids)||!ids(c.machine_occurrence_ids)||!Array.isArray(c.source_ownership)||c.source_ownership.length>100000||!Array.isArray(c.exclusion_reasons)||!Array.isArray(c.diagnostics)||typeof c.all_selected_human!=='boolean'||typeof c.scored_mode_allowed!=='boolean')fail('The ownership response is incomplete.');
   const selected=new Set(p.selection.selected_part_ids),owners=new Map(),human=new Set(),scoped=new Set();
   for(const item of c.source_ownership){
@@ -116,7 +119,7 @@ export function admitPracticeAssistance(response,binding){
 export function assertPracticeAssistanceCurrent(assistance,binding){
   const saved=admitted.get(assistance);if(!saved)fail('Only an admitted Rust assistance receipt may reach practice or playback.');
   validateAssistanceBinding(binding);
-  if(!assistanceEqual(saved.source,binding.source)||!assistanceEqual(saved.selection,normalizeAssistanceSelection(binding.selection))||saved.mode!==binding.mode||!assistanceEqual(saved.settings,binding.settings)||saved.revision!==(binding.revision??1)||saved.sourceToken!==binding.sourceToken||saved.runtimeToken!==binding.runtimeToken||binding.expected_selection_digest!==undefined&&assistance.plan.selection_digest!==binding.expected_selection_digest||binding.receipt!==undefined&&!assistanceEqual(assistance.receipt,binding.receipt))fail('This assistance receipt is stale for the current source, runtime or selection.');
+  if(!assistanceEqual(saved.source,binding.source)||!assistanceEqual(saved.selection,normalizeAssistanceSelection(binding.selection))||saved.mode!==binding.mode||!assistanceEqual(saved.settings,binding.settings)||saved.revision!==(binding.revision??1)||saved.sourceToken!==binding.sourceToken||saved.runtimeToken!==binding.runtimeToken||saved.pitchMod!==binding.pitchMod||binding.expected_selection_digest!==undefined&&assistance.plan.selection_digest!==binding.expected_selection_digest||binding.receipt!==undefined&&!assistanceEqual(assistance.receipt,binding.receipt))fail('This assistance receipt is stale for the current source, runtime or selection.');
   return assistance;
 }
 export function practiceAssistanceBinding(assistance){

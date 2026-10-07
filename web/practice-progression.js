@@ -1,13 +1,14 @@
-import {createPracticeAssistanceController,PracticeAssistanceStore,assistanceRequest,validateAssistanceRecipe} from './practice-assistance.js';
-import {admitPracticeAssistance,assertPracticeAssistanceCurrent,assistanceEqual,normalizeAssistanceSelection,validateAssistanceSource,defaultAssistanceSettings} from './practice-assistance-receipt.js';
+import {assertPitchModContext} from './pitch-mod-context.js';
+import {createPracticeAssistanceController,PracticeAssistanceStore,assistanceRequest,validateAssistanceRecipe,assistancePreferenceKey} from './practice-assistance.js';
+import {admitPracticeAssistance,assertPracticeAssistanceCurrent,assistanceEqual,normalizeAssistanceSelection,defaultAssistanceSettings} from './practice-assistance-receipt.js';
 import {PROGRESSION_LAYERS,validateProgressionPlan,admitPracticeProgression,assertPracticeProgressionCurrent,exactFields} from './practice-progression-receipt.js';
 
 export const PROGRESSION_STORAGE_PREFIX='worldmusichub.practice-progression.v1.';
 const FORMAT='wmc-practice-progression-preference',copy=value=>structuredClone(value);
 const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
-function identity(context){validateAssistanceSource(context.source);if(context.source){const source=context.source;return JSON.stringify([source.key,source.content_sha256,source.profile,source.choice,source.runtime_policy]);}if(typeof context.preferenceKey!=='string'||!context.preferenceKey||context.preferenceKey.length>2048)fail('progression_identity','A source revision is required.');return context.preferenceKey;}
+const identity=assistancePreferenceKey;
 function legacyPreferencePlan(plan){return Object.fromEntries(['mode','selection','settings','planner_revision','revision','selection_digest','receipt'].map(key=>[key,copy(plan[key])]));}
-function legacyRecipe(context,plan){return {format:'wmc-practice-assistance-recipe',version:1,preference_key:context.source?JSON.stringify([context.source.key,context.source.content_sha256,context.source.profile,context.source.choice,context.source.runtime_policy]):context.preferenceKey,source:copy(context.source),selection:copy(plan.selection),mode:plan.mode,settings:copy(plan.settings),planner_revision:plan.planner_revision,revision:plan.revision,expected_selection_digest:plan.selection_digest};}
+function legacyRecipe(context,plan){return {format:'wmc-practice-assistance-recipe',version:1,preference_key:identity(context),source:copy(context.source),selection:copy(plan.selection),mode:plan.mode,settings:copy(plan.settings),planner_revision:plan.planner_revision,revision:plan.revision,expected_selection_digest:plan.selection_digest};}
 export function validateProgressionPreference(value,context){
   if(!exactFields(value,['format','version','preference_key','source','mode','plan'])||value.format!==FORMAT||value.version!==1||value.preference_key!==identity(context)||!assistanceEqual(value.source,context.source)||!['progression','original','automatic','off'].includes(value.mode))fail('progression_preference_invalid','Saved progression cannot be read safely. It has been preserved unchanged.');
   if(value.mode==='off'){if(value.plan!==null)fail('progression_preference_invalid','The Off marker cannot declare note ownership.');}
@@ -37,8 +38,8 @@ export class PracticeProgressionStore {
     this.known.add(this.key(context));return{status:'saved',recipe:copy(recipe),raw};
   }
 }
-const snapshot=context=>context?{...context,source:copy(context.source),selection:normalizeAssistanceSelection(context.selection),admissionKey:context.admissionKey??null}:null;
-const same=(a,b)=>a===null&&b===null||Boolean(a&&b&&assistanceEqual(a.source,b.source)&&assistanceEqual(a.selection,b.selection)&&a.sourceToken===b.sourceToken&&a.runtimeToken===b.runtimeToken&&a.score===b.score&&a.preferenceKey===b.preferenceKey&&a.admissionKey===b.admissionKey&&assistanceEqual(a.receipt,b.receipt));
+const snapshot=context=>{if(!context)return null;if(context.pitchMod)assertPitchModContext(context.pitchMod,context.source,context);return{...context,source:copy(context.source),selection:normalizeAssistanceSelection(context.selection),receipt:copy(context.receipt),admissionKey:context.admissionKey??null};};
+const same=(a,b)=>a===null&&b===null||Boolean(a&&b&&assistanceEqual(a.source,b.source)&&assistanceEqual(a.selection,b.selection)&&a.sourceToken===b.sourceToken&&a.runtimeToken===b.runtimeToken&&a.score===b.score&&a.preferenceKey===b.preferenceKey&&a.pitchMod===b.pitchMod&&a.admissionKey===b.admissionKey&&assistanceEqual(a.receipt,b.receipt));
 /** The v1 controller remains authoritative until an explicit progression choice.
  * A v2 preference subsequently owns a validated stage or an explicit exit; v1
  * saved bytes are never migrated, rewritten or resurrected behind that choice. */
@@ -63,7 +64,7 @@ export function createProgressiveAssistanceController({api,getContext,onChange=(
       const proof=saved?recipe.plan:recipe.expectedPlan;
       binding={...context,selection,layer:recipe.layer||proof.layer,...(proof?{plan:proof}:{})};
       path=`${context.source?'/api/library/progression':'/api/practice-progression'}/${proof?'validate':'generate'}`;
-      body={...(context.source?{source:copy(context.source)}:{score:context.score}),...(proof?{plan:copy(proof)}:{selection,layer:binding.layer})};
+      body={...(context.source?{source:copy(context.source)}:{score:context.score}),...(proof?{plan:copy(proof)}:{selection,layer:binding.layer}),...(context.pitchMod?{pitch_mod:copy(context.pitchMod.configuration)}:{})};
     }else{
       const plan=recipe.plan,mode=recipe.mode;
       const legacyDraft={mode,selection,settings:mode==='automatic'?recipe.settings||plan?.settings||defaultAssistanceSettings():null,...(saved&&plan?{expected_selection_digest:plan.selection_digest}:{})};

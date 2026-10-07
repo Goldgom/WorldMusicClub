@@ -1,23 +1,26 @@
 import {PracticeAssistanceStore} from './practice-assistance.js';
 import {assertPracticeAssistanceCurrent,practiceAssistanceBinding} from './practice-assistance-receipt.js';
 import {validateTargetPlan} from './physical-targets.js';
+import {pitchModContext,pitchModOriginalSource} from './pitch-mod-context.js';
 
 const fail=message=>{throw Object.assign(new Error(message),{code:'stale_practice_assistance'});};
 
 /** The source tokens are the actual player inputs, never a reconstructed clock. */
 export function appAssistanceContext(value,profile,identity) {
   if(!value?.compiled||!value.score)return null;
-  const song=value.cleanSong,mod=value.songMod||value.mod;
+  const pitchMod=pitchModContext(value.pitchView),original=pitchMod?value.pitchView.sourceView:value;
+  const song=value.cleanSong,originalSong=original.cleanSong,mod=value.songMod||value.mod;
   const selected=mod?mod.config.parts.filter(part=>part.performer==='human').map(part=>part.partId):value.practiceSelection?.part_ids||value.score.parts.map(part=>part.id);
-  const source=song?{key:song.libraryKey.replace(/^native:/,''),content_sha256:song.identity,profile:song.profile,choice:song.runtime?.choice??null,runtime_policy:song.profile==='wmh-basic-keys-midi1-v1'?'wmh-basic-key-rendition-fifo-v1':song.runtime?.profile||song.profile}:null;
-  return {source,selection:{selected_part_ids:[...selected].sort(),profile},sourceToken:song||value.compiled,runtimeToken:song?song.runtime:value.compiled.timeline,score:value.compiled.score,preferenceKey:JSON.stringify([identity.songId,identity.sourceRevision.kind,identity.sourceRevision.value])};
+  const source=pitchMod?pitchModOriginalSource(value.pitchView):originalSong?{key:originalSong.libraryKey.replace(/^native:/,''),content_sha256:originalSong.identity,profile:originalSong.profile,choice:originalSong.runtime?.choice??null,runtime_policy:originalSong.profile==='wmh-basic-keys-midi1-v1'?'wmh-basic-key-rendition-fifo-v1':originalSong.runtime?.profile||originalSong.profile}:null;
+  if(pitchMod&&(value.compiled!==value.pitchView.compiled||value.score!==value.pitchView.score||(song??null)!==(value.pitchView.cleanSong??null)))fail('The assistance context is detached from its checked pitch view.');
+  return {source,selection:{selected_part_ids:[...selected].sort(),profile},sourceToken:song||value.compiled,runtimeToken:song?song.runtime:value.compiled.timeline,score:pitchMod?original.score:original.compiled.score,preferenceKey:JSON.stringify([identity.songId,identity.sourceRevision.kind,identity.sourceRevision.value]),...(pitchMod?{pitchMod,receipt:pitchMod.receipt}:{})};
 }
 
 /** Re-read BOTH active ownership and current source/profile/union after awaits. */
 export function currentAppAssistanceBinding(controller,context) {
   const assistance=controller.current();
   if(!assistance||!context)fail('The checked note assignment is no longer active.');
-  const binding={source:context.source,selection:context.selection,sourceToken:context.sourceToken,runtimeToken:context.runtimeToken,mode:assistance.plan.mode,settings:assistance.plan.settings,revision:assistance.plan.revision,receipt:assistance.receipt,expected_selection_digest:assistance.plan.selection_digest};
+  const binding={source:context.source,selection:context.selection,sourceToken:context.sourceToken,runtimeToken:context.runtimeToken,mode:assistance.plan.mode,settings:assistance.plan.settings,revision:assistance.plan.revision,receipt:context.receipt??assistance.receipt,expected_selection_digest:assistance.plan.selection_digest,...(context.pitchMod?{pitchMod:context.pitchMod}:{})};
   assertPracticeAssistanceCurrent(assistance,binding);
   return binding;
 }

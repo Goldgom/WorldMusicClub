@@ -17,8 +17,8 @@ export function validateProgressionPlan(plan){
 /** Rust provides the hierarchy; browser summaries never authorize membership. */
 export function admitPracticeProgression(response,binding){
   validateAssistanceSource(binding.source);const selection=normalizeAssistanceSelection(binding.selection),checked=response?.checked,plan=validateProgressionPlan(checked?.plan);
-  if(!exactFields(response,['source','checked'])||!exactFields(checked,['plan','layers','assistance'])||!assistanceEqual(plan.selection,selection)||plan.layer!==binding.layer||binding.plan&&!assistanceEqual(plan,binding.plan))fail('The progression response does not match the requested source, layer or saved proof.');
-  const assistance=admitPracticeAssistance({source:response.source,checked:checked.assistance},{...binding,selection,mode:'explicit',settings:null,revision:1,receipt:plan.receipt});
+  if(!exactFields(response,binding.pitchMod?['source','checked','pitch_mod']:['source','checked'])||!exactFields(checked,['plan','layers','assistance'])||!assistanceEqual(plan.selection,selection)||plan.layer!==binding.layer||binding.plan&&!assistanceEqual(plan,binding.plan))fail('The progression response does not match the requested source, layer or saved proof.');
+  const assistance=admitPracticeAssistance({source:response.source,checked:checked.assistance,...(binding.pitchMod?{pitch_mod:response.pitch_mod}:{})},{...binding,selection,mode:'explicit',settings:null,revision:1,receipt:plan.receipt});
   if(!Array.isArray(checked.layers)||checked.layers.length!==3)fail('The complete three-stage summary is required.');
   let previous=null;
   for(const [index,summary] of checked.layers.entries()){
