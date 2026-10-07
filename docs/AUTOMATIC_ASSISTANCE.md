@@ -167,6 +167,21 @@ versions. Source limits remain 100,000 units and 100,000 occurrences; automatic
 selection is bounded to 5,000,000 work units and checked responses to 16 MiB.
 Exceeding a bound returns an error, never a truncated successful plan.
 
+Fingerprints stream the same compact Rust `serde_json` bytes into SHA-256,
+stopping at the byte budget without allocating a complete serialization buffer.
+Canonical, VSQ and semantic sources, runtime fingerprints and selection plans
+retain a 32 MiB serialization budget. Basic's saved compact package is limited
+to 16 MiB, but its source fingerprint also includes the complete `performance.notes`
+array reconstructed by the validated decoder. Those derived records therefore
+have a separate bounded allowance: at most 100,000 records, each at most 1,024
+serialized bytes. The Basic fingerprint budget adds only the actual serialized
+size of that array and its field delimiter to the 16 MiB compact budget; unused
+record allowance cannot hide oversized source metadata. The absolute bound is
+16 MiB + 100,000 × 1,025 + 10 bytes, independent of the runtime and response limits.
+All source fields and exact runtime gates remain in their original fingerprints.
+Serialization domains/revision 1, plan/recipe versions and existing digest values
+are unchanged; saved assignments still require strict source and runtime matching.
+
 ## Applying, restoring and displaying an assignment
 
 The UI saves a compact `wmc-practice-assistance-recipe` version 1, not a usable

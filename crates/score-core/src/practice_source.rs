@@ -6,6 +6,7 @@ use sha2::{Digest, Sha256};
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
+    io::{self, Write},
 };
 
 pub const CANONICAL_PROFILE: &str = "wmc-canonical-score-v1";
@@ -14,6 +15,11 @@ pub const VSQ_RUNTIME_POLICY: &str = "wmh-vsq-base-note-practice-v1";
 pub const MAX_SOURCE_UNITS: usize = 100_000;
 pub const MAX_OCCURRENCES: usize = 100_000;
 const MAX_SOURCE_BYTES: usize = 32 * 1024 * 1024;
+// Basic packages omit these reconstructed records on disk. Their generated
+// identifiers, scalar coordinates and exact clocks fit below 1 KiB each, even
+// at the MIDI parser's largest supported values. Check each record rather than
+// giving arbitrary metadata the same extra space.
+const MAX_BASIC_DERIVED_NOTE_BYTES: usize = 1024;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -54,15 +60,90 @@ impl std::fmt::Display for PracticeSourceError {
 }
 impl std::error::Error for PracticeSourceError {}
 pub(crate) fn hash<T: Serialize>(value: &T) -> Result<String, PracticeSourceError> {
-    let bytes = serde_json::to_vec(value)
-        .map_err(|e| PracticeSourceError::new("practice_source_encoding", e.to_string()))?;
-    if bytes.len() > MAX_SOURCE_BYTES {
+    hash_with_limit(value, MAX_SOURCE_BYTES)
+}
+
+struct BoundedWriter<W> {
+    writer: W,
+    bytes: usize,
+    limit: usize,
+    exceeded: bool,
+}
+impl<W: Write> Write for BoundedWriter<W> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if self.exceeded || bytes.len() > self.limit - self.bytes {
+            self.exceeded = true;
+            return Err(io::Error::other(
+                "Practice serialization byte limit exceeded",
+            ));
+        }
+        let written = self.writer.write(bytes)?;
+        self.bytes += written;
+        Ok(written)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.writer.flush()
+    }
+}
+struct DigestWriter(Sha256);
+impl Write for DigestWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.update(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+fn serialize_bounded<T: Serialize, W: Write>(
+    value: &T,
+    writer: W,
+    limit: usize,
+) -> Result<BoundedWriter<W>, PracticeSourceError> {
+    let mut writer = BoundedWriter {
+        writer,
+        bytes: 0,
+        limit,
+        exceeded: false,
+    };
+    let encoded = serde_json::to_writer(&mut writer, value);
+    if writer.exceeded {
         return Err(PracticeSourceError::new(
             "practice_source_limit",
-            "Complete source or runtime exceeds 32 MiB; nothing was truncated",
+            format!("Complete source or runtime exceeds its {limit}-byte serialization budget; nothing was truncated"),
         ));
     }
-    Ok(format!("{:x}", Sha256::digest(bytes)))
+    encoded
+        .map_err(|error| PracticeSourceError::new("practice_source_encoding", error.to_string()))?;
+    Ok(writer)
+}
+fn hash_with_limit<T: Serialize>(value: &T, limit: usize) -> Result<String, PracticeSourceError> {
+    let writer = serialize_bounded(value, DigestWriter(Sha256::new()), limit)?;
+    Ok(format!("{:x}", writer.writer.0.finalize()))
+}
+fn basic_source_byte_limit(
+    score: &basic_keys::CompleteBasicKeys,
+) -> Result<usize, PracticeSourceError> {
+    let notes = &score.performance.notes;
+    if notes.len() > MAX_SOURCE_UNITS {
+        return Err(PracticeSourceError::new(
+            "practice_source_limit",
+            "Source exceeds 100,000 derived note records; nothing was truncated",
+        ));
+    }
+    if notes.is_empty() {
+        return Ok(basic_keys::MAX_JSON_BYTES);
+    }
+    // The complete source serialization differs from the compact package only
+    // by `,"notes":[...]`. Count that exact addition, preserving every field in
+    // the revision-1 fingerprint while still enforcing the 16 MiB wire limit.
+    // This is at most 16 MiB + 100,000 * (1,024 + 1) + 10 bytes. No source JSON
+    // buffer is allocated, and the runtime/plan budgets remain 32 MiB.
+    let mut derived_bytes = b",\"notes\":".len() + 2 + notes.len() - 1;
+    for note in notes {
+        derived_bytes += serialize_bounded(note, io::sink(), MAX_BASIC_DERIVED_NOTE_BYTES)?.bytes;
+    }
+    Ok(basic_keys::MAX_JSON_BYTES + derived_bytes)
 }
 
 /// Internal nonnegative exact rational microseconds. Arithmetic has explicit
@@ -297,6 +378,7 @@ impl PracticeSource {
             .collect();
         Self::finish(
             score,
+            MAX_SOURCE_BYTES,
             "wmc-canonical-score-serde-json",
             CANONICAL_PROFILE,
             CANONICAL_RUNTIME_POLICY,
@@ -310,6 +392,7 @@ impl PracticeSource {
         )
     }
     pub fn from_basic(score: &basic_keys::CompleteBasicKeys) -> Result<Self, PracticeSourceError> {
+        let source_byte_limit = basic_source_byte_limit(score)?;
         // Interpret ALL source events before any ownership choice. In particular,
         // filtering note-ons here would change FIFO release assignments.
         let compiled = basic_keys::compile_rendition(score)
@@ -339,6 +422,7 @@ impl PracticeSource {
             .collect();
         Self::finish(
             score,
+            source_byte_limit,
             "wmc-basic-complete-serde-json",
             basic_keys::PROFILE,
             basic_keys::RENDITION_POLICY,
@@ -397,6 +481,7 @@ impl PracticeSource {
             .collect();
         Self::finish(
             score,
+            MAX_SOURCE_BYTES,
             "wmc-vsq-complete-serde-json",
             vsq_clean::PROFILE,
             VSQ_RUNTIME_POLICY,
@@ -443,6 +528,7 @@ impl PracticeSource {
             .collect();
         Self::finish(
             score,
+            MAX_SOURCE_BYTES,
             "wmc-semantic-complete-serde-json",
             clean_song::PROFILE,
             clean_song::PROFILE,
@@ -468,6 +554,7 @@ impl PracticeSource {
     #[allow(clippy::too_many_arguments)]
     fn finish<T: Serialize>(
         source: &T,
+        source_byte_limit: usize,
         domain: &str,
         profile: &str,
         policy: &str,
@@ -550,7 +637,7 @@ impl PracticeSource {
             source_binding: PracticeSourceBinding {
                 domain: domain.into(),
                 serialization_revision: 1,
-                digest: hash(source)?,
+                digest: hash_with_limit(source, source_byte_limit)?,
             },
             saved_package_sha256: None,
             source_profile: profile.into(),
@@ -602,6 +689,10 @@ impl CanonicalClock {
         elapsed.add(Exact::beat(beat)?.sub(Exact::beat(at)?)?.mul(duration)?)
     }
 }
+
+#[cfg(test)]
+#[path = "practice_source/bounded_tests.rs"]
+mod bounded_tests;
 
 #[cfg(test)]
 mod tests {
@@ -677,6 +768,7 @@ mod tests {
             .collect();
         let error = PracticeSource::finish(
             &score,
+            MAX_SOURCE_BYTES,
             "test",
             CANONICAL_PROFILE,
             CANONICAL_RUNTIME_POLICY,
