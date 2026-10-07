@@ -45,6 +45,7 @@ pub mod metronome;
 pub mod navigation;
 pub mod omr;
 pub mod practice;
+pub mod practice_progression;
 pub mod practice_source;
 mod public_domain;
 pub mod results;

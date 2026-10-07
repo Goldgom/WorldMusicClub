@@ -114,7 +114,7 @@ pub struct PracticeAssistanceError {
     pub source_ids: Vec<String>,
 }
 impl PracticeAssistanceError {
-    fn new(code: &str, message: impl Into<String>) -> Self {
+    pub(crate) fn new(code: &str, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),
             message: message.into(),
@@ -229,13 +229,13 @@ fn check_settings(settings: &AutomaticSettings) -> Result<(), PracticeAssistance
     }
     Ok(())
 }
-struct Groups {
-    selected: PracticeTargets,
-    roots: Vec<usize>,
-    atoms: Vec<Vec<String>>,
-    cross_scope: HashSet<usize>,
+pub(crate) struct Groups {
+    pub(crate) selected: PracticeTargets,
+    pub(crate) roots: Vec<usize>,
+    pub(crate) atoms: Vec<Vec<String>>,
+    pub(crate) cross_scope: HashSet<usize>,
 }
-fn groups(
+pub(crate) fn groups(
     source: &PracticeSource,
     selection: &AssistanceSelection,
     allow_empty: bool,
