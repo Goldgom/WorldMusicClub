@@ -52,6 +52,7 @@ pub const ASSISTANCE_PHASES: [&str; 4] = [
     "assistance-progression",
     "assistance-off-restart",
 ];
+pub const DIRECT_MIDI_PHASES: [&str; 2] = ["direct-midi-seed", "direct-midi-restart"];
 pub const BASIC_KEY_PHASES: [&str; 2] = ["basic-key-seed", "basic-key-restart"];
 pub const AUTHORING_PHASES: [&str; 2] = ["authoring-seed", "authoring-restart"];
 pub const VSQ_AUTHORING_PHASES: [&str; 2] = ["vsq-authoring-seed", "vsq-authoring-restart"];
@@ -189,6 +190,7 @@ impl Acceptance {
             .chain(AUTHORING_PHASES)
             .chain(VSQ_AUTHORING_PHASES)
             .chain(BASIC_KEY_PHASES)
+            .chain(DIRECT_MIDI_PHASES)
             .chain(COMPLETE_PRACTICE_PHASES)
             .chain(CANONICAL_PRACTICE_PHASES)
             .chain(LIVE_TONE_NAVIGATION_PHASES)
@@ -214,6 +216,23 @@ impl Acceptance {
         })
     }
     pub fn script(&self) -> String {
+        if DIRECT_MIDI_PHASES.contains(&self.phase) {
+            let (observers, _) = include_str!("../vsq-song-acceptance.js")
+                .split_once("(() => {")
+                .expect("VSQ observers precede runner");
+            let (controls, _) = include_str!("../canonical-practice-acceptance.js")
+                .split_once("(() => {")
+                .expect("Canonical controls precede runner");
+            return format!(
+                "globalThis.__WMH_ACCEPTANCE_PHASE__={};\n{}\n{}\n{}\n{}\n{}",
+                serde_json::to_string(self.phase).unwrap(),
+                include_str!("../acceptance-wait.js"),
+                include_str!("../reference-acceptance.js"),
+                observers,
+                controls,
+                include_str!("../../../scripts/native-direct-midi-renderer.js")
+            );
+        }
         if PITCH_SOURCES_PHASES.contains(&self.phase) {
             let (vsq, _) = include_str!("../vsq-song-acceptance.js")
                 .split_once("(() => {")
@@ -452,6 +471,7 @@ impl Acceptance {
             || PITCH_MOD_PHASES.contains(&self.phase)
             || PITCH_SOURCES_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
+            || DIRECT_MIDI_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase)
             || SKIN_PHASES.contains(&self.phase)
             || BUILD_DIAGNOSTICS_PHASES.contains(&self.phase);
@@ -651,6 +671,7 @@ impl Acceptance {
             || PITCH_MOD_PHASES.contains(&self.phase)
             || PITCH_SOURCES_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
+            || DIRECT_MIDI_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase)
             || SKIN_PHASES.contains(&self.phase)
             || BUILD_DIAGNOSTICS_PHASES.contains(&self.phase)
@@ -682,6 +703,7 @@ impl Acceptance {
             && !HUMAN_MOD_TIMBRE_PHASES.contains(&self.phase)
             && !ASSISTANCE_PHASES.contains(&self.phase)
             && !BASIC_KEY_PHASES.contains(&self.phase)
+            && !DIRECT_MIDI_PHASES.contains(&self.phase)
             && !CATALOG_PHASES.contains(&self.phase)
             && !SKIN_PHASES.contains(&self.phase)
             && !BUILD_DIAGNOSTICS_PHASES.contains(&self.phase)
@@ -773,7 +795,9 @@ impl Acceptance {
         if rows.len() >= 16 {
             return None;
         }
-        let extension = if (BULK_PHASES.contains(&self.phase)
+        let extension = if DIRECT_MIDI_PHASES.contains(&self.phase) && name.ends_with(".mid") {
+            "mid"
+        } else if (BULK_PHASES.contains(&self.phase)
             || CLEAN_PHASES.contains(&self.phase)
             || VSQ_PHASES.contains(&self.phase)
             || PERFORMANCE_PHASES.contains(&self.phase)
@@ -1086,6 +1110,7 @@ pub fn receive_report(
             || PITCH_MOD_PHASES.contains(&run.phase)
             || PITCH_SOURCES_PHASES.contains(&run.phase)
             || BASIC_KEY_PHASES.contains(&run.phase)
+            || DIRECT_MIDI_PHASES.contains(&run.phase)
             || CATALOG_PHASES.contains(&run.phase)
             || SKIN_PHASES.contains(&run.phase)
             || BUILD_DIAGNOSTICS_PHASES.contains(&run.phase)
@@ -1266,6 +1291,13 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
     if BUILD_DIAGNOSTICS_PHASES.contains(&phase) && value["kind"] != "click" {
         return false;
     }
+    let direct_midi = DIRECT_MIDI_PHASES.contains(&phase);
+    if direct_midi
+        && !["click", "picker", "select-first", "select-last"]
+            .contains(&value["kind"].as_str().unwrap_or(""))
+    {
+        return false;
+    }
     let pitch_sources = PITCH_SOURCES_PHASES.contains(&phase);
     let sources_special =
         phase == "pitch-sources-seed" && value["kind"] == "pitch-sources-shift-two";
@@ -1386,6 +1418,11 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
     }
     if value["kind"] == "picker" {
         let file = value["file"].as_str().unwrap_or("");
+        if direct_midi
+            && !(phase == "direct-midi-seed" && file == "original-direct-midi-boundary.mid")
+        {
+            return false;
+        }
         if pitch_sources
             && !(phase == "pitch-sources-seed" && file == "pitch-sources-original.wmhpack")
         {
@@ -1450,6 +1487,7 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
             || (phase == "assistance-seed" && file == "assistance-original-songs.zip")
             || (phase == "pitch-mod-seed" && file == "pitch-mod-original-c4.json")
             || (phase == "pitch-sources-seed" && file == "pitch-sources-original.wmhpack")
+            || (phase == "direct-midi-seed" && file == "original-direct-midi-boundary.mid")
             || (phase == "human-timbre-seed" && file == "human-mod-timbre-original.json")
             || (phase == "skin-seed"
                 && [
@@ -3449,6 +3487,97 @@ mod tests {
                 !evidence.0.exists(),
                 "Rejected phase created storage: {phase}"
             );
+        }
+    }
+
+    #[test]
+    fn direct_midi_phases_have_closed_actions_fresh_profiles_and_bounded_evidence() {
+        let evidence = Evidence::new();
+        for phase in DIRECT_MIDI_PHASES {
+            let run = Acceptance::new(evidence.0.clone(), phase).unwrap();
+            assert!(run.script().contains(include_str!(
+                "../../../scripts/native-direct-midi-renderer.js"
+            )));
+            assert!(!run.script().contains("scenario:'pitch-mod'"));
+            assert_eq!(run.library_directory(), evidence.0.join("Scores"));
+            assert_eq!(
+                run.profile_directory(),
+                evidence.0.join("webview-profiles").join(phase)
+            );
+            assert_eq!(run.report_limit(), MAX_CLEAN_REPORT_BYTES);
+            assert_eq!(action_limit(phase), 64);
+            let action = json!({"version":1,"sequence":64,"kind":"click","x":1,"y":1,"width":1280,"height":720});
+            assert!(valid_action_for_phase(&action, phase));
+            for kind in [
+                "key-r",
+                "key-c5",
+                "escape",
+                "cancel-picker",
+                "capture",
+                "select-second",
+                "pitch-mod-shift-two",
+            ] {
+                let mut wrong = action.clone();
+                wrong["kind"] = json!(kind);
+                assert!(!valid_action_for_phase(&wrong, phase));
+            }
+            let mut over = action.clone();
+            over["sequence"] = json!(65);
+            assert!(!valid_action_for_phase(&over, phase));
+            for file in [
+                "original-direct-midi-boundary.mid",
+                "../original-direct-midi-boundary.mid",
+                "original-direct-midi-boundary.mid.extra",
+                "original-direct-midi-canonical.mid",
+                "basic-key-original.zip",
+            ] {
+                let mut picker = action.clone();
+                picker["kind"] = json!("picker");
+                picker["file"] = json!(file);
+                assert_eq!(
+                    valid_action_for_phase(&picker, phase),
+                    phase == "direct-midi-seed" && file == "original-direct-midi-boundary.mid"
+                );
+            }
+            let request = report_request("POST", sized_report(Some(phase), MAX_CLEAN_REPORT_BYTES));
+            assert_eq!(
+                receive_report(Some(&evidence.0), Some(&run), &request).status(),
+                200
+            );
+            let request = report_request(
+                "POST",
+                sized_report(Some(phase), MAX_CLEAN_REPORT_BYTES + 1),
+            );
+            assert_eq!(
+                receive_report(Some(&evidence.0), Some(&run), &request).status(),
+                400
+            );
+            let failure =
+                read_ordinary_json(&evidence.0.join(run.report_name()), MAX_CLEAN_REPORT_BYTES)
+                    .unwrap();
+            assert_eq!(failure["report_failure"]["code"], "report_size");
+            assert!(run
+                .download("take.json")
+                .unwrap()
+                .ends_with(format!("{phase}-1.json")));
+            assert!(run
+                .download("original-direct-midi-boundary.mid")
+                .unwrap()
+                .ends_with(format!("{phase}-2.mid")));
+            run.prepare_webview_profile().unwrap();
+            assert!(run.prepare_webview_profile().is_err());
+        }
+        for phase in [
+            "direct-midi",
+            "direct-midi-seed-extra",
+            "DIRECT-MIDI-SEED",
+            "../direct-midi-restart",
+        ] {
+            assert!(Acceptance::new(evidence.0.clone(), phase).is_err());
+        }
+        let action = json!({"version":1,"sequence":1,"kind":"picker","x":1,"y":1,"width":1280,"height":720,"file":"original-direct-midi-boundary.mid"});
+        for phase in ["", "seed", "basic-key-seed", "bulk-seed", "pitch-mod-seed"] {
+            assert!(!valid_action_for_phase(&action, phase));
         }
     }
 
