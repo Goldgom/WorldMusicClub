@@ -14,11 +14,11 @@ import {validateDirectMidiImport,validateDirectMidiOpened,validateDirectMidiTake
 export async function checkDirectMidiNative({binary=process.env.WMH_NATIVE_IMPORT_DRIVER,output=process.env.WMH_DIRECT_MIDI_REPORT}={}){
  assert.ok(binary,'Build the exact-source native_import_driver and set WMH_NATIVE_IMPORT_DRIVER');
  const directory=await mkdtemp(join(tmpdir(),'wmc-direct-midi-')),fixtures=directMidiFixtures(),saved=new Map(),storageValues=new Map();
- const report={version:1,kind:'original-direct-midi-production-dom-rust-stdio',source_sha:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),source_tree:execFileSync('git',['rev-parse','HEAD^{tree}'],{encoding:'utf8'}).trim(),driver_sha256:directMidiDigest(await readFile(binary)),browser:false,native_window:false,physical_audio:false,network_listener:false,cases:[],api:[],process_ids:[],ok:false};
+ const report={version:1,kind:'original-direct-midi-production-dom-rust-stdio',source_sha:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),source_tree:execFileSync('git',['rev-parse','HEAD^{tree}'],{encoding:'utf8'}).trim(),driver_sha256:directMidiDigest(await readFile(binary)),driver_build_source:process.env.WMH_DIRECT_MIDI_DRIVER_SOURCE||null,browser:false,native_window:false,physical_audio:false,network_listener:false,cases:[],api:[],process_ids:[],ok:false};
  let driver,app,wall=1000;
  const open=()=>{driver=startVsqNativeDriver({binary:resolve(binary),directory:join(directory,'Scores'),requestTimeoutMs:30000});report.process_ids.push(driver.pid);};
  const transport={requests:[],async fetcher(path,options={}){
-  const body=options.body===undefined?undefined:typeof options.body==='string'||Buffer.isBuffer(options.body)?options.body:Buffer.from(await options.body.arrayBuffer());
+  const body=options.body===undefined?undefined:typeof options.body==='string'||Buffer.isBuffer(options.body)?options.body:options.body instanceof ArrayBuffer||ArrayBuffer.isView(options.body)?Buffer.from(options.body instanceof ArrayBuffer?options.body:options.body.buffer,options.body.byteOffset||0,options.body.byteLength):Buffer.from(await options.body.arrayBuffer());
   const response=await driver.fetcher(path,{...options,body}),bytes=await response.bytes(),row={path,status:response.status,request_sha256:directMidiDigest(body??Buffer.alloc(0)),response_sha256:directMidiDigest(bytes),body:typeof body==='string'?JSON.parse(body):null};transport.requests.push(row);report.api.push(row);
   return{...response,url:'https://wmh.localhost'+path,redirected:false,headers:new Headers({'Content-Type':response.contentType}),json:async()=>JSON.parse(bytes),text:async()=>bytes.toString(),blob:async()=>new Blob([bytes],{type:response.contentType})};
  }};
@@ -26,7 +26,7 @@ export async function checkDirectMidiNative({binary=process.env.WMH_NATIVE_IMPOR
  const importRaw=async(fixture,mode='commit')=>{const response=await transport.fetcher(`/api/library/import/${mode}`,{method:'POST',headers:{'Content-Type':'application/octet-stream','x-wmh-filename':encodeURIComponent(fixture.filename)},body:fixture.bytes});assert.equal(response.status,200);return response.json();};
  async function startDom(){app=await nativeStorageApp(transport,{now:()=>wall,storageValues});await app.click('home-single-player');}
  async function take(){
-  await app.until(()=>!app.$('configure-song-mod').disabled&&!app.$('start-performance').disabled,'Saved MIDI must expose existing Start');await app.click('configure-song-mod');await app.click('song-mod-all-human');await app.click('song-mod-apply');await app.until(()=>!app.$('song-mod-dialog').open&&!app.$('start-performance').disabled);app.$('count-in').checked=false;
+  await app.until(()=>!app.$('start-performance').disabled,'Saved MIDI must expose existing Start');app.$('count-in').checked=false;
   await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');wall+=120;app.renderAudioTo((wall-1000)/1000);app.frame();await app.click('play-button');await app.until(()=>!app.$('play-button').disabled);const result=await app.exported('export-takes');validateDirectMidiTake(result,fixtures.boundary);return result;
  }
  try{
@@ -38,7 +38,7 @@ export async function checkDirectMidiNative({binary=process.env.WMH_NATIVE_IMPOR
   const paths=transport.requests.slice(requestStart).map(row=>row.path);for(const path of ['/api/import/midi','/api/library/import/preview','/api/library/import/commit','/api/library/load'])assert.ok(paths.includes(path),`Actual picker omitted ${path}`);assert.equal(transport.requests.slice(requestStart).find(row=>row.path==='/api/import/midi').status,400);assert.equal(app.audio().contexts,0,'Import must not auto-start sound');
   report.cases.push({name:'raw-picker-save-selection-start-full-targets',key,take:await take(),ok:true});await app.close();app=null;
   for(const kind of ['boundary','layered','tracks','range']){
-   const fixture=fixtures[kind];await request('/api/import/midi',fixture.bytes,400,'audio/midi');const preview=await importRaw(fixture,'preview');validateDirectMidiImport(preview,fixture,{mode:'preview',status:kind==='boundary'?'duplicate':'ready'});
+   const fixture=fixtures[kind];assert.match((await request('/api/import/midi',fixture.bytes,400,'audio/midi')).error,/overlapping/i);const preview=await importRaw(fixture,'preview');validateDirectMidiImport(preview,fixture,{mode:'preview',status:kind==='boundary'?'duplicate':'ready'});
    const committed=await importRaw(fixture);const item=validateDirectMidiImport(committed,fixture,{status:kind==='boundary'?'duplicate':'saved'}),opened=validateDirectMidiOpened(await request('/api/library/load',{key:item.entry.key}),fixture);saved.set(kind,opened);
    const exported=await transport.fetcher('/api/library/import/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({archive_key:committed.source.archive_key})});assert.equal(exported.status,200);assert.deepEqual(await exported.bytes(),fixture.bytes,'Retained original must be byte-for-byte raw SMF');
    const repeated=await importRaw(fixture);validateDirectMidiImport(repeated,fixture,{status:'duplicate'});assert.equal(repeated.items[0].entry.key,item.entry.key);

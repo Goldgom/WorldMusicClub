@@ -25,3 +25,10 @@ test('direct MIDI proof rejects lost original bytes, changed policy, source even
 test('sample-frame audio oracle independently names every original attack including the late tail',()=>{
  const rows=directMidiAudioOracle(fixture);assert.deepEqual(rows.map(row=>row.eventId),[6,7,10,12].map(index=>`midi:${fixture.manifest.sha256}:t0:e${index}`));assert.deepEqual(rows.map(row=>[row.key,row.startMs,row.durationMs]),[[60,0,250],[60,250,250],[67,750,250],[72,1500,500]]);
 });
+
+test('hosted companion is guarded, preserves the raw picker path and never substitutes generated package admission',async()=>{
+ const {readFile}=await import('node:fs/promises'),source=await readFile(new URL('../scripts/hosted-midi-direct-import-check.mjs',import.meta.url),'utf8');
+ assert.ok(source.indexOf("assert.equal(process.env.GITHUB_ACTIONS,'true'")<source.indexOf('await startHostedAssetServer('));assert.ok(source.indexOf("assert.equal(process.env.WMH_HOSTED_BROWSER,'1')")<source.indexOf('await startHostedAssetServer('));assert.match(source,/await\(await chooser\)\.setFiles/);assert.match(source,/createHostedNativeBridge/);assert.match(source,/await owned\.driver\.fetcher/);assert.doesNotMatch(source,/\/api\/clean-song\/draft|zip_base64|setInputFiles|dispatchEvent\(/);
+ const direct=source.slice(source.indexOf('async function directStart('),source.indexOf('\n try{\n  report.asset_server'));
+ assert.match(direct,/#start-performance'\)\.click\(\)/);assert.doesNotMatch(direct,/configureSongMod|startSongModPerformance|song-mod-all-human/);assert.match(source,/native_window:false/);assert.match(source,/physical_audio:false/);
+});
