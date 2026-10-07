@@ -11,7 +11,8 @@ const rust=read('crates/desktop-shell/src/acceptance.rs'),host=read('scripts/win
 test('human timbre has one finite phase family, original seed picker and only existing fixed actions',()=>{
   for(const phase of phases){assert.ok(rust.includes(`"${phase}"`));assert.ok(host.includes(`'${phase}'`));assert.ok(profile.includes(`'${phase}'`));assert.ok(fixed.includes(`"${phase}"`));}
   assert.match(rust,/pub const HUMAN_MOD_TIMBRE_PHASES: \[&str; 3\]/);assert.match(rust,/\.chain\(HUMAN_MOD_TIMBRE_PHASES\)/);
-  assert.match(host,/\$phases=if\(\$Scenario -eq 'human-mod-timbre'\)\{@\('human-timbre-seed','human-timbre-migrate','human-timbre-restart'\)\}/);
+  const dispatch=host.match(/^\$phases=(.+)$/m)?.[1];assert.ok(dispatch,'One closed phase dispatch required');
+  assert.match(dispatch,/(?:^|else)if\(\$Scenario -eq 'human-mod-timbre'\)\{@\('human-timbre-seed','human-timbre-migrate','human-timbre-restart'\)\}/);
   assert.match(host,/if\(\$Action.kind -cnotin @\('click','picker','select-first','select-second','select-last','key-r','live-key-r-down','live-key-r-up'\)\)/);
   assert.match(rust,/human_timbre\s*&& !\(phase == "human-timbre-seed" && file == "human-mod-timbre-original.json"\)/);
   assert.match(rust,/human_timbre && value\["kind"\] == "select-second"/);

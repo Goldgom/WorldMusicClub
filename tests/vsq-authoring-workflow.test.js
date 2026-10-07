@@ -199,6 +199,12 @@ test('new phases agree across Rust, native orchestration and every fresh-profile
  const freshProfile=quoted(profile.match(/\$fresh=@\(([^\n]+)\)/)[1],/'([^']+)'/g);assert.equal(new Set(freshProfile).size,freshProfile.length);assert.equal(new Set(fresh).size,fresh.length);assert.deepEqual([...freshProfile].sort(),[...fresh].sort());
  assert.deepEqual(quoted(profile.match(/\$catalog=@\(([^\n]+)\)/)[1],/'([^']+)'/g),rustPhases.CATALOG_PHASES);
  const freshContract=quoted(contract.match(/\$freshPhases=@\(([^\n]+)\)/)[1],/'([^']+)'/g);assert.equal(new Set(freshContract).size,freshContract.length);assert.deepEqual([...freshContract].sort(),[...fresh].sort());
+ assert.deepEqual(rustPhases.DIRECT_MIDI_PHASES,['direct-midi-seed','direct-midi-restart']);
+ for(const phase of rustPhases.DIRECT_MIDI_PHASES){assert.ok(freshProfile.includes(phase));assert.ok(freshContract.includes(phase));}
+ assert.match(native,/\$Scenario -eq 'direct-midi'\)\{@\('direct-midi-seed','direct-midi-restart'\)\}/);
+ assert.ok(native.includes("if($Action.kind -cnotin @('click','picker')){throw 'Unknown closed direct MIDI action'}"));
+ assert.match(rust,/direct_midi && !\["click", "picker"\].contains/);
+ assert.ok(contract.includes('native-direct-midi-contract.ps1'));
  assert.deepEqual(quoted(profile.match(/\$skin=@\(([^\n]+)\)/)[1],/'([^']+)'/g),rustPhases.SKIN_PHASES);
  assert.deepEqual(rustPhases.SKIN_PHASES,['skin-seed','skin-restart','skin-default-restart']);
  assert.deepEqual(quoted(profile.match(/\$humanTimbre=@\(([^\n]+)\)/)[1],/'([^']+)'/g),rustPhases.HUMAN_MOD_TIMBRE_PHASES);

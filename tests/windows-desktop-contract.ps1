@@ -23,7 +23,7 @@ $profileRoot=Join-Path ([IO.Path]::GetTempPath()) ('wmh profile 拼谱 '+[guid]:
 $heldProfile=$null
 New-Item -ItemType Directory $profileRoot | Out-Null
 try {
-  $freshPhases=@('folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart','basic-key-seed','basic-key-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart','live-navigation-settings-keyup','live-navigation-settings-navigation','live-navigation-authoring-keyup','live-navigation-authoring-navigation','build-diagnostics')
+  $freshPhases=@('direct-midi-seed','direct-midi-restart','folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart','basic-key-seed','basic-key-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart','live-navigation-settings-keyup','live-navigation-settings-navigation','live-navigation-authoring-keyup','live-navigation-authoring-navigation','build-diagnostics')
   New-Item -ItemType Directory (Join-Path $profileRoot 'Scores') | Out-Null
   $score=Join-Path $profileRoot 'Scores/original.bin';[IO.File]::WriteAllText($score,'native score bytes')
   $profiles=@()
@@ -506,3 +506,5 @@ try {
 Write-Output "$script:checks native picker identity, completion, catalog profile/snapshot and fixture-path contract checks passed without GUI or native calls."
 
 . (Join-Path $PSScriptRoot '../scripts/native-pitch-sources-contract.ps1')
+
+. (Join-Path $PSScriptRoot '../scripts/native-direct-midi-contract.ps1')
