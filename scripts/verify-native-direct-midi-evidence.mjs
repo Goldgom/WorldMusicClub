@@ -33,13 +33,23 @@ export async function directMidiNativeSourceBinding(root=rootDefault){
 
 export function validateDirectMidiNativeActions(report,host,actions,results,fixture=directMidiFixtures().boundary){
  assert.ok(DIRECT_MIDI_NATIVE_PHASES.includes(report.phase));assert.ok(positive(report.actions)&&report.actions<=64);assert.equal(host.actions,report.actions);assert.equal(actions.length,report.actions);assert.equal(results.length,report.actions);assert.equal(report.controls.length,report.actions);
+ // Preserve the original requested controls even when the actual hit is an
+ // ID-less descendant. The history summary is the only optional closed click.
+ const expectedControls=[...(report.phase==='direct-midi-seed'?['home-single-player','import-tools-button','import-button']:['home-single-player',null]),'preview-title','start-performance','stage-title','results-button','export-takes',null,'back-to-library','import-tools-button','bulk-import-history-button'];
+ assert.ok(report.controls.length===expectedControls.length+1||report.controls.length===expectedControls.length+2);assert.deepEqual(report.controls.map(row=>row.id),[...expectedControls,...Array(report.controls.length-expectedControls.length).fill(null)],'Requested original direct MIDI control sequence changed');
  let hwnd;
  for(const[index,action]of actions.entries()){
   const sequence=index+1,control=report.controls[index],result=results[index];assert.equal(control.sequence,sequence);assert.equal(action.version,1);assert.equal(action.sequence,sequence);assert.equal(result.ok,true,result.error);assert.equal(control.kind,action.kind);assert.ok(['click','picker'].includes(action.kind));
   assert.deepEqual(Object.keys(action).sort(),['version','sequence','kind','x','y','width','height',...(action.kind==='picker'?['file']:[])].sort());
   for(const key of ['x','y','width','height'])assert.ok(Number.isFinite(action[key])&&action[key]>0&&action[key]<20000);assert.ok(action.x<action.width&&action.y<action.height);
   const{target,...request}=control.request;assert.deepEqual(request,action);assert.ok(control.samples.length>=2&&control.samples.length<=5);const [prior,last]=control.samples.slice(-2);assert.equal(last.hitOwned,true);assert.equal(prior.hitOwned,true);assert.deepEqual(last.target,prior.target);assert.deepEqual(last.target,target);assert.equal(last.width,action.width);assert.equal(last.height,action.height);assert.equal(action.x,target.x+target.width/2);assert.equal(action.y,target.y+target.height/2);
-  assert.ok(control.clicks.some(row=>row.sequence===sequence&&row.owned&&row.trusted&&row.id===control.id),'Trusted original control hit missing');
+  // Canonical pointer observation scopes `owned` to the requested node and
+  // its descendants; event.target.id is not necessarily that node's own ID.
+  // Bind it to both painted hit samples rather than accepting an arbitrary null.
+  for(const sample of [prior,last])assert.ok(sample.hitId===null||(typeof sample.hitId==='string'&&sample.hitId.length>0));assert.equal(prior.hitId,last.hitId,'Painted descendant changed before dispatch');assert.equal(prior.width,last.width);assert.equal(prior.height,last.height);
+  assert.ok(Array.isArray(control.clicks)&&control.clicks.length>0&&control.clicks.length<=4);
+  for(const row of control.clicks){assert.equal(row.sequence,sequence);assert.equal(typeof row.trusted,'boolean');assert.equal(typeof row.owned,'boolean');}
+  const trustedClicks=control.clicks.filter(row=>row.trusted);assert.equal(trustedClicks.length,1,'Exactly one trusted click must activate the original control');assert.equal(trustedClicks[0].owned,true,'Trusted pointer escaped the requested control');assert.equal(trustedClicks[0].id,last.hitId,'Trusted click must hit the same observed owned descendant');if(control.id==='start-performance')assert.equal(trustedClicks[0].id,control.id,'Start must retain its exact trusted original control ID');
   const hit=result.client_click;assert.ok(positive(hit.app_hwnd)&&positive(hit.hit_hwnd));hwnd??=hit.app_hwnd;assert.equal(hit.app_hwnd,hwnd);assert.equal(hit.foreground,hwnd);assert.equal(hit.hit_root,hwnd);assert.deepEqual(hit.viewport,[action.width,action.height]);
   assert.deepEqual(hit.client.slice(0,2),[0,0]);const point=[hit.origin[0]+Math.floor(action.x*hit.client[2]/action.width),hit.origin[1]+Math.floor(action.y*hit.client[3]/action.height)];assert.deepEqual(hit.requested,point);assert.deepEqual(hit.actual,point);
   if(action.kind==='picker'){

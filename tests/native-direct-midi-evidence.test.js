@@ -128,14 +128,42 @@ test('assessment follows Start planning on stage with no inputs and the complete
  for(const point of ['preview','ended'])for(const field of ['positionMs','transportPositionMs','durationMs','rangeStartMs','rangeEndMs']){const r=renderer();r[point].clock[field]++;assert.throws(()=>validateDirectMidiNativeRenderer(r),`${point} ${field} must match the captured transport`);}
 });
 function actionModel(){
- const ids=['start-performance','export-takes',null],actions=ids.map((_,i)=>({version:1,sequence:i+1,kind:'click',x:100,y:100,width:1280,height:720})),target={x:50,y:80,width:100,height:40};
- const controls=actions.map((action,i)=>({sequence:i+1,id:ids[i],kind:'click',request:{...action,target},samples:[{hitOwned:true,target,width:1280,height:720},{hitOwned:true,target,width:1280,height:720}],clicks:[{sequence:i+1,id:ids[i],trusted:true,owned:true}]}));
- const report={phase:'direct-midi-restart',actions:3,controls,pickerObservations:[],trusted:[{id:'start-performance',type:'click',trusted:true,actionSequence:1}],startAction:1,files:{take:'take.json',raw:'raw.mid'},downloads:{take:{action:2,file:'take.json',complete:true,success:true},raw:{action:3,file:'raw.mid',complete:true,success:true}}},host={actions:3,process_id:99};
+ const ids=['home-single-player',null,'preview-title','start-performance','stage-title','results-button','export-takes',null,'back-to-library','import-tools-button','bulk-import-history-button',null,null],actions=ids.map((_,i)=>({version:1,sequence:i+1,kind:'click',x:100,y:100,width:1280,height:720})),target={x:50,y:80,width:100,height:40};
+ const controls=actions.map((action,i)=>({sequence:i+1,id:ids[i],kind:'click',request:{...action,target},samples:[{hitId:ids[i],hitOwned:true,target,width:1280,height:720},{hitId:ids[i],hitOwned:true,target,width:1280,height:720}],clicks:[{sequence:i+1,id:ids[i],trusted:true,owned:true}]}));
+ const report={phase:'direct-midi-restart',actions:ids.length,controls,pickerObservations:[],trusted:[{id:'start-performance',type:'click',trusted:true,actionSequence:4}],startAction:4,files:{take:'take.json',raw:'raw.mid'},downloads:{take:{action:7,file:'take.json',complete:true,success:true},raw:{action:13,file:'raw.mid',complete:true,success:true}}},host={actions:ids.length,process_id:99};
  const results=actions.map(()=>({ok:true,client_click:{app_hwnd:1,hit_hwnd:1,hit_root:1,foreground:1,viewport:[1280,720],client:[0,0,1280,720],origin:[20,30],requested:[120,130],actual:[120,130]}}));return{report,host,actions,results};
 }
 test('native action proof rejects forged clicks, wrong HWND, arbitrary actions, missing download and Mod repairs',()=>{
  const run=m=>validateDirectMidiNativeActions(m.report,m.host,m.actions,m.results);run(actionModel());
  for(const change of [m=>m.results[0].client_click.foreground=2,m=>m.results[0].client_click.actual[0]++,m=>m.results[0].ok=false,m=>m.report.controls[0].clicks[0].trusted=false,m=>m.report.controls[0].samples[1].hitOwned=false,m=>m.actions[0].file='../private.mid',m=>m.actions[0].kind='key-r',m=>m.report.downloads.raw.success=false,m=>m.report.trusted=[],m=>m.report.controls[2].id='song-mod-apply',m=>m.report.actions=65]){const m=structuredClone(actionModel());change(m);assert.throws(()=>run(m));}
+});
+test('native pointer proof admits the same painted owned descendant without replacing its original control',()=>{
+ const run=m=>validateDirectMidiNativeActions(m.report,m.host,m.actions,m.results);
+ for(const id of [null,'home-description']){const m=actionModel(),control=m.report.controls[0];for(const sample of control.samples)sample.hitId=id;control.clicks[0].id=id;run(m);assert.equal(control.id,'home-single-player');}
+ const shortened=actionModel();shortened.report.controls.pop();shortened.actions.pop();shortened.results.pop();shortened.report.actions--;shortened.host.actions--;shortened.report.downloads.raw.action--;run(shortened);
+});
+test('native pointer proof rejects unrelated, changed, foreign or forged descendant observations',()=>{
+ const changes=[
+  ['unrelated trusted ID',m=>m.report.controls[0].clicks[0].id='neighbor'],
+  ['null without sampled descendant',m=>m.report.controls[0].clicks[0].id=null],
+  ['missing painted ID',m=>{for(const sample of m.report.controls[0].samples)delete sample.hitId;}],
+  ['changed painted descendant',m=>m.report.controls[0].samples[0].hitId='old-child'],
+  ['changed actual descendant',m=>m.report.controls[0].clicks[0].id='other-child'],
+  ['foreign actual descendant',m=>m.report.controls[0].clicks[0].owned=false],
+  ['foreign painted descendant',m=>m.report.controls[0].samples[1].hitOwned=false],
+  ['changed requested original control',m=>m.report.controls[0].id='neighbor'],
+  ['missing requested original identity',m=>m.report.controls[0].id=null],
+  ['wrong action sequence',m=>m.report.controls[0].clicks[0].sequence=2],
+  ['untrusted descendant',m=>m.report.controls[0].clicks[0].trusted=false],
+  ['duplicate trusted descendant',m=>m.report.controls[0].clicks.push({...m.report.controls[0].clicks[0]})],
+  ['extra trusted foreign target',m=>m.report.controls[0].clicks.push({...m.report.controls[0].clicks[0],owned:false,id:'neighbor'})],
+  ['foreign native root',m=>m.results[0].client_click.hit_root=2],
+  ['changed native coordinate',m=>m.results[0].client_click.actual[0]++],
+  ['missing exact Start trust',m=>m.report.trusted[0].id='start-child'],
+  ['changed exact Start target',m=>{const control=m.report.controls[3];for(const sample of control.samples)sample.hitId='start-child';control.clicks[0].id='start-child';}],
+  ['untrusted file forwarding cannot activate',m=>{m.report.controls[0].clicks[0].trusted=false;m.report.controls[0].clicks.push({sequence:1,id:'score-file',owned:false,trusted:false});}],
+ ];
+ for(const [label,change]of changes){const m=actionModel(),control=m.report.controls[0];for(const sample of control.samples)sample.hitId=null;control.clicks[0].id=null;if(label==='null without sampled descendant')for(const sample of control.samples)sample.hitId='home-single-player';change(m);assert.throws(()=>validateDirectMidiNativeActions(m.report,m.host,m.actions,m.results),label);}
 });
 test('consumed-body observer forwards original promises and ignores clone results',async()=>{
  const source=(await readFile(new URL('../scripts/native-direct-midi-renderer.js',import.meta.url),'utf8')).split('/* Process-owner-only')[0];const context=vm.createContext({structuredClone,TextEncoder,Promise,Set,WeakMap,JSON,Reflect,Object});vm.runInContext(source,context);
