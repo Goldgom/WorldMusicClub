@@ -6,10 +6,11 @@ function basicItem(report){
   const item=report.items.length===1?report.items[0]:null;
   if(!item)throw issue('midi_import_result','The direct MIDI import did not return one complete source.');
   if(!['ready','saved','duplicate'].includes(item.status))throw issue(item.code,item.message);
-  const summary=item.clean_package||item.entry?.clean_package;
+  const summary=item.clean_package??item.entry?.clean_package,entrySummary=item.entry?.clean_package;
   if(!isBasicKeysSummary(summary))throw issue('midi_import_result','The importer did not validate a complete MIDI-key package.');
+  if(entrySummary!=null&&(!isBasicKeysSummary(entrySummary)||entrySummary.content_sha256!==summary.content_sha256))throw issue('midi_import_result','The saved MIDI summary does not match the complete source.');
   if(item.entry&&item.entry.key!==`song-${summary.content_sha256}`)throw issue('midi_import_result','The saved MIDI identity does not match the complete source.');
-  return item;
+  return{item,contentSha256:summary.content_sha256};
 }
 
 /** A fallback writes the original File, never its inferred notation projection.
@@ -20,7 +21,8 @@ export async function importDirectMidiFallback(file,{getStorage,transport=create
   const storage=await getStorage();if(!current())return null;
   if(storage.info.kind!=='native')throw issue('midi_native_import_required','This MIDI needs the native app’s complete MIDI-key import. The strict notation importer could not interpret it.');
   const reviewed=await transport.preview(file);if(!current())return null;
-  basicItem(reviewed);
+  // The raw-file digest alone cannot bind a commit to its reviewed package.
+  const {contentSha256:reviewedContentSha256}=basicItem(reviewed);
   let committed,commitError;
   try{committed=await transport.commit(file,{sha256:reviewed.source.sha256});}
   catch(error){commitError=error;}
@@ -28,7 +30,8 @@ export async function importDirectMidiFallback(file,{getStorage,transport=create
   try{await onCommitted();}catch(error){if(!commitError)throw error;}
   if(commitError)throw commitError;
   if(!current())return null;
-  const item=basicItem(committed);
+  const {item,contentSha256}=basicItem(committed);
+  if(contentSha256!==reviewedContentSha256)throw issue('midi_import_result','The saved MIDI identity does not match the reviewed complete source.');
   if(!['saved','duplicate'].includes(item.status)||!item.entry)throw issue('midi_import_not_saved','The complete MIDI source was not confirmed saved. Refresh the library before retrying.');
   return{libraryKey:`native:${item.entry.key}`,warnings:committed.warnings,status:item.status};
 }

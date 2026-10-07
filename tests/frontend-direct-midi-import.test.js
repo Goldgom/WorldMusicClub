@@ -8,6 +8,7 @@ import {importFile,importReport,importItem,selectImportFiles} from './bulk-impor
 import {keyboardGeometry} from '../web/music.js';
 import {getAppI18n} from '../web/app-locale.js';
 import {importDirectMidiFallback} from '../web/direct-midi-import.js';
+import {createBulkImportTransport} from '../web/bulk-import.js';
 
 // The original 117-byte consumer fixture, authored only for this repository.
 // This is transport/DOM coverage; Rust source conversion is tested separately.
@@ -127,4 +128,47 @@ test('incomplete package coverage and a mismatched saved identity are never trus
   for(const item of [importItem({clean_package:{...summary,coverage:{...summary.coverage,represented_events:0}}}),importItem({status:'duplicate',entry:{key:`song-${'0'.repeat(64)}`},clean_package:summary})]){
     let commits=0;await assert.rejects(importDirectMidiFallback(file,{getStorage:async()=>({info:{kind:'native'}}),transport:{preview:async()=>({items:[item]}),commit:async()=>{commits++;}}}),{code:'midi_import_result'});assert.equal(commits,0);
   }
+});
+
+function directMidiReportFixture({preview,commit}){
+  const file=originalMidi(),calls=[],descriptor=basicKeyRenditionFixture().clean_package;
+  const sha256=JSON.parse(descriptor.score_json).source.sha256;
+  const summary={version:2,content_sha256:descriptor.content_sha256,profile:descriptor.profile,capabilities:descriptor.capabilities,coverage:descriptor.coverage,notation_available:true,media:[]};
+  const transport=createBulkImportTransport({origin:'https://wmh.localhost',fetcher:async(path,options)=>{
+    assert.equal(options.body,file,'Both requests must retain the original File');
+    const mode=path.endsWith('/commit')?'commit':'preview';calls.push(mode);
+    const item=(mode==='commit'?commit:preview)(structuredClone(summary));
+    return nativeResponse(importReport(file,{mode,sha256,items:[item]}));
+  }});
+  return{file,transport,calls,summary,getStorage:async()=>({info:{kind:'native'}})};
+}
+
+for(const status of ['saved','duplicate'])test(`real MIDI transport rejects a ${status} package substituted after preview despite matching source SHA`,async()=>{
+  const value=directMidiReportFixture({
+    preview:summary=>importItem({clean_package:summary}),
+    commit:summary=>{const other={...summary,content_sha256:'b'.repeat(64)};assert.notEqual(other.content_sha256,summary.content_sha256);return importItem({status,clean_package:other,entry:{key:`song-${other.content_sha256}`,clean_package:other}});},
+  });let refreshed=0;
+  await assert.rejects(importDirectMidiFallback(value.file,{...value,onCommitted:async()=>{refreshed++;}}),{code:'midi_import_result'});
+  assert.deepEqual(value.calls,['preview','commit']);assert.equal(refreshed,1,'A rejected response must still refresh a possibly committed inventory');
+});
+
+for(const stage of ['preview','commit'])for(const contradiction of ['identity','profile','coverage'])test(`real MIDI transport rejects contradictory ${contradiction} in the ${stage} entry summary`,async()=>{
+  const contradictory=summary=>{
+    const other=structuredClone(summary);
+    if(contradiction==='identity')other.content_sha256='b'.repeat(64);
+    if(contradiction==='profile')other.profile='wmh-performance-midi1-v1';
+    if(contradiction==='coverage')other.coverage.represented_events=0;
+    return importItem({status:stage==='preview'?'duplicate':'saved',clean_package:summary,entry:{key:`song-${summary.content_sha256}`,clean_package:other}});
+  };
+  const value=directMidiReportFixture({preview:stage==='preview'?contradictory:summary=>importItem({clean_package:summary}),commit:contradictory});let refreshed=0;
+  await assert.rejects(importDirectMidiFallback(value.file,{...value,onCommitted:async()=>{refreshed++;}}),{code:'midi_import_result'});
+  assert.deepEqual(value.calls,stage==='preview'?['preview']:['preview','commit']);assert.equal(refreshed,stage==='preview'?0:1);
+});
+
+for(const inspection of [false,true])for(const entryOnly of [false,true])test(`real MIDI transport admits same-content duplicate ${inspection?'inspection':'playable'} reports with ${entryOnly?'entry-only':'matching'} summaries`,async()=>{
+  const duplicate=summary=>importItem({status:'duplicate',playable:!inspection,...(entryOnly?{}:{clean_package:summary}),entry:{key:`song-${summary.content_sha256}`,clean_package:summary}});
+  const value=directMidiReportFixture({preview:duplicate,commit:duplicate});let refreshed=0;
+  const result=await importDirectMidiFallback(value.file,{...value,onCommitted:async()=>{refreshed++;}});
+  assert.deepEqual(result,{libraryKey:`native:song-${value.summary.content_sha256}`,warnings:[],status:'duplicate'});
+  assert.deepEqual(value.calls,['preview','commit']);assert.equal(refreshed,1);
 });
