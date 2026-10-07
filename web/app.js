@@ -43,6 +43,7 @@ import {setupScoreStorageView,setupScoreStorageLobbyStatus,describePersistenceRe
 import {setupSongAuthoringView} from './song-authoring-view.js';
 import {setupBulkImportView} from './bulk-import-view.js';
 import {isImportEnvelope} from './bulk-import.js';
+import {importDirectMidiFallback,directMidiImportText} from './direct-midi-import.js';
 import {setupPerformanceView,FIELD_COLORS,previewMusicMetadata,updateWrittenNoteHighlights,fallingNoteShadow} from './performance-view.js';
 import {renderPianoKeybed,renderPianoRails,pianoMinimumWidth} from './piano-stage-view.js';
 import {setupGuitarGuidance} from './guitar-guidance.js';
@@ -166,6 +167,7 @@ let notationFollowing = null;
 let writtenCursor = null, writtenCursorStatus = null, writtenCursorRetry = null;
 let sourceArchiveView=null,referenceListening=null,performanceListening=null,lobbyPreview=null,scoreStorage=null,scoreStorageView=null,bulkImportView=null,songAuthoringView=null,libraryManagement=null,fileSelectionVersion=0;
 let pendingScoreSaveOwner=null,scoreSaveNavigation=0,noticeRevision=0;
+let directMidiImportOwner=null;
 let midiController=null;
 let freeSession=null,freeView=null,freePreview=null,freeLiveOwner=null,freeLiveStart=0,freeCaptureState='idle',freeRecordInstrument=null,freeClockWall=0,freeWindowFocused=true;
 const inputRoutes=[],inputContacts=new Map();
@@ -569,7 +571,7 @@ function modContext(origin) {
   const storedPitch=pitchMods.read(value),baseEntry=songMods.read(value),entry=storedPitch&&!storedPitch.error?{...baseEntry,mod:storedPitch.song_mod,status:'saved',explicit:true}:baseEntry,assistanceController=origin==='stage'?stageAssistance:previewAssistance,assistance=assistanceController.current(),persistence=assistanceController.state().persistence;
   return {...value,...entry,origin,pitchPreferenceRaw:storedPitch?.raw??null,pitchError:storedPitch?.error||null,assistanceController,assistance,assistanceStatus:assistance&&persistence.status==='off'?'session':persistence.storageUnavailable?'sessionDefault':persistence.status,performanceInstrument:state.instrument,mod:origin==='stage'&&state.songMod?state.songMod:entry.mod,capabilities:{...songModCapabilities(value),liveAudio:synth.muted||!liveAudioUnavailable(),liveAudioReason:synth.liveError?liveAudioErrorText(synth.liveError):''},previewVersion:preview.version,navigation:scoreSaveNavigation,generation:state.generation,hasTakes:origin==='stage'&&(transport.hasStarted||state.recorder.passes.length>0)};
 }
-function scoreAdmissionPending(){return Boolean(state.compileController&&!state.compileController.signal.aborted);}
+function scoreAdmissionPending(){return Boolean(state.compileController&&!state.compileController.signal.aborted||directMidiImportOwner?.current());}
 function refreshSongModView(){
   if(!songModView)return;
   const candidate=modContext('preview'),active=modContext('stage');let reason='',canStart=false;
@@ -1572,6 +1574,8 @@ $('score-file').addEventListener('change', async event => {
   // active score or take; saving a batch only updates the storage inventory.
   if(files.length>1||/\.(zip|wmhpack)$/i.test(file.name)||(/\.json$/i.test(file.name)&&file.size>8*1024*1024)){void bulkImportView.select(files);return}
   const intent = ++state.loadIntent;cancelCatalogSelection();state.compileController?.abort();
+  const importPreviewVersion=preview.version,importNavigation=scoreSaveNavigation;
+  const currentImport=()=>selection===fileSelectionVersion&&intent===state.loadIntent&&importPreviewVersion===preview.version&&importNavigation===scoreSaveNavigation;
   let initialText;
   if(/\.json$/i.test(file.name)){
     const previewVersion=preview.version,navigation=scoreSaveNavigation;
@@ -1589,10 +1593,34 @@ $('score-file').addEventListener('change', async event => {
     const midiFile = /\.(mid|midi)$/i.test(file.name);
     const xmlFile = /\.(musicxml|xml)$/i.test(file.name);
     const content = compressed || midiFile || jianpuText || xmlFile ? await file.arrayBuffer() : initialText??await file.text();
+    if(midiFile&&!currentImport())return;
     if (jianpuText || compressed || midiFile || xmlFile) {
       pausePlayback();
       const response = await fetch(jianpuText ? '/api/import/jianpu' : midiFile ? '/api/import/midi' : compressed ? '/api/import/mxl' : '/api/import/musicxml', {method: 'POST', headers: {'Content-Type': jianpuText ? 'text/plain' : midiFile ? 'audio/midi' : compressed ? 'application/zip' : 'application/xml'}, body: content});
       const result = await response.json();
+      if(midiFile&&!currentImport())return;
+      // Keep the strict canonical path unchanged when it succeeds. A source
+      // rejection may instead use Rust's complete native MIDI-key admission;
+      // transport/server failures are not evidence for reinterpreting a file.
+      if(midiFile&&!response.ok&&response.status===400&&typeof result.error==='string'){
+        const owner={current:currentImport};directMidiImportOwner=owner;renderPreview();
+        try{
+          const imported=await importDirectMidiFallback(file,{getStorage:()=>scoreStorage.storage(),current:currentImport,onCommitted:async()=>{libraryManagement?.invalidate();if(!await scoreStorage.rescan())throw new Error('The MIDI save was attempted, but the library could not be refreshed. Refresh the saved-song list before retrying.');}});
+          if(!imported||!currentImport())return;
+          // The saved identity is reloaded through the same complete-package
+          // validator as every library selection. Never compile its projection
+          // as a new canonical score, or replace an active take before Start.
+          const pending=preview.select(imported.libraryKey,signal=>scoreStorage.load(imported.libraryKey,{signal})),version=preview.version;
+          await pending;
+          if(selection!==fileSelectionVersion||intent!==state.loadIntent||importNavigation!==scoreSaveNavigation||version!==preview.version)return;
+          if(preview.value.status==='error')return;
+          const inspection=preview.value.status==='inspection';
+          shell.show('library');
+          notice(()=>directMidiImportText(i18n.locale,{reason:result.error,warnings:imported.warnings,inspection}));
+        }catch(error){if(currentImport())notice(()=>t('app.readError',{name:file.name,detail:`${result.error} ${errorDetail(error)}`}),true);}
+        finally{if(directMidiImportOwner===owner){directMidiImportOwner=null;renderPreview();updateButtons();}}
+        return;
+      }
       if (!response.ok) throw result.error ? new Error(result.error) : appError('app.importFailed');
       const loaded = await compileScore(result.score, false, intent, result.diagnostics || []);
       if (loaded) persistAcceptedImport(persistenceTicket,result.score,{intent});
@@ -1600,7 +1628,7 @@ $('score-file').addEventListener('change', async event => {
       if (loaded && Array.isArray(result.diagnostics) && result.diagnostics.length) notice(() => result.diagnostics.map(diagnosticText).join(' '));
     } else { const score = JSON.parse(content); const loaded=await compileScore(score, false, intent); if(loaded)persistAcceptedImport(persistenceTicket,score,{intent,scoreJson:content}); }
   }
-  catch (error) { if (intent !== state.loadIntent) return; notice(() => t('app.readError', {name:file.name,detail:errorDetail(error)}), true); }
+  catch (error) { if (intent !== state.loadIntent||/\.(mid|midi)$/i.test(file.name)&&!currentImport()) return; notice(() => t('app.readError', {name:file.name,detail:errorDetail(error)}), true); }
 });
 $('export-button').addEventListener('click', () => {
   if (!state.score) return;

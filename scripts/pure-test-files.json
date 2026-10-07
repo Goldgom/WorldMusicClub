@@ -239,5 +239,6 @@
   "tests/native-pitch-sources-proof.test.js",
   "tests/native-pitch-sources-evidence.test.js",
   "tests/pitch-mod-errors.test.js",
-  "tests/native-pitch-review.test.js"
+  "tests/native-pitch-review.test.js",
+  "tests/frontend-direct-midi-import.test.js"
 ]

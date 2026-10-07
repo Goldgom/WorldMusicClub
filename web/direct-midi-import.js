@@ -1,0 +1,41 @@
+import {createBulkImportTransport} from './bulk-import.js';
+import {isBasicKeysSummary} from './clean-song-package.js';
+
+const issue=(code,message)=>Object.assign(new Error(message),{code});
+function basicItem(report){
+  const item=report.items.length===1?report.items[0]:null;
+  if(!item)throw issue('midi_import_result','The direct MIDI import did not return one complete source.');
+  if(!['ready','saved','duplicate'].includes(item.status))throw issue(item.code,item.message);
+  const summary=item.clean_package||item.entry?.clean_package;
+  if(!isBasicKeysSummary(summary))throw issue('midi_import_result','The importer did not validate a complete MIDI-key package.');
+  if(item.entry&&item.entry.key!==`song-${summary.content_sha256}`)throw issue('midi_import_result','The saved MIDI identity does not match the complete source.');
+  return item;
+}
+
+/** A fallback writes the original File, never its inferred notation projection.
+ * A submitted native commit may finish after navigation; only inventory refresh
+ * survives that boundary. The caller owns preview and playback admission.
+ */
+export async function importDirectMidiFallback(file,{getStorage,transport=createBulkImportTransport(),current=()=>true,onCommitted=async()=>{}}={}){
+  const storage=await getStorage();if(!current())return null;
+  if(storage.info.kind!=='native')throw issue('midi_native_import_required','This MIDI needs the native app’s complete MIDI-key import. The strict notation importer could not interpret it.');
+  const reviewed=await transport.preview(file);if(!current())return null;
+  basicItem(reviewed);
+  let committed,commitError;
+  try{committed=await transport.commit(file,{sha256:reviewed.source.sha256});}
+  catch(error){commitError=error;}
+  // A refresh failure must not replace an uncertain filesystem-commit result.
+  try{await onCommitted();}catch(error){if(!commitError)throw error;}
+  if(commitError)throw commitError;
+  if(!current())return null;
+  const item=basicItem(committed);
+  if(!['saved','duplicate'].includes(item.status)||!item.entry)throw issue('midi_import_not_saved','The complete MIDI source was not confirmed saved. Refresh the library before retrying.');
+  return{libraryKey:`native:${item.entry.key}`,warnings:committed.warnings,status:item.status};
+}
+
+export function directMidiImportText(locale,{reason,warnings=[],inspection=false}={}){
+  const message=locale==='en'
+    ?inspection?'Complete MIDI source saved. Playback and scored practice are unavailable because no supported practice clock was admitted.':'Complete MIDI source saved. Listen and practice use the disclosed FIFO basic-key interpretation. Original instrument sounds are not reproduced.'
+    :inspection?'完整 MIDI 源文件已保存。未能建立受支持的练习时钟，暂不可播放或评分练习。':'完整 MIDI 源文件已保存。聆听与练习采用已说明的 FIFO 基础按键解释方式，不复现原始乐器声音。';
+  return [message,locale==='en'?`Strict notation import: ${reason}`:`严格记谱导入：${reason}`,...warnings].filter(Boolean).join(' ');
+}
