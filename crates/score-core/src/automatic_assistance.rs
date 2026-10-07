@@ -627,7 +627,7 @@ fn build(
     };
     plan.selection_digest = hash(&plan)?;
     let mut diagnostics = source.diagnostics.clone();
-    diagnostics.push(Diagnostic::warning("assistance_scope_limits", "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible.", None));
+    diagnostics.push(Diagnostic::warning("assistance_scope_limits", "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.", None));
     let result = CheckedPracticeAssistance {
         all_selected_human: !selected_ids.is_empty()
             && plan.human_source_ids.len() == selected_ids.len(),
