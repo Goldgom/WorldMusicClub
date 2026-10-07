@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {nativeScoreServer,nativeStorageApp,nativeResponse,authoredScore} from './native-storage-app-fixtures.js';
 import {SourceInstrumentDetailsLoader} from '../web/source-instrument-loader.js';
 
 const hash='a'.repeat(64);
@@ -68,4 +69,36 @@ test('in-place mutation during disclosure cannot install old metadata',async()=>
  pending.resolve(response(requests[0]));await flush();
  assert.equal(loader.read(context).sourceInstrumentDetailsStatus,'error');assert.equal(loader.read(context).sourceInstrumentDetails,null);
  assert.equal(requests[0].source.content,'retained');assert.equal(requests.length,1);
+});
+
+
+test('peek keeps supported sources idle until explicit inspection and reuses cached original metadata',async()=>{
+ const original={score:score()},requests=[],loader=new SourceInstrumentDetailsLoader({api:async(path,body)=>{requests.push(body);return response(body);}});
+ for(let i=0;i<10;i++)assert.equal(loader.read(original,{load:false}).sourceInstrumentDetailsStatus,'idle');
+ await flush();assert.equal(requests.length,0);
+ assert.equal(loader.read({score:{parts:[]}},{load:false}).sourceInstrumentDetailsStatus,'absent');
+ assert.equal(loader.read({score:{parts:[],source:{format:'musicxml'}}},{load:false}).sourceInstrumentDetailsStatus,'unsupported');
+ loader.read(original);await flush();const shifted={score:score('shifted'),pitchView:{sourceView:original}};
+ for(let i=0;i<10;i++)assert.equal(loader.read(shifted,{load:false}).sourceInstrumentDetailsStatus,'ready');
+ loader.read(shifted);assert.equal(requests.length,1);
+});
+
+test('production app defers optional metadata until Mod opens and keeps late source results isolated',async()=>{
+ // Transport/DOM fixture only; real endpoint/browser coverage is registered in full-app-browser.
+ const a=authoredScore({id:'metadata-a',title:'Metadata A',source:{format:'midi-base64',content:'fixture-a'}}),b=authoredScore({id:'metadata-b',title:'Metadata B',source:{format:'midi-base64',content:'fixture-b'}});
+ const server=await nativeScoreServer({scores:[a,b]}),held=deferred(),requests=[];
+ const details=body=>{const value=response(body);value.details.parts=value.details.parts.map(part=>({...part,track_id:'track',source_attack_count:2,notated_note_count:2,key_range:{lowest:60,highest:64}}));value.details.tracks=[{id:'track',source_track_index:0,names:[{role:'instrument_name',utf8:body.title,channel_prefix_scope:'unscoped'}]}];return value;};
+ server.setRoute(({path,body})=>{if(path==='/api/source-instrument-details/canonical'){requests.push(body);return body.id===a.id?held.promise:nativeResponse(details(body));}});
+ const app=await nativeStorageApp(server),[keyA,keyB]=[...server.records.keys()];
+ try{
+  await app.until(()=>!app.$('start-performance').disabled);await app.click('home-single-player');app.savedButton(keyA).click();await app.until(()=>app.$('preview-title').textContent===a.title&&!app.$('configure-song-mod').disabled);
+  for(let i=0;i<3;i++){app.frame();await app.tick();}assert.equal(requests.length,0);
+  await app.click('start-performance');await app.until(()=>app.document.body.dataset.screen==='stage');assert.equal(requests.length,0,'Starting practice never asks for optional source metadata');await app.click('back-to-library');await app.until(()=>!app.$('configure-song-mod').disabled);
+  await app.click('configure-song-mod');await app.until(()=>requests.length===1);const disclosure=app.document.querySelector('.song-mod-source-details');disclosure.open=true;app.emit(disclosure,'toggle');assert.match(app.$('song-mod-dialog').textContent,/Loading/);
+  await app.click('song-mod-cancel');await app.click('configure-song-mod');await app.tick();assert.equal(requests.length,1);await app.click('song-mod-cancel');
+  app.savedButton(keyB).click();await app.until(()=>app.$('preview-title').textContent===b.title&&!app.$('configure-song-mod').disabled);assert.equal(requests.length,1);
+  await app.click('configure-song-mod');const nextDisclosure=app.document.querySelector('.song-mod-source-details');nextDisclosure.open=true;app.emit(nextDisclosure,'toggle');await app.until(()=>app.document.querySelector('.song-mod-source-details dl')?.textContent.includes(b.title));assert.equal(requests.length,2);
+  held.resolve(nativeResponse(details(a)));await app.tick();assert.ok(app.document.querySelector('.song-mod-source-details dl').textContent.includes(b.title));assert.ok(!app.document.querySelector('.song-mod-source-details dl').textContent.includes(a.title));
+  await app.click('song-mod-cancel');await app.click('configure-song-mod');await app.tick();assert.equal(requests.length,2);
+ }finally{held.resolve(nativeResponse(details(a)));await app.close();}
 });

@@ -12,7 +12,7 @@ const fields=(token,status,details=null,error=null)=>({sourceInstrumentDetailsTo
  * Pitch/progression targets and renderer overrides are never metadata inputs. */
 export class SourceInstrumentDetailsLoader {
   constructor({api,onChange=()=>{}}){this.api=api;this.onChange=onChange;this.entries=new WeakMap();}
-  read(context){
+  read(context,{load=true}={}){
     const original=originalPitchContext(context),score=original?.score,song=original?.cleanSong,token=song||score;
     if(!score||!token)return fields(null,'absent');
     // Admitted source objects are immutable identities, as in SongModStore.
@@ -25,6 +25,7 @@ export class SourceInstrumentDetailsLoader {
     else if(!score.source){const value=fields(token,'absent');this.entries.set(token,{value});return value;}
     else if(score.source.format!=='midi-base64'){const value=fields(token,'unsupported');this.entries.set(token,{value});return value;}
     else{path='/api/source-instrument-details/canonical';body=score;}
+    if(!load)return fields(token,'idle');
     const serialized=JSON.stringify(body),partIds=JSON.stringify(score.parts.map(part=>part.id));
     const requestBody=JSON.parse(serialized);
     // Transport echo identifies these exact UTF-8 JSON request bytes. It is
