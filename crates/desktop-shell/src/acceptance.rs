@@ -39,6 +39,7 @@ pub const HUMAN_MOD_TIMBRE_PHASES: [&str; 3] = [
     "human-timbre-migrate",
     "human-timbre-restart",
 ];
+pub const ASSISTANCE_PHASES: [&str; 2] = ["assistance-seed", "assistance-restart"];
 pub const BASIC_KEY_PHASES: [&str; 2] = ["basic-key-seed", "basic-key-restart"];
 pub const AUTHORING_PHASES: [&str; 2] = ["authoring-seed", "authoring-restart"];
 pub const VSQ_AUTHORING_PHASES: [&str; 2] = ["vsq-authoring-seed", "vsq-authoring-restart"];
@@ -180,6 +181,7 @@ impl Acceptance {
             .chain(CANONICAL_PRACTICE_PHASES)
             .chain(LIVE_TONE_NAVIGATION_PHASES)
             .chain(HUMAN_MOD_TIMBRE_PHASES)
+            .chain(ASSISTANCE_PHASES)
             .chain(SKIN_PHASES)
             .chain(BUILD_DIAGNOSTICS_PHASES)
             .chain(CATALOG_PHASES)
@@ -198,6 +200,23 @@ impl Acceptance {
         })
     }
     pub fn script(&self) -> String {
+        if ASSISTANCE_PHASES.contains(&self.phase) {
+            let (vsq, _) = include_str!("../vsq-song-acceptance.js")
+                .split_once("(() => {")
+                .expect("VSQ helpers precede runner");
+            let (controls, _) = include_str!("../canonical-practice-acceptance.js")
+                .split_once("(() => {")
+                .expect("Canonical helpers precede runner");
+            return format!(
+                "globalThis.__WMH_ACCEPTANCE_PHASE__={};\n{}\n{}\n{}\n{}\n{}",
+                serde_json::to_string(self.phase).unwrap(),
+                include_str!("../acceptance-wait.js"),
+                include_str!("../reference-acceptance.js"),
+                vsq,
+                controls,
+                include_str!("../../../scripts/native-assistance-renderer.js")
+            );
+        }
         if HUMAN_MOD_TIMBRE_PHASES.contains(&self.phase) {
             let (vsq_helpers, _) = include_str!("../vsq-song-acceptance.js")
                 .split_once("(() => {")
@@ -381,6 +400,7 @@ impl Acceptance {
             || CANONICAL_PRACTICE_PHASES.contains(&self.phase)
             || LIVE_TONE_NAVIGATION_PHASES.contains(&self.phase)
             || HUMAN_MOD_TIMBRE_PHASES.contains(&self.phase)
+            || ASSISTANCE_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase)
             || SKIN_PHASES.contains(&self.phase)
@@ -398,6 +418,10 @@ impl Acceptance {
             self.directory.join("webview-catalog-profile")
         } else if PHASES.contains(&self.phase) {
             self.directory.join("webview-profile")
+        } else if ASSISTANCE_PHASES.contains(&self.phase) {
+            self.directory
+                .join("webview-profiles")
+                .join("assistance-seed")
         } else if HUMAN_MOD_TIMBRE_PHASES.contains(&self.phase) {
             self.directory
                 .join("webview-profiles")
@@ -429,7 +453,8 @@ impl Acceptance {
             || complete_restart
             || canonical_restart
             || skin_restart
-            || human_timbre_restart;
+            || human_timbre_restart
+            || self.phase == "assistance-restart";
         let fresh_required = !PHASES.contains(&self.phase) && !existing_required;
         let prepare = || -> std::io::Result<bool> {
             require_ordinary_directory(&self.directory)?;
@@ -437,7 +462,9 @@ impl Acceptance {
                 // A restart must never manufacture a replacement browser profile.
                 // Require the same ordinary path and bounded earlier host records.
                 require_ordinary_directory(&profile)?;
-                if human_timbre_restart {
+                if self.phase == "assistance-restart" {
+                    self.require_catalog_profile_evidence("assistance-seed", true)?;
+                } else if human_timbre_restart {
                     self.require_catalog_profile_evidence("human-timbre-seed", true)?;
                     if self.phase == "human-timbre-restart" {
                         self.require_catalog_profile_evidence("human-timbre-migrate", false)?;
@@ -544,6 +571,7 @@ impl Acceptance {
             || CANONICAL_PRACTICE_PHASES.contains(&self.phase)
             || LIVE_TONE_NAVIGATION_PHASES.contains(&self.phase)
             || HUMAN_MOD_TIMBRE_PHASES.contains(&self.phase)
+            || ASSISTANCE_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase)
             || SKIN_PHASES.contains(&self.phase)
@@ -574,6 +602,7 @@ impl Acceptance {
             && !CANONICAL_PRACTICE_PHASES.contains(&self.phase)
             && !LIVE_TONE_NAVIGATION_PHASES.contains(&self.phase)
             && !HUMAN_MOD_TIMBRE_PHASES.contains(&self.phase)
+            && !ASSISTANCE_PHASES.contains(&self.phase)
             && !BASIC_KEY_PHASES.contains(&self.phase)
             && !CATALOG_PHASES.contains(&self.phase)
             && !SKIN_PHASES.contains(&self.phase)
@@ -975,6 +1004,7 @@ pub fn receive_report(
             || CANONICAL_PRACTICE_PHASES.contains(&run.phase)
             || LIVE_TONE_NAVIGATION_PHASES.contains(&run.phase)
             || HUMAN_MOD_TIMBRE_PHASES.contains(&run.phase)
+            || ASSISTANCE_PHASES.contains(&run.phase)
             || BASIC_KEY_PHASES.contains(&run.phase)
             || CATALOG_PHASES.contains(&run.phase)
             || SKIN_PHASES.contains(&run.phase)
@@ -1036,7 +1066,9 @@ pub fn receive_report(
 // Only these existing scenarios need extra visible Mod setup actions. The
 // native action vocabulary, owned coordinates and payload limits stay closed.
 fn action_limit(phase: &str) -> u64 {
-    if phase == "seed" {
+    if ASSISTANCE_PHASES.contains(&phase) {
+        96
+    } else if phase == "seed" {
         // 35 import/navigation/Free actions + at most 10 scored-take setup
         // actions + 27 reference-listening actions, including visible Mods.
         72
@@ -1152,6 +1184,29 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
     if BUILD_DIAGNOSTICS_PHASES.contains(&phase) && value["kind"] != "click" {
         return false;
     }
+    let assistance = ASSISTANCE_PHASES.contains(&phase);
+    let assistance_special = (phase == "assistance-seed"
+        && [
+            "assistance-onset",
+            "assistance-interval",
+            "assistance-held",
+            "assistance-span",
+        ]
+        .contains(&value["kind"].as_str().unwrap_or("")))
+        || (phase == "assistance-restart" && value["kind"] == "assistance-key-c5");
+    if assistance
+        && !assistance_special
+        && ![
+            "click",
+            "picker",
+            "select-first",
+            "select-second",
+            "select-last",
+        ]
+        .contains(&value["kind"].as_str().unwrap_or(""))
+    {
+        return false;
+    }
     let live_navigation = LIVE_TONE_NAVIGATION_PHASES.contains(&phase);
     let human_timbre = HUMAN_MOD_TIMBRE_PHASES.contains(&phase);
     if (live_navigation || human_timbre)
@@ -1185,6 +1240,7 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
         "click",
     ]
     .contains(&value["kind"].as_str().unwrap_or(""))
+        && !assistance_special
         && !(phase == "canonical-practice-controls"
             && [
                 "canonical-range-start",
@@ -1213,6 +1269,9 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
     }
     if value["kind"] == "picker" {
         let file = value["file"].as_str().unwrap_or("");
+        if assistance && !(phase == "assistance-seed" && file == "assistance-original-songs.zip") {
+            return false;
+        }
         if live_navigation && file != "live-tone-navigation-original.json" {
             return false;
         }
@@ -1263,6 +1322,7 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
                 ]
                 .contains(&file))
             || (live_navigation && file == "live-tone-navigation-original.json")
+            || (phase == "assistance-seed" && file == "assistance-original-songs.zip")
             || (phase == "human-timbre-seed" && file == "human-mod-timbre-original.json")
             || (phase == "skin-seed"
                 && [
@@ -1853,6 +1913,57 @@ mod tests {
         {
             assert!(!valid_action_for_phase(&picker, phase));
         }
+    }
+
+    #[test]
+    fn assistance_phases_keep_closed_actions_report_bounds_and_exact_restart_profile() {
+        let evidence = Evidence::new();
+        let seed = Acceptance::new(evidence.0.clone(), "assistance-seed").unwrap();
+        let restart = Acceptance::new(evidence.0.clone(), "assistance-restart").unwrap();
+        assert!(restart.prepare_webview_profile().is_err());
+        let profile = seed.prepare_webview_profile().unwrap();
+        assert_eq!(profile, evidence.0.join("webview-profiles/assistance-seed"));
+        assert!(seed.prepare_webview_profile().is_err());
+        assert_eq!(restart.prepare_webview_profile().unwrap(), profile);
+        for run in [&seed, &restart] {
+            assert_eq!(run.library_directory(), evidence.0.join("Scores"));
+            assert_eq!(run.report_limit(), MAX_CLEAN_REPORT_BYTES);
+            assert_eq!(action_limit(run.phase), 96);
+            assert!(run.script().contains(include_str!(
+                "../../../scripts/native-assistance-renderer.js"
+            )));
+            assert!(!run
+                .script()
+                .contains("const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,{route,release}"));
+        }
+        let base = json!({"version":1,"sequence":1,"kind":"click","x":20,"y":30,"width":1280,"height":720});
+        for (kind, allowed) in [
+            ("assistance-onset", "assistance-seed"),
+            ("assistance-interval", "assistance-seed"),
+            ("assistance-held", "assistance-seed"),
+            ("assistance-span", "assistance-seed"),
+            ("assistance-key-c5", "assistance-restart"),
+        ] {
+            let mut action = base.clone();
+            action["kind"] = json!(kind);
+            for phase in [
+                "assistance-seed",
+                "assistance-restart",
+                "seed",
+                "human-timbre-seed",
+                "canonical-practice-controls",
+            ] {
+                assert_eq!(valid_action_for_phase(&action, phase), phase == allowed);
+            }
+        }
+        let mut picker = base.clone();
+        picker["kind"] = json!("picker");
+        picker["file"] = json!("assistance-original-songs.zip");
+        assert!(valid_action_for_phase(&picker, "assistance-seed"));
+        assert!(!valid_action_for_phase(&picker, "assistance-restart"));
+        assert!(!valid_action_for_phase(&picker, "seed"));
+        picker["file"] = json!("malformed.json");
+        assert!(!valid_action_for_phase(&picker, "assistance-seed"));
     }
 
     #[test]

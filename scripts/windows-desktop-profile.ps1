@@ -6,21 +6,23 @@ function Get-AcceptanceProfile([string]$Directory,[string]$Phase) {
   $fresh=@('build-diagnostics','folder-seed','folder-restart','folder-failure','bulk-seed','bulk-restart','bulk-failure','clean-seed','clean-restart','vsq-seed','vsq-restart','performance-seed','performance-controls','performance-restart','pitch-bend-seed','pitch-bend-restart','basic-key-seed','basic-key-restart','authoring-seed','authoring-restart','vsq-authoring-seed','vsq-authoring-restart','live-navigation-settings-keyup','live-navigation-settings-navigation','live-navigation-authoring-keyup','live-navigation-authoring-navigation')
   $complete=@('complete-practice-seed','complete-practice-restart')
   $canonical=@('canonical-practice-seed','canonical-practice-controls','canonical-practice-restart')
+  $assistance=@('assistance-seed','assistance-restart')
   $humanTimbre=@('human-timbre-seed','human-timbre-migrate','human-timbre-restart')
   $skin=@('skin-seed','skin-restart','skin-default-restart')
   $catalog=@('catalog-seed','catalog-restart','catalog-final')
-  if($Phase -cnotin ($shared+$fresh+$catalog+$complete+$canonical+$skin+$humanTimbre)){throw "Unknown acceptance profile phase: $Phase"}
+  if($Phase -cnotin ($shared+$fresh+$catalog+$complete+$canonical+$skin+$humanTimbre+$assistance)){throw "Unknown acceptance profile phase: $Phase"}
   if(-not [IO.Path]::IsPathFullyQualified($Directory)){throw 'Acceptance profile root must be absolute'}
   $root=Get-Item -LiteralPath $Directory -Force -ErrorAction Stop
   if(-not $root.PSIsContainer -or ($root.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw "Acceptance profile root must be an ordinary directory: $Directory"}
+  $assistancePhase=$Phase -cin $assistance
   $humanTimbrePhase=$Phase -cin $humanTimbre
   $skinPhase=$Phase -cin $skin
   $catalogPhase=$Phase -cin $catalog
   $completePhase=$Phase -cin $complete
   $canonicalPhase=$Phase -cin $canonical
-  $freshRequired=$Phase -cin $fresh -or $Phase -ceq 'catalog-seed' -or $Phase -ceq 'complete-practice-seed' -or $Phase -ceq 'canonical-practice-seed' -or $Phase -ceq 'skin-seed' -or $Phase -ceq 'human-timbre-seed'
-  $profile=if($skinPhase){Join-Path (Join-Path $Directory 'webview-profiles') 'skin-seed'}elseif($humanTimbrePhase){Join-Path (Join-Path $Directory 'webview-profiles') 'human-timbre-seed'}elseif($catalogPhase){Join-Path $Directory 'webview-catalog-profile'}elseif($canonicalPhase){Join-Path (Join-Path $Directory 'webview-profiles') 'canonical-practice-seed'}elseif($completePhase){Join-Path (Join-Path $Directory 'webview-profiles') 'complete-practice-seed'}elseif($freshRequired){Join-Path (Join-Path $Directory 'webview-profiles') $Phase}else{Join-Path $Directory 'webview-profile'}
-  return [ordered]@{phase=$Phase;profile_directory=$profile;fresh_required=$freshRequired;existing_required=(($humanTimbrePhase -and $Phase -cne 'human-timbre-seed') -or ($skinPhase -and $Phase -cne 'skin-seed') -or ($catalogPhase -and $Phase -cne 'catalog-seed') -or ($completePhase -and $Phase -ceq 'complete-practice-restart') -or ($canonicalPhase -and $Phase -cne 'canonical-practice-seed'));library_directory=(Join-Path $Directory $(if($Phase -cin $shared){'score-library'}else{'Scores'}))}
+  $freshRequired=$Phase -cin $fresh -or $Phase -ceq 'catalog-seed' -or $Phase -ceq 'complete-practice-seed' -or $Phase -ceq 'canonical-practice-seed' -or $Phase -ceq 'skin-seed' -or $Phase -ceq 'human-timbre-seed' -or $Phase -ceq 'assistance-seed'
+  $profile=if($assistancePhase){Join-Path (Join-Path $Directory 'webview-profiles') 'assistance-seed'}elseif($skinPhase){Join-Path (Join-Path $Directory 'webview-profiles') 'skin-seed'}elseif($humanTimbrePhase){Join-Path (Join-Path $Directory 'webview-profiles') 'human-timbre-seed'}elseif($catalogPhase){Join-Path $Directory 'webview-catalog-profile'}elseif($canonicalPhase){Join-Path (Join-Path $Directory 'webview-profiles') 'canonical-practice-seed'}elseif($completePhase){Join-Path (Join-Path $Directory 'webview-profiles') 'complete-practice-seed'}elseif($freshRequired){Join-Path (Join-Path $Directory 'webview-profiles') $Phase}else{Join-Path $Directory 'webview-profile'}
+  return [ordered]@{phase=$Phase;profile_directory=$profile;fresh_required=$freshRequired;existing_required=(($assistancePhase -and $Phase -ceq 'assistance-restart') -or ($humanTimbrePhase -and $Phase -cne 'human-timbre-seed') -or ($skinPhase -and $Phase -cne 'skin-seed') -or ($catalogPhase -and $Phase -cne 'catalog-seed') -or ($completePhase -and $Phase -ceq 'complete-practice-restart') -or ($canonicalPhase -and $Phase -cne 'canonical-practice-seed'));library_directory=(Join-Path $Directory $(if($Phase -cin $shared){'score-library'}else{'Scores'}))}
 }
 function Get-AcceptancePathItem([string]$Path) {
   try { return Get-Item -LiteralPath $Path -Force -ErrorAction Stop }
@@ -38,7 +40,8 @@ function Assert-AcceptanceProfileLaunch([string]$Directory,[string]$Phase) {
   if($null -ne $existing -and (-not $existing.PSIsContainer -or ($existing.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){throw "Shared profile must be an ordinary directory: $($selection.profile_directory)"}
   if($selection.existing_required) {
     if($selection.profile_absent_before_launch){throw "Catalog restart requires its existing test-owned profile: $($selection.profile_directory)"}
-    if($Phase -cin @('human-timbre-migrate','human-timbre-restart')) {
+    if($Phase -ceq 'assistance-restart'){Assert-CatalogProfilePredecessor $Directory $selection 'assistance-seed' $true}
+    elseif($Phase -cin @('human-timbre-migrate','human-timbre-restart')) {
       Assert-CatalogProfilePredecessor $Directory $selection 'human-timbre-seed' $true
       if($Phase -ceq 'human-timbre-restart'){Assert-CatalogProfilePredecessor $Directory $selection 'human-timbre-migrate' $false}
     }

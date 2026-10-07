@@ -191,7 +191,8 @@ pub fn run() {
                     if worldmusichub_desktop::acceptance::CATALOG_PHASES.contains(&acceptance.phase)
                         || worldmusichub_desktop::acceptance::COMPLETE_PRACTICE_PHASES.contains(&acceptance.phase)
                         || worldmusichub_desktop::acceptance::CANONICAL_PRACTICE_PHASES.contains(&acceptance.phase)
-                        || worldmusichub_desktop::acceptance::LIVE_TONE_NAVIGATION_PHASES.contains(&acceptance.phase) {
+                        || worldmusichub_desktop::acceptance::LIVE_TONE_NAVIGATION_PHASES.contains(&acceptance.phase)
+                        || worldmusichub_desktop::acceptance::ASSISTANCE_PHASES.contains(&acceptance.phase) {
                         builder = builder.inner_size(1280.0, 720.0);
                     }
                     if worldmusichub_desktop::acceptance::HUMAN_MOD_TIMBRE_PHASES.contains(&acceptance.phase) {
