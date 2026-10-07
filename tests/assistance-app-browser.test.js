@@ -385,7 +385,10 @@ test('explicit Off survives a checked Original response-limit fault and preserve
   const automatic = await automaticPreview(); assert.deepEqual(automatic, canonical.automatic);
   await startPerformance(); await waitForPlaybackClockAdvance(page); await page.locator('#play-button').click();
   await page.waitForFunction(() => !globalThis.__wmhReadPlaybackClock().running);
+  // Performance controls move count-in into the real settings dialog.
+  await page.locator('#settings-button').click();
   await page.locator('#count-in').uncheck();
+  await page.locator('#settings-dialog [data-close-panel]').click();
   const before = await exportJson('export-takes', 'results'), automaticRecipe = await recipes();
   const faultInjection = {path: '/api/practice-assistance/original', status: 422, code: 'assistance_response_limit',
     score_id: compilation.score.id, scope: 'Endpoint fault injection on a tiny original exercise; not a large or private song GUI run'};
@@ -394,7 +397,7 @@ test('explicit Off survives a checked Original response-limit fault and preserve
     if (!isDeepStrictEqual(route.request().postDataJSON().score, compilation.score)) return route.continue();
     injected++;
     await route.fulfill({status: 422, contentType: 'application/json', body: JSON.stringify({code: faultInjection.code,
-      error: 'Complete assistance response exceeds 16 MiB; no IDs or ownership entries were truncated'})});
+      error: 'Complete assistance response exceeds 16 MiB; no IDs or ownership entries were truncated', source_note_ids: []})});
   });
   try {
     await openSongMod(page, {origin: 'stage'}); await page.locator('#song-mod-assistance-mode').selectOption('original');
