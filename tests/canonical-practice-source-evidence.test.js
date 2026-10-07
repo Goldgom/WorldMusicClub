@@ -14,7 +14,27 @@ test('canonical source binding requires every exact module, frozen source/tree a
 });
 test('canonical source hashes are derived from committed bytes and reject a changed working file',async()=>{
  const root=await mkdtemp(join(tmpdir(),'canonical-frozen-source-'));
- try{for(const path of CANONICAL_PRACTICE_SOURCE_FILES){await mkdir(dirname(join(root,path)),{recursive:true});await writeFile(join(root,path),`Original source-binding test fixture: ${path}\n`);}const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();git('init');git('add','.');git('-c','user.name=Original acceptance test','-c','user.email=acceptance@example.invalid','commit','-m','Original finite source-binding fixture');const expected=await canonicalPracticeSourceBinding(root);assert.equal(expected.source_sha,git('rev-parse','HEAD'));validateCanonicalPracticeSourceBinding(expected,expected);await writeFile(join(root,'web/app.js'),'Uncommitted original test mutation\n');await assert.rejects(canonicalPracticeSourceBinding(root),/differs from frozen commit/);
+ try{
+  for(const path of CANONICAL_PRACTICE_SOURCE_FILES){await mkdir(dirname(join(root,path)),{recursive:true});await writeFile(join(root,path),`Original source-binding test fixture: ${path}\n`);}
+  const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
+  git('init');
+  // This disposable repository must have no detached writers when it is removed.
+  // Limit the setting to this fixture, before any command can trigger maintenance.
+  git('config','--local','maintenance.auto','false');
+  git('add','.');
+  const trace=join(root,'.git','fixture-commit-trace.jsonl');
+  // Force an eligible packing task so this checks the writer's absence without
+  // depending on Git's changing thresholds or winning a cleanup race.
+  execFileSync('git',['-c','user.name=Original acceptance test','-c','user.email=acceptance@example.invalid',
+   '-c','maintenance.loose-objects.enabled=true','-c','maintenance.loose-objects.auto=-1',
+   'commit','-m','Original finite source-binding fixture'],
+   {cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe'],env:{...process.env,GIT_TRACE2_EVENT:trace}});
+  const expected=await canonicalPracticeSourceBinding(root);assert.equal(expected.source_sha,git('rev-parse','HEAD'));validateCanonicalPracticeSourceBinding(expected,expected);await writeFile(join(root,'web/app.js'),'Uncommitted original test mutation\n');await assert.rejects(canonicalPracticeSourceBinding(root),/differs from frozen commit/);
+  const events=(await readFile(trace,'utf8')).trim().split('\n').map(line=>JSON.parse(line));
+  assert.ok(events.some(event=>event.event==='cmd_name'&&event.name==='commit'),'Trace must capture the fixture commit');
+  const backgroundCommands=new Set(['maintenance','gc','repack','pack-objects']);
+  assert.deepEqual(events.filter(event=>event.event==='child_start'&&event.argv?.some(arg=>backgroundCommands.has(arg))),[],
+   'Disposable source fixture must not start automatic Git writers');
  }finally{await rm(root,{recursive:true,force:true});}
 });
 test('canonical retained file inventory deduplicates exact paths and rejects conflicts, aliases and profiles',()=>{
