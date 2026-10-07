@@ -57,25 +57,59 @@ export function validateDirectMidiNativeActions(report,host,actions,results,fixt
  return actions;
 }
 export function validateDirectMidiNativeRequests(report,fixture=directMidiFixtures().boundary){
+ assert.ok(DIRECT_MIDI_NATIVE_PHASES.includes(report.phase));assert.ok(positive(report.startAction)&&report.startAction<=report.actions);
+ validateDirectMidiOpened(report.opened,fixture);assert.equal(report.key,report.opened.entry.key);const previewId=`native:${report.key}`;assert.equal(report.preview.id,previewId);
  assert.ok(Array.isArray(report.requests)&&report.requests.length>0&&report.requests.length<=40);
- for(const row of report.requests){assert.equal(row.observation,'consumed');assert.ok(Number.isSafeInteger(row.started.sequence)&&row.started.sequence>=0&&row.started.sequence<=report.actions);assert.ok(row.settled.sequence>=row.started.sequence&&row.settled.sequence<=report.actions);assert.equal(row.canceled,false);}
+ let priorSequence=0;
+ for(const row of report.requests){
+  assert.equal(row.observation,'consumed');assert.ok(Number.isSafeInteger(row.started.sequence)&&row.started.sequence>=priorSequence&&row.started.sequence<=report.actions);assert.ok(Number.isSafeInteger(row.settled.sequence)&&row.settled.sequence>=row.started.sequence&&row.settled.sequence<=report.actions);priorSequence=row.started.sequence;
+  assert.equal(row.canceled,false);assert.equal(row.signalAbortedAtStart,false);assert.equal(row.signalAborted,false);
+ }
+ const context=(row,sequence,screen)=>{for(const value of [row.started,row.settled])assert.deepEqual(value,{sequence,screen,previewId});};
  const imports=report.requests.filter(row=>['/api/import/midi','/api/library/import/preview','/api/library/import/commit'].includes(row.path));
  if(report.phase==='direct-midi-seed'){
   assert.deepEqual(imports.map(row=>[row.path,row.status]),[['/api/import/midi',400],['/api/library/import/preview',200],['/api/library/import/commit',200]]);assert.equal(typeof imports[0].response.error,'string');assert.ok(imports[0].response.error.length>0);
   for(const row of imports){assert.equal(row.started.sequence,report.pickerAction);assert.equal(row.settled.sequence,report.pickerAction);}
   validateDirectMidiImport(imports[1].response,fixture,{mode:'preview',status:'ready'});validateDirectMidiImport(imports[2].response,fixture);assert.equal(imports[2].response.items[0].entry.key,report.key);assert.equal(imports[2].response.source.archive_key,report.archiveKey);
  }else assert.deepEqual(imports,[],'Restart must load saved data without another import');
- const loads=report.requests.filter(row=>row.path==='/api/library/load');assert.ok(loads.length>=1);const load=loads.findLast(row=>row.request?.key===report.key);assert.ok(load);assert.equal(load.status,200);assert.deepEqual(load.response,report.opened);assert.ok(load.settled.sequence<report.startAction);
- const assessments=report.requests.filter(row=>row.path==='/api/assess');assert.equal(assessments.length,1);const assessment=assessments[0];assert.equal(assessment.status,200);assert.deepEqual(assessment.request.inputs,[]);assert.deepEqual(assessment.request.timeline.notes.map(note=>note.id),fixture.expectedNotes.map(note=>note.id));assert.equal(assessment.response.accuracy_percent,0);assert.deepEqual(assessment.response.hits,[]);assert.deepEqual(assessment.response.extras,[]);assert.equal(assessment.response.misses.length,4);assert.equal(assessment.started.sequence,report.startAction);
- const plans=report.requests.filter(row=>row.path==='/api/practice-targets'&&row.request?.timeline?.notes?.some(note=>note.id===fixture.expectedNotes[0].id));assert.ok(plans.length>0);for(const row of plans){assert.equal(row.status,200);assert.equal(row.response.source_note_count,4);assert.equal(row.response.target_count,4);assert.deepEqual(row.request.timeline.notes.map(note=>note.id),fixture.expectedNotes.map(note=>note.id));assert.deepEqual(row.response.timeline.notes.map(note=>note.id),fixture.expectedNotes.map(note=>note.id));}
+ // The application loads once for the automatic preview, then revalidates the
+ // same saved package on ordinary Start. The helper's independent opened read
+ // uses its original fetch and is deliberately not application-consumption proof.
+ const loads=report.requests.filter(row=>row.path==='/api/library/load');assert.equal(loads.length,2,'One preview load and one Start revalidation are required');
+ const [previewLoad,startLoad]=loads,previewSequence=previewLoad.started.sequence;assert.ok(positive(previewSequence)&&previewLoad.settled.sequence<report.startAction,'Saved preview must settle before Start');
+ if(report.phase==='direct-midi-seed'){assert.equal(previewSequence,report.pickerAction);assert.ok(report.requests.indexOf(imports.at(-1))<report.requests.indexOf(previewLoad),'Automatic preview must follow the committed import');}
+ for(const [row,sequence]of [[previewLoad,previewSequence],[startLoad,report.startAction]]){assert.deepEqual(row.request,{key:report.key});assert.equal(row.status,200);assert.deepEqual(row.response,report.opened);context(row,sequence,'library');}
+ // Require the complete request suffix rather than filtering for an expected
+ // note/key: a contradictory load or target plan must never disappear from proof.
+ const previewIndex=report.requests.indexOf(previewLoad),fixtureIds=new Set(fixture.expectedNotes.map(note=>note.id));
+ for(const row of report.requests.slice(0,previewIndex)){
+  if(imports.includes(row))continue;
+  assert.equal(row.path,'/api/practice-targets','Only other-source bootstrap plans may precede the saved preview load');assert.equal(row.status,200);assert.ok(row.settled.sequence<previewSequence);
+  for(const value of [row.started,row.settled]){assert.ok(['home','library'].includes(value.screen));assert.ok(typeof value.previewId==='string'&&value.previewId.length>0&&value.previewId!==previewId);}
+  assert.equal(row.started.previewId,row.settled.previewId,'Bootstrap source identity must remain separate from the saved MIDI');
+  for(const timeline of [row.request?.timeline,row.response?.timeline]){assert.ok(Array.isArray(timeline?.notes)&&timeline.notes.length>0);for(const note of timeline.notes)assert.ok(![note.id,note.source_note_id,...(note.source_note_ids||[])].some(id=>fixtureIds.has(id)),'A fixture-bearing plan must follow its consumed saved-source load');}
+  for(const group of row.response.groups||[])assert.ok(![group.target_id,...(group.source_note_ids||[]),...(group.source_occurrence_ids||[])].some(id=>fixtureIds.has(id)),'Bootstrap groups cannot carry saved fixture targets');
+ }
+ const suffix=report.requests.slice(previewIndex);
+ assert.deepEqual(suffix.map(row=>row.path),['/api/library/load','/api/practice-targets','/api/library/load','/api/practice-targets','/api/assess'],'Preview and Start must each load then plan before assessment');
+ const [,previewPlan,,startPlan,assessment]=suffix,expectedTimeline={duration_ms:fixture.manifest.duration_ms,notes:fixture.expectedNotes.map(note=>({...note,part_id:'midi-t1-c1-r0',source_note_id:note.id,source_note_ids:[note.id],voice:'1',staff:1}))};
+ assert.deepEqual(report.opened.clean_package.runtime.compilation.timeline,{duration_ms:expectedTimeline.duration_ms,note_columns:['id','part_id','midi','velocity','start_ms','duration_ms'],notes:expectedTimeline.notes.map(note=>[note.id,note.part_id,note.midi,note.velocity,note.start_ms,note.duration_ms])},'Loaded compilation must bind the same complete part and source clock');
+ for(const [row,sequence]of [[previewPlan,previewSequence],[startPlan,report.startAction]]){
+  context(row,sequence,'library');assert.equal(row.status,200);assert.equal(row.response.source_note_count,4);assert.equal(row.response.target_count,4);assert.equal(row.response.playable,true);
+  assert.deepEqual(row.request.timeline,expectedTimeline,'Plan source identity and source clock must match every fixture attack');assert.deepEqual(row.response.timeline,expectedTimeline,'Default plan must preserve all source identities and timing');
+  assert.deepEqual(row.response.groups,fixture.expectedNotes.map(note=>({part_ids:['midi-t1-c1-r0'],source_note_ids:[note.id],source_occurrence_ids:[note.id],target_id:note.id})));
+ }
+ assert.deepEqual(startPlan.request,previewPlan.request,'Start must preserve the complete preview selection and profile');
+ assert.equal(report.requests.filter(row=>row.path==='/api/assess').length,1);context(assessment,report.startAction,'stage');assert.equal(assessment.status,200);assert.deepEqual(assessment.request.inputs,[]);assert.deepEqual(assessment.request.timeline,startPlan.response.timeline,'Assessment must consume the complete Start plan on its source clock');
+ assert.equal(assessment.response.accuracy_percent,0);assert.deepEqual(assessment.response.hits,[]);assert.deepEqual(assessment.response.extras,[]);assert.deepEqual(assessment.response.misses,fixture.expectedNotes.map(note=>note.id));
  return assessment;
 }
 export function validateDirectMidiNativeRenderer(report,fixture=directMidiFixtures().boundary){
  assert.equal(report.version,1);assert.equal(report.scenario,'direct-midi');assert.ok(DIRECT_MIDI_NATIVE_PHASES.includes(report.phase));assert.equal(report.ok,true,report.error);assert.equal(report.error,undefined);assert.equal(report.origin,'https://wmh.localhost');assert.equal(report.profileMarkerAbsent,true);assert.equal(report.requestsRestored,true);assert.deepEqual(report.errors,[]);
  validateDirectMidiOpened(report.opened,fixture);assert.equal(report.key,report.opened.entry.key);assert.deepEqual(report.inventory.entries.map(row=>row.key),[report.key]);assert.deepEqual(report.inventory.issues,[]);assert.equal(report.initialInventory.entries.length,report.phase==='direct-midi-seed'?0:1);
- assert.equal(report.preview.id,`native:${report.key}`);assert.equal(report.preview.status,'ready');assert.equal(report.preview.screen,'library');assert.equal(report.preview.startDisabled,false);assert.equal(report.preview.bulkDialog,false);assert.equal(report.preview.clock.running,false);
+ assert.equal(report.preview.id,`native:${report.key}`);assert.equal(report.preview.status,'ready');assert.equal(report.preview.screen,'library');assert.equal(report.preview.startDisabled,false);assert.equal(report.preview.bulkDialog,false);assert.deepEqual(report.preview.clock,{version:1,available:false,positionMs:0,transportPositionMs:0,durationMs:0,rangeStartMs:0,rangeEndMs:0,running:false,completed:false,phase:'unavailable'});
  if(report.phase==='direct-midi-seed')assert.match(report.preview.notice,/Complete MIDI source saved.*FIFO/);
- assert.equal(report.ended.screen,'stage');assert.equal(report.ended.mode,'practice');assert.equal(report.ended.renderer,'ended');assert.equal(report.ended.clock.completed,true);assert.equal(report.ended.clock.running,false);assert.equal(report.ended.clock.positionMs,2000);assert.equal(report.ended.captured,'0');
+ assert.equal(report.ended.screen,'stage');assert.equal(report.ended.mode,'practice');assert.equal(report.ended.renderer,'ended');assert.deepEqual(report.ended.clock,{version:1,available:true,positionMs:fixture.manifest.duration_ms,transportPositionMs:fixture.manifest.duration_ms,durationMs:fixture.manifest.duration_ms,rangeStartMs:0,rangeEndMs:fixture.manifest.duration_ms,running:false,completed:true,phase:'ended'});assert.equal(report.ended.captured,'0');
  assert.deepEqual(Object.keys(report.files).sort(),['raw','take']);assert.deepEqual(Object.keys(report.screenshots).sort(),['ended','preview']);assert.match(report.archiveKey,/^pack-[a-f0-9]{64}$/);validateDirectMidiNativeRequests(report,fixture);return report;
 }
 
