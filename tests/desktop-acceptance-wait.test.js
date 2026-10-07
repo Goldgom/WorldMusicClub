@@ -48,8 +48,8 @@ test('condition failures and HTTP result errors reach the report unchanged',asyn
 // Plain Node DOM tests of the exact injected navigation helper against the real
 // app's menu handlers. Fixed geometry is only a readiness fixture, never native
 // rendering, input, file chooser, recording, or Windows acceptance evidence.
-async function menuFixture() {
-  const app=await freePracticeApp({fetchResult:await fixtureScoreServer()}),clicks=[];
+async function menuFixture({fetchResult}={}) {
+  const app=await freePracticeApp({fetchResult:fetchResult||await fixtureScoreServer()}),clicks=[];
   const prototype=app.window.HTMLElement.prototype,original=Object.getOwnPropertyDescriptor(prototype,'getBoundingClientRect');
   Object.defineProperty(prototype,'getBoundingClientRect',{configurable:true,writable:true,value(){return {width:120,height:40};}});
   const wait=createWait(),menu=createNavigation({document:app.document,until:(condition,label)=>wait.until(condition,label,1000),click:id=>{clicks.push(id);app.$(id).click();}});
@@ -71,14 +71,23 @@ test('native menu admission rejects the preloaded hidden lobby and follows the r
 });
 
 test('native menu waits for actual catalog readiness after one entry click without retries',async()=>{
-  const f=await menuFixture();try {
-    await f.app.until(()=>!f.app.$('configure-song-mod').disabled);
-    const wait=createWait(),menu=createNavigation({document:f.app.document,until:(condition,label)=>wait.until(condition,label,1000),click:id=>{f.clicks.push(id);f.app.$(id).click();f.app.$('configure-song-mod').disabled=true;}});
-    const pending=menu.enterLibrary();await f.app.until(()=>f.clicks.length===1);
-    let settled=false;pending.then(()=>{settled=true;});await f.app.tick();assert.equal(settled,false);
-    f.app.$('configure-song-mod').disabled=false;await pending;
-    assert.deepEqual(f.clicks,['home-single-player']);assert.equal(f.app.document.body.dataset.screen,'library');
-  }finally{await f.close();}
+  const server=await fixtureScoreServer();let releaseCompile,compileRequested=false,pending;
+  const compileGate=new Promise(resolve=>{releaseCompile=resolve;});
+  // Hold actual preview loading: app renders legitimately rewrite the Mod
+  // button's disabled state, so a temporary DOM assignment cannot gate readiness.
+  const f=await menuFixture({fetchResult:async(path,body)=>{if(path==='/api/compile'){compileRequested=true;await compileGate;}return server(path,body);}});try {
+    await f.app.until(()=>compileRequested);
+    pending=f.menu.enterLibrary();let settled=false;pending.then(()=>{settled=true;});
+    await f.app.until(()=>f.clicks.length===1);await f.app.tick();
+    assert.equal(f.app.document.body.dataset.screen,'library');
+    assert.equal(f.app.$('song-lobby').dataset.previewStatus,'loading');
+    assert.equal(f.menu.ready('library','configure-song-mod'),false);
+    assert.equal(settled,false,'Navigation cannot finish while the catalog compile is pending');
+    assert.deepEqual(f.clicks,['home-single-player']);
+    releaseCompile();await pending;
+    assert.deepEqual(f.clicks,['home-single-player']);
+    assert.equal(f.menu.ready('library','configure-song-mod'),true);assert.equal(f.app.$('song-lobby').dataset.previewStatus,'ready');
+  }finally{releaseCompile();await pending?.catch(()=>{});await f.close();}
 });
 
 test('native free-practice routing goes through the visible home entry and Exit returns to the real library',async()=>{

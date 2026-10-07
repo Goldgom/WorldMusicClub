@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createContext, runInContext} from 'node:vm';
-import {installPlaybackClockReader, readPlaybackClock, waitForPlaybackClock, waitForPlaybackClockAdvance} from './browser-playback-clock.js';
+import {installPlaybackClockReader, readPlaybackClock, waitForPlaybackClock, waitForPlaybackClockAdvance, capturePlaybackEventTime} from './browser-playback-clock.js';
 import {createPlaybackClock} from '../web/playback-clock-view.js';
 import {compileBrowserFixture} from './frontend-browser-compilation-fixture.js';
 import {syntheticCanonicalProfile} from './canonical-dom-audio-fixture.js';
@@ -151,6 +151,42 @@ test('browser input readiness preserves timeout and malformed-clock failures',as
   await assert.rejects(waitForPlaybackClockAdvance({async waitForFunction(predicate){
     return runInContext(`(${predicate.toString()})(0)`,realm.context);
   }}),/playback clock is missing or invalid/);
+});
+
+test('event capture samples one real timestamp inside the admitted window, excluding preparation and post-end grace',async()=>{
+  const realm=realmWithClock(0),states=[
+    {positionMs:0,preparing:true},
+    {positionMs:0,hasStarted:true,running:true},
+    {positionMs:durationMs,hasStarted:true,running:true},
+    {positionMs:durationMs+181,hasStarted:true,running:true},
+    {positionMs:durationMs,hasStarted:true,completed:true},
+    {positionMs:17,hasStarted:true,running:true},
+  ];
+  let polls=0,wall=1000,reads=0,disposals=0;
+  realm.context.__wmhReadPlaybackClock=()=>readPlaybackClock(realm.progress);
+  realm.context.performance={now(){reads++;return wall;}};
+  const page={async waitForFunction(predicate,...options){
+    assert.deepEqual(options,[],'Keep the existing timeout; never retry or restart playback');
+    for(const state of states){
+      polls++;wall+=17;realm.progress.dataset.playbackClock=JSON.stringify(createPlaybackClock({durationMs,...state}));
+      const captured=runInContext(`(${predicate.toString()})()`,realm.context);
+      if(captured)return{async jsonValue(){wall+=1500;return structuredClone(captured);},async dispose(){disposals++;}};
+    }
+    throw Error('No in-take observation');
+  }};
+  const captured=await capturePlaybackEventTime(page);
+  assert.equal(polls,states.length);assert.equal(reads,1);assert.equal(disposals,1);
+  assert.equal(captured.eventWall,1102);assert.equal(wall,2602,'A delayed host read must not replace the captured timestamp');
+  assert.equal(captured.clock.positionMs,17);assert.equal(captured.clock.running,true);
+});
+
+test('event capture retains timeout and malformed-clock failures without inventing an earlier timestamp',async()=>{
+  const timeout=Object.assign(new Error('Existing browser timeout'),{name:'TimeoutError'});
+  await assert.rejects(capturePlaybackEventTime({async waitForFunction(){throw timeout;}}),error=>error===timeout);
+  const realm=realmWithClock(0);realm.progress.dataset.playbackClock='{broken';
+  realm.context.__wmhReadPlaybackClock=()=>readPlaybackClock(realm.progress);
+  realm.context.performance={now(){throw Error('A malformed clock cannot own an event timestamp');}};
+  await assert.rejects(capturePlaybackEventTime({async waitForFunction(predicate){return runInContext(`(${predicate.toString()})()`,realm.context);}}),/playback clock is missing or invalid/);
 });
 
 test('mocked browser compilation retains the legacy timings and supplies exact audio identities',()=>{

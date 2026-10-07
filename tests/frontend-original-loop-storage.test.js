@@ -5,6 +5,7 @@ import {compileBrowserFixture} from './frontend-browser-compilation-fixture.js';
 import {fixture} from './frontend-fixtures.js';
 import {beat} from '../web/music.js';
 import {readPlaybackClock} from '../web/playback-clock-view.js';
+import {capturePlaybackEventTime} from './browser-playback-clock.js';
 
 // Production handlers, original exercises, and an in-memory DOM/protocol.
 // No browser, listener, native application, or user score files are opened.
@@ -91,5 +92,53 @@ for(const storage of ['property getter','read method'])test(`unavailable ${stora
     app.frame();assert.equal(readPlaybackClock(app.document).running,true);
     const exported=await app.exported('export-takes');assert.equal(exported.passes.length,1);assert.equal(exported.passes[0].timeline.notes.length,2);assert.equal(exported.practice_assistance,null);
     assert.equal(f.server.requests.filter(request=>request.path.includes('assistance/')).length,0);
+  }finally{await app.close();}
+});
+
+async function capturedEvent(app){
+  const original=Object.getOwnPropertyDescriptor(globalThis,'__wmhReadPlaybackClock');
+  Object.defineProperty(globalThis,'__wmhReadPlaybackClock',{configurable:true,value:()=>readPlaybackClock(app.document)});
+  try{return await capturePlaybackEventTime({async waitForFunction(predicate){const value=await app.until(predicate);return{async jsonValue(){return value;},async dispose(){}};}});}
+  finally{if(original)Object.defineProperty(globalThis,'__wmhReadPlaybackClock',original);else delete globalThis.__wmhReadPlaybackClock;}
+}
+
+test('a separate timestamp sampled after an advancing one-second take has ended is correctly excluded',async()=>{
+  const f=await setup(),{app}=f;
+  try{
+    await f.stage();await app.click('midi-button');await f.human();await f.play();f.time(1017);
+    assert.equal(readPlaybackClock(app.document).positionMs,17);assert.equal(readPlaybackClock(app.document).running,true);
+    // Model a stalled host round-trip between the old readiness wait and its
+    // later evaluate(performance.now). This timestamp is genuinely outside.
+    f.time(2300);const outside=performance.now();f.time(2520);app.midi([0x90,60,90],outside);app.midi([0x80,60,0]);
+    const take=await app.exported('export-takes');assert.equal(take.passes.length,1);assert.equal(take.passes[0].clock_segments[0].wallStart,1000);assert.equal(take.passes[0].clock_segments[0].wallEnd,2000);assert.deepEqual(take.passes[0].inputs,[]);
+    assert.equal(take.input_evidence.events.find(event=>event.kind==='note_on').event_wall_ms,2300,'Raw outside-window evidence survives without being assigned to the take');
+  }finally{await app.close();}
+});
+
+for(const delay of [220,1300])test(`atomic in-take MIDI timestamp survives a ${delay} ms callback delay and rejects pre-take input`,async()=>{
+  const f=await setup(),{app}=f;
+  try{
+    await f.stage();await app.click('midi-button');await f.human();await f.play();f.time(1017);const captured=await capturedEvent(app);
+    assert.equal(captured.eventWall,1017);assert.equal(captured.clock.positionMs,17);assert.equal(captured.clock.running,true);
+    app.midi([0x90,65,90],1);app.midi([0x80,65,0],1);f.time(captured.eventWall+delay);const delivered=performance.now();app.midi([0x90,60,90],captured.eventWall);app.midi([0x80,60,0]);
+    await app.tick();const before=f.server.requests.filter(request=>request.path==='/api/assess').length;await app.click('assess-button');f.time(delivered+181);await app.until(()=>f.server.requests.filter(request=>request.path==='/api/assess').length>before);
+    const data=f.server.requests.filter(request=>request.path==='/api/assess').at(-1).body,take=await app.exported('export-takes'),pass=take.passes[0],segment=pass.clock_segments[0];
+    assert.equal(take.passes.length,1);assert.equal(segment.wallStart,1000);assert.equal(pass.inputs.length,1);assert.equal(pass.captures.length,1);assert.equal(pass.captures[0].event_wall_ms,1017);assert.equal(pass.captures[0].received_wall_ms,delivered);assert.ok(delivered-captured.eventWall>=200);
+    const expected=segment.positionStart+captured.eventWall-take.latency_ms-segment.wallStart;assert.deepEqual(data.inputs,[{midi:60,at_ms:expected,velocity:90}]);assert.deepEqual(pass.inputs,data.inputs);assert.equal(expected,17);assert.equal(pass.revision,1);
+  }finally{await app.close();}
+});
+
+test('audio-backed first-take capture is bound to its admitted sample anchor and original MIDI event wall time',async()=>{
+  const f=await setup(),{app}=f;
+  const advance=wall=>{f.time(wall);app.renderAudioTo((wall-1000)/1000);app.frame();};
+  try{
+    await f.stage();await app.click('midi-button');await f.human();app.$('count-in').checked=false;app.$('metronome-enabled').checked=false;
+    await app.click('play-button');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');const anchor=app.sourceStartWall();assert.ok(Number.isFinite(anchor)&&anchor>1000);
+    advance(anchor+17);const captured=await capturedEvent(app);assert.equal(captured.eventWall,anchor+17);assert.ok(captured.clock.positionMs>0&&captured.clock.positionMs<captured.clock.durationMs);
+    app.midi([0x90,65,90],1);app.midi([0x80,65,0],1);advance(captured.eventWall+220);const delivered=performance.now();app.midi([0x90,60,90],captured.eventWall);app.midi([0x80,60,0]);
+    const before=f.server.requests.filter(request=>request.path==='/api/assess').length;await app.click('assess-button');advance(delivered+181);await app.until(()=>f.server.requests.filter(request=>request.path==='/api/assess').length>before);
+    const data=f.server.requests.filter(request=>request.path==='/api/assess').at(-1).body,take=await app.exported('export-takes'),pass=take.passes[0],segment=pass.clock_segments[0];
+    assert.equal(take.passes.length,1);assert.equal(pass.interpretation.sound_enabled,true);assert.equal(segment.wallStart,anchor);assert.equal(pass.inputs.length,1);assert.equal(pass.captures.length,1);assert.equal(pass.captures[0].event_wall_ms,captured.eventWall);assert.equal(pass.captures[0].received_wall_ms,delivered);assert.equal(delivered-captured.eventWall,220);
+    const expected=segment.positionStart+captured.eventWall-take.latency_ms-segment.wallStart;assert.deepEqual(data.inputs,[{midi:60,at_ms:expected,velocity:90}]);assert.deepEqual(pass.inputs,data.inputs);assert.ok(Math.abs(expected-17)<1e-6);assert.equal(pass.revision,1);
   }finally{await app.close();}
 });

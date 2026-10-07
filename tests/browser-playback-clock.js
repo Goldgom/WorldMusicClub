@@ -32,3 +32,18 @@ export async function waitForPlaybackClockAdvance(page, previousPositionMs = 0) 
   }, previousPositionMs);
   await advanced.dispose();
 }
+
+// Sample the real wall timestamp alongside the published in-range clock in
+// one page turn. A later evaluate() can run after a short take has ended, and
+// an advancing display may be in post-end grace. The exported pass segments
+// remain the final ownership proof; a display snapshot is not a fresh audio read.
+export async function capturePlaybackEventTime(page) {
+  const captured = await page.waitForFunction(() => {
+    const clock = globalThis.__wmhReadPlaybackClock();
+    if (!clock.available || !clock.running || clock.phase !== 'playing'
+      || clock.transportPositionMs <= clock.rangeStartMs || clock.transportPositionMs >= clock.rangeEndMs) return false;
+    return {eventWall:performance.now(),clock};
+  });
+  try { return await captured.jsonValue(); }
+  finally { await captured.dispose(); }
+}
