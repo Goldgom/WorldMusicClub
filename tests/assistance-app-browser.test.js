@@ -296,7 +296,7 @@ test('real Rust Mod keeps Original unchanged and applies same-part human scoring
   assert.match(await page.locator('#song-mod-assistance-legend').innerText(), /● Human.*◆ Machine/s);
   assert.equal(await page.locator('[data-mod-instrument="piano"]').isEnabled(), true);
   await page.locator('[data-mod-instrument="piano"]').selectOption('reed');
-  await page.locator('[data-mod-live-instrument="piano"]').selectOption('guitar');
+  assert.equal(await page.locator('[data-mod-live-instrument]').count(), 0, 'Normal Mod has no live-tone column');
   await applyMod();
   const stopped = await checkpoint('applied');
   assert.equal(stopped.ui.stage.clock.running, false, 'Check and Apply must not autoplay');
