@@ -25,7 +25,7 @@ function originalMidi(){
   return importFile('original-direct-midi.mid',bytes);
 }
 
-async function setup({canonical=false,rejectionStatus=400,invalid=false,blocked=false,existing=false,intercept}={}){
+async function setup({canonical=false,rejectionStatus=400,invalid=false,blocked=false,existing=false,intercept,now=()=>1000}={}){
   const opened=blocked?JSON.parse(readFileSync(new URL('./fixtures/basic-keys-native-open.json',import.meta.url),'utf8')):basicKeyRenditionFixture(),descriptor=opened.clean_package;
   if(blocked){const full=JSON.parse(descriptor.score_json);full.performance.timing.relative_clock_available=false;descriptor.score_json=JSON.stringify(full);descriptor.runtime.compilation=null;}
   const score=JSON.parse(descriptor.score_json).notation,key=`song-${descriptor.content_sha256}`;
@@ -49,17 +49,19 @@ async function setup({canonical=false,rejectionStatus=400,invalid=false,blocked=
       return nativeResponse({lowest_midi:low,highest_midi:high,note_options:body.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:note.midi>=low&&note.midi<=high,positions:[]})),diagnostics:[],changed_source_notes:false});
     }
   });
-  const app=await nativeStorageApp(server,{now:()=>1000});await app.until(()=>!app.$('start-listen').disabled);await app.click('home-single-player');
+  const app=await nativeStorageApp(server,{now});await app.until(()=>!app.$('start-listen').disabled);await app.click('home-single-player');
   return{app,server,file,key,score,descriptor,strictReason};
 }
 const imports=app=>app.requests.filter(row=>row.path.startsWith('/api/library/import/'));
 async function importBasic(value){selectImportFiles(value.app,[value.file]);await value.app.until(()=>value.app.savedButton(value.key)&&value.app.$('song-lobby').dataset.previewId===`native:${value.key}`&&value.app.$('song-lobby').dataset.previewStatus!=='loading','Raw MIDI fallback was not admitted');}
+function assertPreviewCaption(app,score){assert.equal(app.$('preview-title').textContent,score.title);assert.equal(app.$('catalog-status').textContent,getAppI18n(app.document).t('app.previewing',{title:score.title}));}
 
 test('raw MIDI strict rejection saves the complete original through native import and admits normal Start without canonical recompile',async()=>{
   const value=await setup(),{app,server,file,key,score,descriptor,strictReason}=value;
   try{
     const before=app.requests.filter(row=>row.path==='/api/compile').length,source=descriptor.score_json;
     await importBasic(value);await app.until(()=>!app.$('start-practice').disabled);
+    assertPreviewCaption(app,score);
     assert.deepEqual(imports(app).map(row=>row.path),['/api/library/import/preview','/api/library/import/commit']);
     assert.equal(app.requests.some(row=>row.path==='/api/library/save'),false);assert.equal(app.requests.filter(row=>row.path==='/api/compile').length,before);
     assert.match(app.$('notice-message').textContent,/FIFO/);assert.ok(app.$('notice-message').textContent.includes(strictReason));assert.equal(app.document.querySelector('dialog[open]'),null);
@@ -68,6 +70,52 @@ test('raw MIDI strict rejection saves the complete original through native impor
     const take=await app.exported('export-takes');assert.equal(take.passes[0].timeline.notes.length,3);assert.ok(take.passes[0].timeline.notes.every(note=>note.part_id===score.parts[0].id));assert.deepEqual(take.passes[0].inputs,[]);assert.equal(take.passes[0].interpretation.policy_id,'wmh-basic-key-rendition-fifo-v1');assert.equal(server.records.get(key).clean_package.score_json,source);assert.equal(imports(app)[1].body,file);
     await app.click('back-to-library');app.savedButton(key).click();await app.until(()=>!app.$('start-listen').disabled);await app.click('start-listen');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');
     const plan=app.audioNodes.findLast(node=>node.kind==='audio-worklet'&&node.connected).core.plan;assert.equal(plan.ends.length,5,'Listening keeps every source attack');
+  }finally{await app.close();}
+});
+
+test('admitted MIDI preview relabels the localized caption while retaining the active score and captured take until Start',async()=>{
+  const value=await setup({now:null}),{app,score}=value;
+  try{
+    app.$('count-in').checked=false;await app.click('start-practice');await app.until(()=>app.document.body.dataset.screen==='stage'&&!app.$('play-button').disabled);await app.waitForSourceStart();
+    const key=app.$('keyboard').querySelector('[data-midi="60"]');app.emit(key,'pointerdown',{pointerId:19,button:0});app.emit(key,'pointerup',{pointerId:19,button:0});await app.click('back-to-library');
+    const original=await app.exported('export-button'),take=await app.exported('export-takes'),activeTitle=app.$('score-title').textContent;
+    assert.equal(take.passes.length,1);assert.equal(take.passes[0].inputs.length,1,'The previous take includes a captured note');assert.notEqual(activeTitle,score.title);
+    await importBasic(value);await app.until(()=>!app.$('start-practice').disabled);
+    const i18n=getAppI18n(app.document);assertPreviewCaption(app,score);const english=app.$('catalog-status').textContent;
+    i18n.setLocale('zh-CN');assertPreviewCaption(app,score);assert.notEqual(app.$('catalog-status').textContent,english);
+    assert.equal(app.$('score-title').textContent,activeTitle);assert.deepEqual(await app.exported('export-button'),original);assert.deepEqual(await app.exported('export-takes'),take);
+    i18n.setLocale('en');assertPreviewCaption(app,score);
+    await app.click('start-practice');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');
+    assert.equal(app.$('score-title').textContent,score.title);assert.equal(app.$('catalog-status').textContent,i18n.t('app.currentSession',{title:score.title}));
+  }finally{await app.close();}
+});
+
+for(const boundary of ['load','check'])for(const replacement of ['catalog','canonical'])test(`MIDI caption admission delayed at ${boundary} cannot relabel a newer ${replacement} selection`,async()=>{
+  const gate=deferred();let held=false,importing=false;
+  const value=await setup({intercept:async({path})=>{if(importing&&!held&&path===(boundary==='load'?'/api/library/load':'/api/instrument-check')){held=true;await gate.promise;}}}),{app,file}=value;
+  try{
+    importing=true;selectImportFiles(app,[file]);await app.until(()=>held);
+    let title,captionKey;
+    if(replacement==='catalog'){
+      const row=app.document.querySelector('#catalog [data-score-id="test-score"]');title=row.querySelector('strong').textContent;captionKey='app.previewing';row.click();
+      await app.until(()=>app.$('preview-title').textContent===title&&!app.$('start-practice').disabled);
+    }else{
+      title='Original newer source <caption>';captionKey='app.currentSession';app.importFile(authoredScore({id:'newer-caption-source',title}));
+      await app.until(()=>app.$('score-title').textContent===title&&!app.$('start-practice').disabled);
+    }
+    const identity=app.$('song-lobby').dataset.previewId,i18n=getAppI18n(app.document);
+    assert.equal(app.$('catalog-status').textContent,i18n.t(captionKey,{title}));
+    gate.resolve();await app.tick();await app.tick();
+    assert.equal(app.$('song-lobby').dataset.previewId,identity);assert.equal(app.$('preview-title').textContent,title);assert.equal(app.$('catalog-status').textContent,i18n.t(captionKey,{title}));
+    i18n.setLocale('zh-CN');assert.equal(app.$('catalog-status').textContent,i18n.t(captionKey,{title}));
+  }finally{gate.resolve();await app.close();}
+});
+
+test('a failed saved MIDI reload cannot publish an admitted preview caption',async()=>{
+  const {app,file}=await setup({intercept:({path})=>path==='/api/library/load'?nativeResponse({code:'library_io',error:'Original test reload failure'},500):undefined});
+  try{
+    const caption=app.$('catalog-status').textContent;selectImportFiles(app,[file]);await app.until(()=>app.$('song-lobby').dataset.previewStatus==='error');
+    assert.equal(app.$('catalog-status').textContent,caption);assert.equal(app.$('start-practice').disabled,true);assert.equal(app.$('export-takes').disabled,true);
   }finally{await app.close();}
 });
 
@@ -80,7 +128,7 @@ for(const status of [413,500])test(`HTTP ${status} never causes MIDI reinterpret
 });
 
 test('unparseable raw source remains a parser error without a save or fabricated practice',async()=>{
-  const {app,file,server}=await setup({invalid:true});try{const title=app.$('preview-title').textContent;selectImportFiles(app,[file]);await app.until(()=>app.$('notice-message').textContent.includes('Truncated MIDI track'));assert.equal(server.records.size,0);assert.equal(imports(app).length,1);assert.equal(app.$('preview-title').textContent,title);assert.equal(app.$('export-takes').disabled,true);}finally{await app.close();}
+  const {app,file,server}=await setup({invalid:true});try{const title=app.$('preview-title').textContent,caption=app.$('catalog-status').textContent;selectImportFiles(app,[file]);await app.until(()=>app.$('notice-message').textContent.includes('Truncated MIDI track'));assert.equal(server.records.size,0);assert.equal(imports(app).length,1);assert.equal(app.$('preview-title').textContent,title);assert.equal(app.$('catalog-status').textContent,caption);assert.equal(app.$('export-takes').disabled,true);}finally{await app.close();}
 });
 
 test('saved complete MIDI keeps independent range gates and offers the existing explicit repair',async()=>{
@@ -88,7 +136,7 @@ test('saved complete MIDI keeps independent range gates and offers the existing 
 });
 
 test('a source without an admitted practice clock is saved for inspection and never enabled for Start',async()=>{
-  const value=await setup({blocked:true}),{app}=value;try{await importBasic(value);assert.equal(app.$('song-lobby').dataset.previewStatus,'inspection');assert.equal(app.$('start-practice').disabled,true);assert.equal(app.$('start-listen').disabled,true);assert.match(app.$('notice-message').textContent,/practice clock/);getAppI18n(app.document).setLocale('zh-CN');assert.match(app.$('notice-message').textContent,/练习时钟/);}finally{await app.close();}
+  const value=await setup({blocked:true}),{app,score}=value;try{await importBasic(value);assert.equal(app.$('song-lobby').dataset.previewStatus,'inspection');assertPreviewCaption(app,score);assert.equal(app.$('start-practice').disabled,true);assert.equal(app.$('start-listen').disabled,true);assert.match(app.$('notice-message').textContent,/practice clock/);getAppI18n(app.document).setLocale('zh-CN');assertPreviewCaption(app,score);assert.match(app.$('notice-message').textContent,/练习时钟/);}finally{await app.close();}
 });
 
 for(const stage of ['preview','commit'])test(`newer navigation fences an old MIDI ${stage} without losing a submitted save`,async()=>{
@@ -98,7 +146,7 @@ for(const stage of ['preview','commit'])test(`newer navigation fences an old MID
 });
 
 test('duplicate raw MIDI uses its confirmed saved identity without another edition',async()=>{
-  const value=await setup({existing:true});try{await importBasic(value);assert.equal(value.server.records.size,1);assert.equal(imports(value.app).length,2);assert.equal(value.app.$('song-lobby').dataset.previewId,`native:${value.key}`);}finally{await value.app.close();}
+  const value=await setup({existing:true});try{await importBasic(value);await value.app.until(()=>!value.app.$('start-practice').disabled);assertPreviewCaption(value.app,value.score);assert.equal(value.server.records.size,1);assert.equal(imports(value.app).length,2);assert.equal(value.app.$('song-lobby').dataset.previewId,`native:${value.key}`);}finally{await value.app.close();}
 });
 
 test('browser fallback reports its native requirement without attempting a native write',async()=>{

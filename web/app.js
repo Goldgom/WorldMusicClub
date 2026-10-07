@@ -1614,6 +1614,7 @@ $('score-file').addEventListener('change', async event => {
           await pending;
           if(selection!==fileSelectionVersion||intent!==state.loadIntent||importNavigation!==scoreSaveNavigation||version!==preview.version)return;
           if(preview.value.status==='error')return;
+          if(preview.value.score)bindPreviewCaption(preview.value.score.title);
           const inspection=preview.value.status==='inspection';
           shell.show('library');
           notice(()=>directMidiImportText(i18n.locale,{reason:result.error,warnings:imported.warnings,inspection}));
@@ -1764,10 +1765,11 @@ function renderCanonicalAudio(){
   }
   const node=$('canonical-audio-policy');if(node){bindText(node,()=>canonicalAudioPolicyText(i18n.locale)+(state.loop?' '+canonicalLoopBudgetText(i18n.locale,canonicalSession.interpretation?.loop_budget,{ended:state.canonicalBudgetEnded}):''));node.dataset.rendererState=state.playPending?'preparing':canonicalSession.running?'playing':transport.completed?'ended':transport.running?'silent':'stopped';node.dataset.sourceFingerprint=canonicalSession.interpretation?.source_fingerprint||'';node.dataset.planFingerprint=canonicalSession.interpretation?.plan_fingerprint||'';}
 }
+function bindPreviewCaption(title){bindText($('catalog-status'),()=>t('app.previewing',{title}));}
 async function selectSongScore(identity){
   const row=songRows().find(entry=>entry.selectionKey===identity);if(!row)return;
   cancelPendingStart();
-  bindText($('catalog-status'), () => t('app.previewing', {title:row.title}));
+  bindPreviewCaption(row.title);
   await preview.select(identity,async signal=>{if(row.source==='saved'){const loaded=await scoreStorage.load(row.libraryKey,{signal});return loaded.cleanSong?loaded:loaded.score;}return loadSongListItem(row,{model:scoreStorage,signal,loadCatalog:(item,signal)=>fetchCatalogScore(item,api,catalogCache,signal)});});
 }
 async function selectCatalogScore(id){return selectSongScore(id)}
