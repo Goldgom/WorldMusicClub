@@ -395,4 +395,4 @@ jobs:
         with:
           name: midi-direct-import-${{ github.sha }}
           path: ${{ runner.temp }}/midi-direct-import/
-          if-no-files-found: warn
+          if-no-files-found: ignore

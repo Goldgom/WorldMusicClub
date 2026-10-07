@@ -21,6 +21,10 @@ function observeDirectMidiControls(){
   const target=event.target;evidence.events.push({type,id:target?.id||null,trusted:event.isTrusted===true,files:target?.id==='score-file'?[...target.files].map(file=>({name:file.name,bytes:file.size})):null});
  },true);
 }
+export function validateDirectMidiMachineIsolation(value){
+ assert.deepEqual(value,{mode:'listen',captured:'0',export_disabled:true,assess_disabled:true,assessment_requests:0},'Audible machine playback must not create a human take or assessment');
+ return value;
+}
 export async function runHostedMidiDirectImportCheck(){
  assert.equal(process.env.GITHUB_ACTIONS,'true','Direct MIDI browser acceptance runs only on authorized hosted CI');assert.equal(process.env.WMH_HOSTED_BROWSER,'1');
  const root=fileURLToPath(new URL('../',import.meta.url)),git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8'}).trim(),head=git('rev-parse','HEAD');
@@ -40,6 +44,8 @@ export async function runHostedMidiDirectImportCheck(){
  async function launch(phase){
   const profile={phase,process_id:null,api:[],page_errors:[],route_errors:[],cleanup:{},ok:false};report.profiles.push(profile);
   const owned={profile,driver:startVsqNativeDriver({binary,directory:join(output,'Scores'),cwd:root,requestTimeoutMs:30000})};session=owned;profile.process_id=owned.driver.pid;
+  const buildResponse=await owned.driver.fetcher('/api/diagnostics/build',{method:'GET'});assert.equal(buildResponse.status,200);profile.build_identity=JSON.parse(await buildResponse.bytes());
+  assert.equal(profile.build_identity.compiled.source_sha,head);assert.equal(profile.build_identity.compiled.source_tree,report.source_tree);assert.equal(profile.build_identity.compiled.source_status,'clean');assert.equal(profile.build_identity.compiled.source_error,null);assert.equal(profile.build_identity.native.executable_sha256,report.driver_sha256);assert.equal(profile.build_identity.native.process_id,profile.process_id);
   owned.context=await browser.newContext({viewport:report.viewport,acceptDownloads:true,serviceWorkers:'block'});
   await owned.context.addInitScript(observeManagementWorkletLoads);await owned.context.addInitScript(observeDirectMidiControls);await owned.context.addInitScript(`globalThis.__directMidiObserveAudio=${audioThreadObserverSource};`);
   owned.bridge=createHostedNativeBridge({origin,getOwnedPage:()=>owned.page,requestTimeoutMs:30000,maxRequests:256});profile.native_bridge=owned.bridge.evidence;
@@ -86,8 +92,9 @@ export async function runHostedMidiDirectImportCheck(){
   validateDirectMidiImport(preview.response,fixture,{mode:'preview',status:'ready'});validateDirectMidiImport(commit.response,fixture);commitBefore=commit.response;
   openedBefore=validateDirectMidiOpened(first.findLast(row=>row.path==='/api/library/load').response,fixture);assert.equal(await session.page.locator('#song-lobby').getAttribute('data-preview-id'),`native:${openedBefore.entry.key}`);assert.equal(await session.page.locator('#catalog [data-library-key]').count(),1);assert.equal(await session.page.locator('#bulk-import-dialog').evaluate(node=>node.open),false);
   assert.equal(await session.page.evaluate(()=>__directMidiAudio.count()),0,'Importing a raw source must not start audio');await screenshot('seed-raw-midi-saved-preview');await directStart('seed');
-  const audioStart=await session.page.evaluate(()=>__directMidiAudio.count());await startSongModPerformance(session.page,{performers:'none',layout:'complete'});
+  const audioStart=await session.page.evaluate(()=>__directMidiAudio.count()),machineApiStart=session.profile.api.length;await startSongModPerformance(session.page,{performers:'none',layout:'complete'});
   await session.page.waitForFunction(()=>{__directMidiAudio.assertHealthy();return document.getElementById('clean-song-stage').dataset.rendererState==='ended'&&__directMidiAudio.quiet();},{},{timeout:15000});
+  session.profile.machine_isolation=validateDirectMidiMachineIsolation({...await session.page.evaluate(()=>({mode:document.getElementById('session-mode').value,captured:document.getElementById('hud-captured').textContent.trim(),export_disabled:document.getElementById('export-takes').disabled,assess_disabled:document.getElementById('assess-button').disabled})),assessment_requests:session.profile.api.slice(machineApiStart).filter(row=>row.path==='/api/assess').length});
   session.profile.machine_audio=await session.page.evaluate(index=>({status:__directMidiAudio.status(),runs:__directMidiAudio.snapshot().slice(index)}),audioStart);validateAudioThreadStatus(session.profile.machine_audio.status,{quiet:true});validateAudioThreadRuns(session.profile.machine_audio.runs,directMidiAudioOracle(fixture),{sourceSha256:fixture.manifest.sha256,durationMs:2000,sourceNotes:4});await screenshot('seed-all-source-attacks-real-audio');await session.page.locator('#back-to-library').click();
   session.profile.invalid=[];
   for(const invalid of fixtures.invalid){const start=session.profile.api.length,prior=await session.page.locator('#song-lobby').getAttribute('data-preview-id');await chooseRaw(invalid);await session.page.waitForFunction(filename=>document.getElementById('notice-message').textContent.includes(filename),invalid.filename);const rows=session.profile.api.slice(start);const preview=rows.find(row=>row.path==='/api/library/import/preview');assert.ok(preview&&preview.status===200);assert.ok(preview.response.items.every(item=>!item.playable&&!item.entry&&!item.clean_package));assert.equal(rows.some(row=>row.path==='/api/library/import/commit'),false);assert.equal(await session.page.locator('#song-lobby').getAttribute('data-preview-id'),prior);assert.equal(await session.page.locator('#catalog [data-library-key]').count(),1);session.profile.invalid.push({filename:invalid.filename,preview:preview.response,preserved_preview:prior});}

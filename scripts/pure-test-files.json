@@ -243,5 +243,6 @@
   "tests/frontend-direct-midi-import.test.js",
   "tests/direct-midi-fixtures.test.js",
   "tests/direct-midi-proof.test.js",
-  "tests/native-direct-midi-evidence.test.js"
+  "tests/native-direct-midi-evidence.test.js",
+  "tests/hosted-direct-midi-isolation.test.js"
 ]
