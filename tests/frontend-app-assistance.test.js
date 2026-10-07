@@ -4,11 +4,12 @@ import {readFileSync} from 'node:fs';
 import {nativeScoreServer,nativeStorageApp,nativeResponse,deferred} from './native-storage-app-fixtures.js';
 import {ASSISTANCE_STORAGE_PREFIX} from '../web/practice-assistance.js';
 import {CanonicalPlayer} from '../web/canonical-player.js';
+import {SongModStore,defaultSongMod,createSongMod} from '../web/song-mod.js';
 const fixture=JSON.parse(readFileSync(new URL('./fixtures/assistance-canonical.json',import.meta.url),'utf8'));
 const control=(app,kind,id='piano')=>app.$('song-mod-parts').querySelector(`[data-mod-${kind}="${id}"]`);
 const set=(app,node,value,type='change')=>{node.value=String(value);app.emit(node,type);};
 const source=app=>app.audioNodes.findLast(node=>node.kind==='audio-worklet'&&node.connected&&node.core.plan?.count!==undefined);
-async function setup({storageValues=new Map(),localStorageDescriptor,hold,route,failOriginal=false,failAudio=()=>false}={}){
+async function setup({storageValues=new Map(),localStorageDescriptor,hold,route,failOriginal=false,failAudio=()=>false,legacyLive=null}={}){
  const score=fixture.compilation.score,server=await nativeScoreServer({scores:[score]});let wall=1000;
  server.setRoute(async request=>{
   const custom=await route?.(request);if(custom!==undefined)return custom;
@@ -18,16 +19,18 @@ async function setup({storageValues=new Map(),localStorageDescriptor,hold,route,
   if(failOriginal&&path==='/api/practice-assistance/original')return nativeResponse({code:'assistance_response_limit',error:'Complete assistance response exceeds 16 MiB; no IDs or ownership entries were truncated'},422);
   if(path.startsWith('/api/practice-assistance/')){if(hold)await hold(path,body);const result=path.endsWith('/generate')?fixture.automatic:body.selection.selected_part_ids.length?fixture.original:fixture.listen;assert.deepEqual(body.selection,result.checked.plan.selection);if(path.endsWith('/generate'))assert.deepEqual(body.settings,result.checked.plan.settings);assert.deepEqual(body.score,score);return nativeResponse(result);}
  });
+ // Existing v2 sidecars retain their live sound even though its editor is retired.
+ if(legacyLive){const base=defaultSongMod({score,mode:'practice',part:score.parts[0].id,practiceLayout:'complete'}),config=structuredClone(base.config);config.parts[0].liveInstrument=legacyLive;const mod=createSongMod(base,config);storageValues.set(new SongModStore().key(mod),JSON.stringify(mod));}
  const app=await nativeStorageApp(server,{now:()=>wall,storageValues,localStorageDescriptor}),key=[...server.records.keys()][0];
  await app.until(()=>Boolean(app.savedButton(key)));await app.click('home-single-player');set(app,app.$('key-count'),88);app.savedButton(key).click();await app.until(()=>!app.$('configure-song-mod').disabled);await app.tick();
  return{app,server,score,storageValues,time(ms){wall=ms;app.renderAudioTo((ms-1000)/1000);app.frame();},async automatic(){await app.click('configure-song-mod');set(app,app.$('song-mod-assistance-mode'),'automatic');for(const [name,value] of Object.entries(fixture.automatic.checked.plan.settings)){if(name!=='algorithm_id')set(app,app.$(`song-mod-assistance-${name}`),value,'input');}await app.click('song-mod-assistance-check');await app.until(()=>app.$('song-mod-assistance-status').dataset.phase==='prepared');},async apply(){await app.click('song-mod-apply');await app.until(()=>!app.$('song-mod-dialog').open,()=>app.$('song-mod-error').textContent);}};
 }
 
 test('real app default Original has no assistance requests; explicit Automatic routes only checked humans to scoring and keeps same-part machine audio',async()=>{
- const f=await setup(),{app,server}=f,before=JSON.stringify(f.score);
+ const f=await setup({legacyLive:'guitar'}),{app,server}=f,before=JSON.stringify(f.score);
  try{
   await app.until(()=>!app.$('start-performance').disabled);assert.equal(server.requests.filter(r=>r.path.includes('/assistance/')||r.path.includes('/practice-assistance/')).length,0);
-  await f.automatic();assert.equal(control(app,'instrument').disabled,false);set(app,control(app,'instrument'),'reed');set(app,control(app,'live-instrument'),'guitar');await f.apply();
+  await f.automatic();assert.equal(control(app,'instrument').disabled,false);set(app,control(app,'instrument'),'reed');assert.equal(control(app,'live-instrument'),null);await f.apply();
   assert.equal(app.document.body.dataset.screen,'library');assert.equal(source(app),undefined);assert.equal([...f.storageValues].filter(([key])=>key.startsWith(ASSISTANCE_STORAGE_PREFIX)).length,1);
   app.$('count-in').checked=false;app.$('metronome-enabled').checked=false;await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing',()=>app.$('notice-message').textContent);
   const receiver=source(app),checked=fixture.automatic.checked;assert.equal(receiver.core.plan.count,checked.machine_occurrence_ids.length);assert.deepEqual([...receiver.core.plan.instruments],[2]);
