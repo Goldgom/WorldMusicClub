@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {SourceInstrumentDetailsLoader} from '../web/source-instrument-loader.js';
 
 const hash='a'.repeat(64);
 const score=(id='first')=>({id,source:{format:'midi-base64',content:'retained'},parts:[{id:'part-a'},{id:'part-b'}]});
-const response=(sourceScore,extra={})=>({details:{revision:1,source_binding:{domain:'wmc-canonical-score-serde-json',serialization_revision:1,digest:hash},original_midi_sha256:hash,parts:sourceScore.parts.map(part=>({part_id:part.id,selection_status:'unknown'}))},...extra});
+const response=(sourceScore,extra={})=>({request_sha256:createHash('sha256').update(JSON.stringify(sourceScore)).digest('hex'),details:{revision:1,source_binding:{domain:'wmc-canonical-score-serde-json',serialization_revision:1,digest:hash},original_midi_sha256:hash,parts:sourceScore.parts.map(part=>({part_id:part.id,selection_status:'unknown'}))},...extra});
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return{promise,resolve,reject};};
 
@@ -13,7 +14,7 @@ test('canonical details are fetched once from the complete original source, neve
  assert.equal(loader.read(original).sourceInstrumentDetailsStatus,'loading');
  const shifted={score:{...score(),parts:[{id:'part-a'}]},pitchView:{sourceView:original},practiceSelection:{part_ids:['part-a']},assistance:{human_targets:[]}};
  assert.equal(loader.read(shifted).sourceInstrumentDetailsToken,original.score);await flush();
- assert.equal(requests.length,1);assert.equal(requests[0].path,'/api/source-instrument-details/canonical');assert.equal(requests[0].body,original.score);
+ assert.equal(requests.length,1);assert.equal(requests[0].path,'/api/source-instrument-details/canonical');assert.deepEqual(requests[0].body,original.score);assert.notEqual(requests[0].body,original.score);
  assert.equal(loader.read(shifted).sourceInstrumentDetailsStatus,'ready');assert.equal(loader.read(shifted).sourceInstrumentDetails.parts.length,2);
  assert.equal(loader.read(shifted).sourceInstrumentDetails.parts[0].selection_status,'unknown');
 });
@@ -51,4 +52,20 @@ test('Basic native request carries original saved source and requires matching r
  assert.deepEqual(requests[0].body,{source:{key:`song-${hash}`,content_sha256:hash,profile:'wmh-basic-keys-midi1-v1',choice:null,runtime_policy:'wmh-basic-key-rendition-fifo-v1'}});
  const mismatched=new SourceInstrumentDetailsLoader({api:async()=>response(original.score,{source:{...requests[0].body.source,content_sha256:'b'.repeat(64)}})});
  mismatched.read(original);await flush();assert.equal(mismatched.read(original).sourceInstrumentDetailsStatus,'error');
+});
+
+
+test('same part IDs with a foreign valid request digest are rejected',async()=>{
+ const context={score:score()},foreign=response(score('other-source'));
+ const loader=new SourceInstrumentDetailsLoader({api:async()=>foreign});loader.read(context);await flush();
+ assert.equal(loader.read(context).sourceInstrumentDetailsStatus,'error');
+});
+
+test('in-place mutation during disclosure cannot install old metadata',async()=>{
+ const context={score:score()},pending=deferred(),requests=[];
+ const loader=new SourceInstrumentDetailsLoader({api:async(path,body)=>{requests.push(body);return pending.promise;}});
+ loader.read(context);await flush();context.score.source.content='changed in place';
+ pending.resolve(response(requests[0]));await flush();
+ assert.equal(loader.read(context).sourceInstrumentDetailsStatus,'error');assert.equal(loader.read(context).sourceInstrumentDetails,null);
+ assert.equal(requests[0].source.content,'retained');assert.equal(requests.length,1);
 });
