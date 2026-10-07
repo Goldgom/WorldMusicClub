@@ -36,7 +36,7 @@ jobs:
       - run: npm run prepare:engraving
       - run: node --test tests/native-assistance-evidence.test.js
       - run: cargo fmt --all --check
-      - run: cargo test -p worldmusichub-desktop --lib acceptance::tests --locked
+      - run: cargo test -p worldmusichub-desktop --lib acceptance::tests --release --locked
       - shell: pwsh
         run: ./scripts/native-assistance-contract.ps1
       - run: cargo build -p worldmusichub-desktop --release --locked

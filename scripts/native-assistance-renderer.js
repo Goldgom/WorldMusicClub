@@ -1,3 +1,36 @@
+/* Observe only the JSON promise the application consumes. A cloned fetch body
+ * can abort after successful adoption; it is not authoritative product evidence. */
+function createNativeAssistanceRequestObserver({fetchOwner,onRequest,onError,readContext,maxRows=40}) {
+ const original=fetchOwner.fetch,rows=[],restores=new Set(),signals=new WeakMap();let stopped=false,nextSignal=0;
+ const context=()=>structuredClone(readContext()),notify=error=>{try{onError(String(error?.message||error).slice(0,1024));}catch{}};
+ const failure=(row,options,phase,error)=>{if(stopped)return;row.observation=phase;row.errorName=String(error?.name||'Error');row.error=String(error).slice(0,512);row.signalAborted=options?.signal?.aborted===true;row.settled=context();row.canceled=row.signalGeneration!==null&&row.signalAborted&&row.errorName==='AbortError'&&['fetch-rejected','body-rejected'].includes(phase);if(!row.canceled)notify(`${row.path} ${phase}: ${row.error}`);};
+ function observedFetch(...args){
+  const promise=Reflect.apply(original,this,args);
+  try{
+   const input=args[0],options=args[1]||{},path=typeof input==='string'?input:input.url;
+   if(stopped||!(path.startsWith('/api/library/assistance/')||path==='/api/assess'||path==='/api/library/runtime'))return promise;
+   if(rows.length>=maxRows)throw Error('Bounded assistance requests exceeded');
+   const signal=options.signal;if(signal&&!signals.has(signal))signals.set(signal,++nextSignal);
+   const row={path,request:JSON.parse(options.body),status:null,response:null,observation:'fetching',signalGeneration:signal?signals.get(signal):null,signalAbortedAtStart:signal?.aborted===true,signalAborted:false,canceled:false,started:context(),settled:null};rows.push(row);onRequest(row);
+   Reflect.apply(Promise.prototype.then,promise,[response=>{
+    if(stopped)return;row.status=response.status;row.observation='awaiting-json';
+    try{
+     const json=response.json,descriptor=Object.getOwnPropertyDescriptor(response,'json');
+     const restore=()=>{if(response.json===observedJson){if(descriptor)Object.defineProperty(response,'json',descriptor);else delete response.json;}restores.delete(restore);};
+     function observedJson(...args){
+      let result;try{result=Reflect.apply(json,this,args);}catch(error){if(this===response)failure(row,options,'body-threw',error);throw error;}
+      if(this===response){row.observation='consuming';try{Reflect.apply(Promise.prototype.then,result,[value=>{try{if(!stopped){const copied=structuredClone(value);if(new TextEncoder().encode(JSON.stringify(copied)).length>256*1024)throw Error('Consumed assistance response exceeds 256 KiB');row.response=copied;row.observation='consumed';row.signalAborted=signal?.aborted===true;row.settled=context();}}catch(error){failure(row,options,'observation-failed',error);}finally{restore();}},error=>{try{failure(row,options,'body-rejected',error);}finally{restore();}}]);}catch(error){failure(row,options,'observation-failed',error);restore();}}
+      return result;
+     }
+     response.json=observedJson;restores.add(restore);
+    }catch(error){failure(row,options,'observation-failed',error);}
+   },error=>failure(row,options,'fetch-rejected',error)]);
+  }catch(error){notify(error);}
+  return promise;
+ }
+ fetchOwner.fetch=observedFetch;
+ return{settled:()=>rows.every(r=>['consumed','fetch-rejected','body-rejected','body-threw','observation-failed'].includes(r.observation)),restore(){stopped=true;for(const restore of [...restores])restore();if(fetchOwner.fetch===observedFetch)fetchOwner.fetch=original;return fetchOwner.fetch===original;}};
+}
 /* Compiled process-owned acceptance only. Actual native protocol, owned Win32
  * controls and production MessagePort/worklet clocks. No simulated PCM or MIDI. */
 (() => {
@@ -7,7 +40,7 @@
  const record=event=>{if(report.trusted.length>=512)return;report.trusted.push({sequence,type:event.type,id:event.target?.id||null,owned:currentControl===event.target||Boolean(currentControl?.contains(event.target)),trusted:event.isTrusted===true,code:event.code||null,timeStamp:event.timeStamp,value:event.target?.value??null,checked:typeof event.target?.checked==='boolean'?event.target.checked:null,position:clock().positionMs,phase:document.querySelector('.performance-status')?.dataset.phase||null});};
  const failed=event=>{if(report.errors.length<16)report.errors.push(String(event.message||event.reason).slice(0,1024));};
  for(const type of ['click','input','change','keydown','keyup'])document.addEventListener(type,record,true);addEventListener('error',failed);addEventListener('unhandledrejection',failed);
- globalThis.fetch=function(input,options){const promise=Reflect.apply(originalFetch,this,[input,options]),path=typeof input==='string'?input:input.url;if(path.startsWith('/api/library/assistance/')||path==='/api/assess'||path==='/api/library/runtime'){const row={path,request:JSON.parse(options.body),status:null,response:null};assert(report.requests.length<40,'Bounded assistance requests');report.requests.push(row);promise.then(async response=>{row.status=response.status;row.response=await response.clone().json();},error=>{row.error=String(error);});}return promise;};
+ const requests=createNativeAssistanceRequestObserver({fetchOwner:globalThis,onRequest:row=>report.requests.push(row),onError:error=>report.errors.push(error),readContext:()=>({actionSequence:sequence,screen:document.body?.dataset.screen||null,previewId:$('song-lobby')?.dataset.previewId||null})});
  function snapshot(label){report.stage=label;const node=$('falling-notes'),value={label,screen:document.body.dataset.screen,clock:clock(),mode:$('session-mode').value,applyDisabled:$('song-mod-apply').disabled,startDisabled:$('start-performance').disabled,status:$('song-mod-assistance-status')?.dataset.phase,summary:$('song-mod-preview-summary').textContent,humans:JSON.parse(node.dataset.humanNoteIds||'[]'),machines:JSON.parse(node.dataset.machineNoteIds||'[]')};report.checkpoints.push(value);return value;}
  async function native(kind,node,file){
   report.stage=`${kind}: ${node?.id||node?.tagName||'missing'}`;assert(sequence<96&&node?.isConnected&&!node.disabled,'Native assistance target unavailable');const key=kind==='assistance-key-c5';let control;
@@ -50,8 +83,8 @@
     await choose(report.sources.vsq.key);await until(()=>$('song-lobby').dataset.previewStatus==='choice','VSQ explicit choice required');report.vsqBeforeChoice={startDisabled:$('start-performance').disabled,modDisabled:$('configure-song-mod').disabled,sourceStarts:receiver.status().started};assert(report.vsqBeforeChoice.startDisabled&&report.vsqBeforeChoice.modDisabled,'VSQ choice cannot be implicit');await click('vsq-choose-base-notes');await until(()=>!$('configure-song-mod').disabled,'explicit VSQ base notes admitted');await click('configure-song-mod');await click('song-mod-all-human');await select('song-mod-assistance-mode','automatic');for(const[kind,field]of [['onset','max_targets_per_onset'],['interval','min_onset_interval_ms'],['held','max_simultaneous_keys'],['span','max_held_span_semitones']])await native(`assistance-${kind}`,$(`song-mod-assistance-${field}`));await click('song-mod-assistance-check');await until(()=>$('song-mod-assistance-status').dataset.phase==='prepared','native VSQ receipt');snapshot('vsq-checked');const fullSelection=structuredClone(report.requests.findLast(r=>r.path==='/api/library/assistance/generate').request.selection);await select(document.querySelector('[data-mod-performer="vsq-track-2"]'),'machine');await click('song-mod-assistance-check');await until(()=>$('song-mod-assistance-status').dataset.phase==='prepared','zero-human Automatic checked');snapshot('vsq-zero-human-checked');await apply();await until(()=>$('start-performance').disabled,'zero-human Practice blocked');report.zeroHuman={startDisabled:$('start-performance').disabled,summary:$('song-mod-preview-summary').textContent,sourceStarts:receiver.status().started,clock:clock()};assert(report.zeroHuman.sourceStarts===report.vsqBeforeChoice.sourceStarts&&!report.zeroHuman.clock.running,'Zero-human check cannot play or record');
     const observed=report.requests.findLast(r=>r.path==='/api/library/assistance/generate'&&r.request.source.profile==='wmh-vsq-clean-v1');assert(observed?.response,'VSQ response observed');report.vsqExplicitApi={scope:'read-only API ownership; not a UI source-ID editor',response:await json('/api/library/assistance/create',{source:observed.request.source,selection:fullSelection,human_source_ids:[]})};
    }
-   for(const source of Object.values(report.sources))source.after=await json('/api/library/load',{key:source.key});await until(()=>report.requests.every(r=>r.response||r.error),'all retained responses settled');report.storageAfter=storage();report.pickerObservations=controls.pickers;assert(report.errors.length===0,report.errors.join('; '));report.stage='complete';report.ok=true;
+   for(const source of Object.values(report.sources))source.after=await json('/api/library/load',{key:source.key});await until(()=>requests.settled(),'all retained responses settled');report.storageAfter=storage();report.pickerObservations=controls.pickers;assert(report.errors.length===0,report.errors.join('; '));report.stage='complete';report.ok=true;
   }catch(error){report.error=String(error.stack||error);try{report.failedAudio={runs:receiver?.snapshot(),status:receiver?.status()};}catch{}}
-  finally{report.actions=sequence;globalThis.fetch=originalFetch;controls?.restore();for(const type of ['click','input','change','keydown','keyup'])document.removeEventListener(type,record,true);removeEventListener('error',failed);removeEventListener('unhandledrejection',failed);report.cleanup=receiver?.restore();const bytes=new TextEncoder().encode(JSON.stringify(report)).length;await json('/__desktop_smoke/report',bytes<1024*1024?report:{version:1,phase,scenario:'assistance',ok:false,error:'Assistance evidence exceeds 1 MiB',receivedBytes:bytes});}
+  finally{report.actions=sequence;try{report.pickerObservations=controls?.pickers||[];report.storageAfter??=storage();}catch(error){report.partialEvidenceError=String(error);report.ok=false;}report.requestsRestored=requests.restore();controls?.restore();for(const type of ['click','input','change','keydown','keyup'])document.removeEventListener(type,record,true);removeEventListener('error',failed);removeEventListener('unhandledrejection',failed);report.cleanup=receiver?.restore();const bytes=new TextEncoder().encode(JSON.stringify(report)).length;await json('/__desktop_smoke/report',bytes<1024*1024?report:{version:1,phase,scenario:'assistance',ok:false,error:'Assistance evidence exceeds 1 MiB',receivedBytes:bytes});}
  });
 })();
