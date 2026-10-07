@@ -580,16 +580,24 @@ function Invoke-NativeAction($App,$Action,[hashtable]$Evidence,$Observation=$nul
       $path=$fixture.FullName
     } else {$path=[NativeAcceptance]::ResolveFixturePath($Fixtures,$OutputDirectory,[string]$Action.file)}
     $root=[System.Windows.Automation.AutomationElement]::FromHandle($dialog)
-    $entry=$null
-    try { $entry=Find-FileNameEntry $root $Evidence }
-    catch {
-      $Evidence.uia_entry_unavailable=$_.Exception.Message
+    if($Scenario -ceq 'assistance' -and $env:WMH_DESKTOP_ACCEPTANCE_PHASE -ceq 'assistance-seed' -and $Action.kind -ceq 'picker' -and $Action.file -ceq 'assistance-original-songs.zip') {
+      # Runs595/597 expose this host as UIA Pane without ValuePattern. Use
+      # the existing fully verified native Edit route immediately; do not
+      # spend a futile5s polling for a pattern this control does not expose.
+      $Evidence.filename_selection_policy='closed-assistance-verified-native-first'
       Set-NativeFileName $root $dialog $App $path $Evidence
-    }
-    if($null -ne $entry) {
-      $entry.Pattern.SetValue($path)
-      if($entry.Pattern.Current.Value -cne $path){throw 'Windows filename control did not retain the selected fixture path'}
-      $Evidence.filename_entry_method='UIA_ValuePattern'
+    } else {
+      $entry=$null
+      try { $entry=Find-FileNameEntry $root $Evidence }
+      catch {
+        $Evidence.uia_entry_unavailable=$_.Exception.Message
+        Set-NativeFileName $root $dialog $App $path $Evidence
+      }
+      if($null -ne $entry) {
+        $entry.Pattern.SetValue($path)
+        if($entry.Pattern.Current.Value -cne $path){throw 'Windows filename control did not retain the selected fixture path'}
+        $Evidence.filename_entry_method='UIA_ValuePattern'
+      }
     }
     Record-PickerObservation $Observation 'filename-ready' $App $dialog $Evidence
     Capture-Handle $dialog "owned-picker-before-open-$($env:WMH_DESKTOP_ACCEPTANCE_PHASE)-$($Action.sequence)"
