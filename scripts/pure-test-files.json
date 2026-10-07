@@ -195,7 +195,6 @@
   "tests/human-mod-live-tone-proof.test.js",
   "tests/native-human-mod-timbre-renderer.test.js",
   "tests/native-human-mod-timbre-evidence.test.js",
-  "tests/native-human-mod-panel-revision.test.js",
   "tests/native-human-mod-timbre-registration.test.js",
   "tests/live-tone-released-checkpoint.test.js",
   "tests/human-mod-timbre-preview.test.js",
@@ -249,5 +248,6 @@
   "tests/browser-consumed-body-observer.test.js",
   "tests/source-instrument-details-view.test.js",
   "tests/source-instrument-loader.test.js",
-  "tests/source-instrument-policy-invariants.test.js"
+  "tests/source-instrument-policy-invariants.test.js",
+  "tests/native-human-mod-panel-revision.test.js"
 ]
