@@ -113,9 +113,17 @@ fn basic_reload_and_pitch_do_not_rewrite_source_programs_or_binding() {
     );
     assert_eq!(wire(&details), wire(&describe_basic(&reloaded).unwrap()));
     let projection = PitchProjection::from_basic(&reloaded, 5).unwrap();
-    assert_eq!(
+    assert_ne!(
         projection.original_receipt().source_binding,
         details.source_binding
+    );
+    assert_eq!(
+        projection.original_receipt().source_binding.domain,
+        "wmc-basic-complete-serde-json"
+    );
+    assert_eq!(
+        projection.original_receipt(),
+        PracticeSource::from_basic(&reloaded).unwrap().receipt()
     );
     assert_eq!(wire(&describe_basic(&reloaded).unwrap()), wire(&details));
     assert_eq!(basic_keys::encode_json(&reloaded).unwrap(), saved);
