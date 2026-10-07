@@ -1,0 +1,226 @@
+{
+  "revision": 1,
+  "source_profile": "wmh-basic-keys-midi1-v1",
+  "source_binding": {
+    "domain": "wmc-basic-complete-wire-json",
+    "serialization_revision": 1,
+    "digest": "a49fbd092a5155da98ac22afbefc834dacad5c64bb110732a68d22d231328303"
+  },
+  "original_midi_sha256": "44406a2aa4d4114594fa20777345a985ac45194140410043b689997f899325d4",
+  "original_midi_bytes": 69,
+  "original_bytes_verification": "declared_provenance_only",
+  "source_format": 0,
+  "ppq": 96,
+  "clock": "source_ppq_ticks_and_beats_only",
+  "tracks": [
+    {
+      "id": "source-instrument:a49fbd092a5155da98ac22afbefc834dacad5c64bb110732a68d22d231328303:t0",
+      "source_track_index": 0,
+      "names": [
+        {
+          "at": {
+            "event_id": "midi:44406a2aa4d4114594fa20777345a985ac45194140410043b689997f899325d4:t0:e2",
+            "origin": {
+              "track": 0,
+              "event": 2
+            },
+            "tick": 0,
+            "beat": {
+              "numerator": 0,
+              "denominator": 96
+            }
+          },
+          "role": "instrument_name",
+          "bytes": [
+            85,
+            110,
+            117,
+            115,
+            101,
+            100
+          ],
+          "utf8": "Unused",
+          "channel_prefix": null,
+          "channel_prefix_scope": "unscoped",
+          "channel_prefix_declaration": null,
+          "source_route_index": null,
+          "port_declaration": {
+            "track": 0,
+            "event": 0
+          },
+          "device_name_declaration": {
+            "track": 0,
+            "event": 1
+          }
+        },
+        {
+          "at": {
+            "event_id": "midi:44406a2aa4d4114594fa20777345a985ac45194140410043b689997f899325d4:t0:e4",
+            "origin": {
+              "track": 0,
+              "event": 4
+            },
+            "tick": 0,
+            "beat": {
+              "numerator": 0,
+              "denominator": 96
+            }
+          },
+          "role": "instrument_name",
+          "bytes": [
+            65,
+            99,
+            116,
+            117,
+            97,
+            108
+          ],
+          "utf8": "Actual",
+          "channel_prefix": null,
+          "channel_prefix_scope": "unscoped",
+          "channel_prefix_declaration": null,
+          "source_route_index": 0,
+          "port_declaration": {
+            "track": 0,
+            "event": 0
+          },
+          "device_name_declaration": {
+            "track": 0,
+            "event": 3
+          }
+        }
+      ],
+      "routing_events": [
+        {
+          "at": {
+            "event_id": "midi:44406a2aa4d4114594fa20777345a985ac45194140410043b689997f899325d4:t0:e0",
+            "origin": {
+              "track": 0,
+              "event": 0
+            },
+            "tick": 0,
+            "beat": {
+              "numerator": 0,
+              "denominator": 96
+            }
+          },
+          "declaration": {
+            "kind": "port",
+            "value": 7
+          }
+        },
+        {
+          "at": {
+            "event_id": "midi:44406a2aa4d4114594fa20777345a985ac45194140410043b689997f899325d4:t0:e1",
+            "origin": {
+              "track": 0,
+              "event": 1
+            },
+            "tick": 0,
+            "beat": {
+              "numerator": 0,
+              "denominator": 96
+            }
+          },
+          "declaration": {
+            "kind": "device_name",
+            "bytes": [
+              65
+            ]
+          }
+        },
+        {
+          "at": {
+            "event_id": "midi:44406a2aa4d4114594fa20777345a985ac45194140410043b689997f899325d4:t0:e3",
+            "origin": {
+              "track": 0,
+              "event": 3
+            },
+            "tick": 0,
+            "beat": {
+              "numerator": 0,
+              "denominator": 96
+            }
+          },
+          "declaration": {
+            "kind": "device_name",
+            "bytes": [
+              66
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "routes": [
+    {
+      "id": "source-instrument:a49fbd092a5155da98ac22afbefc834dacad5c64bb110732a68d22d231328303:r0",
+      "source_route_index": 0,
+      "declaration": {
+        "port": 7,
+        "device_name_bytes": [
+          66
+        ]
+      }
+    }
+  ],
+  "channels": [
+    {
+      "id": "source-instrument:a49fbd092a5155da98ac22afbefc834dacad5c64bb110732a68d22d231328303:r0:c0",
+      "route_id": "source-instrument:a49fbd092a5155da98ac22afbefc834dacad5c64bb110732a68d22d231328303:r0",
+      "channel": 0,
+      "selection_timeline": [],
+      "ambiguous_ticks": []
+    }
+  ],
+  "parts": [
+    {
+      "part_id": "midi-t1-c1-r0",
+      "id": "source-instrument:a49fbd092a5155da98ac22afbefc834dacad5c64bb110732a68d22d231328303:part:midi-t1-c1-r0",
+      "display_name": "Track 1 / ch 1",
+      "track_id": "source-instrument:a49fbd092a5155da98ac22afbefc834dacad5c64bb110732a68d22d231328303:t0",
+      "route_id": "source-instrument:a49fbd092a5155da98ac22afbefc834dacad5c64bb110732a68d22d231328303:r0",
+      "channel_id": "source-instrument:a49fbd092a5155da98ac22afbefc834dacad5c64bb110732a68d22d231328303:r0:c0",
+      "key_semantics": "midi_key_number",
+      "source_attack_count": 1,
+      "notated_note_count": 1,
+      "key_range": {
+        "lowest": 60,
+        "highest": 60
+      },
+      "first_attack": {
+        "event_id": "midi:44406a2aa4d4114594fa20777345a985ac45194140410043b689997f899325d4:t0:e5",
+        "origin": {
+          "track": 0,
+          "event": 5
+        },
+        "tick": 0,
+        "beat": {
+          "numerator": 0,
+          "denominator": 96
+        }
+      },
+      "last_attack": {
+        "event_id": "midi:44406a2aa4d4114594fa20777345a985ac45194140410043b689997f899325d4:t0:e5",
+        "origin": {
+          "track": 0,
+          "event": 5
+        },
+        "tick": 0,
+        "beat": {
+          "numerator": 0,
+          "denominator": 96
+        }
+      },
+      "selection_summary": {
+        "status": "unknown",
+        "observed_selections": [],
+        "attacks_without_declared_program": 1,
+        "attacks_with_ambiguous_selection": 0,
+        "changes": false
+      }
+    }
+  ],
+  "uninterpreted_sound_events": [],
+  "instrument_namespace": "unknown"
+}

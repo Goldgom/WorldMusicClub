@@ -1,3 +1,4 @@
+import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseHTML} from 'linkedom';
@@ -5,7 +6,7 @@ import {sourceInstrumentDetailRows,sourceInstrumentDetailPage,sourceInstrumentSu
 import {setupSongModView} from '../web/song-mod-view.js';
 import {createSongMod} from '../web/song-mod.js';
 
-const evidence=()=>({parts:[{part_id:'p1',track_id:'t1',route_id:'r1',channel_id:'c1',source_attack_count:8,notated_note_count:7,key_range:{lowest:30,highest:100},selection_summary:{status:'changes',observed_selections:[{program:0,bank_most_significant:0,bank_least_significant:null},{program:127,bank_most_significant:1,bank_least_significant:2}],attacks_without_declared_program:1,attacks_with_ambiguous_selection:2}}],tracks:[{id:'t1',source_track_index:0,names:[{role:'track_name',utf8:'Lead',channel_prefix_scope:'unscoped'},{role:'instrument_name',utf8:'<img src=x onerror=alert(1)> Violin',channel_prefix_scope:'declared_channel',channel_prefix:0},{role:'program_name',utf8:null,bytes:[255],channel_prefix_scope:'invalid_declaration'}]}],routes:[{id:'r1'}],channels:[{id:'c1',channel:0}]});
+const evidence=()=>({parts:[{part_id:'p1',track_id:'t1',route_id:'r1',channel_id:'c1',source_attack_count:8,notated_note_count:7,key_range:{lowest:30,highest:100},selection_summary:{status:'changes',observed_selections:[{program:0,bank_most_significant:0,bank_least_significant:null},{program:127,bank_most_significant:1,bank_least_significant:2}],attacks_without_declared_program:1,attacks_with_ambiguous_selection:2}}],tracks:[{id:'t1',source_track_index:0,names:[{role:'track_name',utf8:'Lead',channel_prefix_scope:'unscoped'},{role:'instrument_name',source_route_index:0,utf8:'<img src=x onerror=alert(1)> Violin',channel_prefix_scope:'declared_channel',channel_prefix:0},{role:'program_name',utf8:null,bytes:[255],channel_prefix_scope:'invalid_declaration'}]}],routes:[{id:'r1',source_route_index:0}],channels:[{id:'c1',channel:0}]});
 
 test('source details retain declared names and numeric zero values without guessing a GM instrument',()=>{
  const rows=sourceInstrumentDetailRows({id:'p1'},evidence());
@@ -88,7 +89,7 @@ test('large evidence is lazy and paginated with truthful totals, bounded text, a
 
 test('collapsed summary uses only applicable bounded instrument-name declarations, never an inferred instrument',()=>{
  const summarize=(names,locale='en')=>{const data=evidence();data.tracks[0].names=names;return sourceInstrumentSummary({id:'p1'},data,locale);};
- const name=(utf8,scope='unscoped',channel_prefix=null)=>({role:'instrument_name',utf8,channel_prefix_scope:scope,channel_prefix});
+ const name=(utf8,scope='unscoped',channel_prefix=null)=>({role:'instrument_name',utf8,channel_prefix_scope:scope,channel_prefix,source_route_index:0});
  assert.match(summarize([name('Violin')]),/^Instrument name in file: Violin/);
  assert.match(summarize([name('Violin','declared_channel',0)],'zh-CN'),/^文件中的乐器名称：Violin/);
  assert.match(summarize([name('Other channel','declared_channel',1)]),/not identified/);
@@ -98,9 +99,32 @@ test('collapsed summary uses only applicable bounded instrument-name declaration
  assert.match(summarize([name('Violin'),name('Flute','declared_channel',0)]),/2 declarations/);
  assert.doesNotMatch(summarize([name('Violin'),name('Flute','declared_channel',0)]),/Violin|Flute/);
  assert.match(summarize([{...name('Wrong route'),source_route_index:99}]),/not identified/);
+ assert.match(summarize([{...name('Unused route'),source_route_index:null}]),/not identified/);
+ assert.match(summarize([{...name('Missing route'),source_route_index:undefined}]),/not identified/);
  assert.match(summarize([name(null)]),/name encoding unknown/);
  const long='<img src=x onerror=alert(1)>'+ '🎻'.repeat(100000),summary=summarize([name(long)]);
  assert.ok(summary.length<190);assert.match(summary,/continued in details/);assert.doesNotMatch(summary,/\uFFFD/);
  const f=fixture(),data=evidence();data.tracks[0].names=[name(long)];f.update({sourceInstrumentDetails:data,sourceInstrumentDetailsStatus:'ready'});
  const disclosure=f.document.querySelector('[data-source-details="p1"]');assert.equal(disclosure.querySelector('img'),null);assert.match(disclosure.querySelector('summary').textContent,/<img src=x/);assert.equal(disclosure.querySelector('dl').children.length,0);
+});
+
+
+test('actual Basic disclosure never applies an unused device route name to a different sounding device',()=>{
+ // Produced by score_core::source_instrument::describe_basic from this original
+ // mechanical SMF event sequence: Port 7, Device A, InstrumentName Unused,
+ // Device B, InstrumentName Actual, C4 note-on/off. Device A has no channels.
+ const details=JSON.parse(readFileSync(new URL('./fixtures/source-instrument-route-name-details.json',import.meta.url),'utf8'));
+ const [unused,actual]=details.tracks[0].names;
+ assert.equal(unused.utf8,'Unused');assert.equal(unused.source_route_index,null);assert.deepEqual(unused.device_name_declaration,{track:0,event:1});
+ assert.equal(actual.utf8,'Actual');assert.equal(actual.source_route_index,0);assert.deepEqual(actual.device_name_declaration,{track:0,event:3});
+ assert.deepEqual(details.routes[0].declaration,{port:7,device_name_bytes:[66]});
+ const summary=sourceInstrumentSummary({id:details.parts[0].part_id},details);
+ assert.match(summary,/Instrument name in file: Actual/);assert.doesNotMatch(summary,/Unused|2 declarations/);
+ const onlyUnused=structuredClone(details);onlyUnused.tracks[0].names=[unused];assert.match(sourceInstrumentSummary({id:details.parts[0].part_id},onlyUnused),/not identified/);
+});
+
+test('legacy conflict names and reset destination are visible in both languages and recovery stays conditional',()=>{
+ const f=fixture({conflict:true});
+ for(const locale of ['en','zh-CN']){f.i18n.setLocale(locale);for(const id of ['song-mod-input-routing','song-mod-unify-description']){assert.match(f.$(id).textContent,/Lead/);assert.match(f.$(id).textContent,/Other/);}assert.match(f.$('song-mod-unify-description').textContent,locale==='en'?/current performance instrument: Piano/:/当前演奏乐器：钢琴/);assert.equal(f.$('song-mod-unify-row').hidden,false);}
+ f.$('song-mod-unify-human').click();assert.equal(f.$('song-mod-unify-row').hidden,true);assert.equal(f.document.querySelector('[data-mod-live-instrument]'),null);
 });

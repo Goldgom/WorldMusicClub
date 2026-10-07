@@ -24,7 +24,8 @@ export function sourceInstrumentDetailPage(part, details, locale = 'en', status 
     const name=names[index];
     const scope = name.channel_prefix_scope === 'declared_channel' ? text(` · channel ${name.channel_prefix + 1}`, ` · 通道 ${name.channel_prefix + 1}`) : name.channel_prefix_scope === 'invalid_declaration' ? text(' · invalid channel association', ' · 通道关联无效') : text(' · track-wide declaration', ' · 轨道级声明');
     const value = typeof name.utf8 === 'string' ? name.utf8 : text('Name encoding unknown', '名称编码未知');
-    return [roles[name.role] || text('Name in file', '文件中的名称'), value, scope];
+    const routeScope=Number.isInteger(name.source_route_index)?text(` · source route index ${name.source_route_index}`,` · 源路由索引 ${name.source_route_index}`):text(' · route has no channel events',' · 此路由无通道事件');
+    return [roles[name.role] || text('Name in file', '文件中的名称'), value, scope+routeScope];
   }};
   const middle=[];
   middle.push([text('MIDI channel (1–16)', 'MIDI 通道（1–16）'), channel ? String(channel.channel + 1) : unknown]);
@@ -112,17 +113,20 @@ export function sourceInstrumentSummary(part,details,locale='en'){
   }
   const sourcePart=index.parts.get(part.id);if(!sourcePart)return unknown;
   const track=index.tracks.get(sourcePart.track_id),channel=index.channels.get(sourcePart.channel_id)?.channel,route=index.routes.get(sourcePart.route_id)?.source_route_index;
+  if(!Number.isInteger(route)||route<0)return unknown;
   let groups=index.names.get(sourcePart.track_id);
   if(!groups){
     groups=new Map();index.names.set(sourcePart.track_id,groups);
     for(const name of track?.names||[]){
+      // Null means this declaration's route has no channel events, not every route.
+      if(!Number.isInteger(name.source_route_index)||name.source_route_index<0)continue;
       if(name.role!=='instrument_name'||!['unscoped','declared_channel'].includes(name.channel_prefix_scope))continue;
       if(name.channel_prefix_scope==='declared_channel'&&(!Number.isInteger(name.channel_prefix)||name.channel_prefix<0||name.channel_prefix>15))continue;
-      const key=`${name.source_route_index??'*'}:${name.channel_prefix_scope==='declared_channel'?name.channel_prefix:'*'}`,group=groups.get(key);
+      const key=`${name.source_route_index}:${name.channel_prefix_scope==='declared_channel'?name.channel_prefix:'*'}`,group=groups.get(key);
       if(group)group.count++;else groups.set(key,{count:1,first:name.utf8});
     }
   }
-  const keys=new Set(['*:*']);if(Number.isInteger(channel))keys.add(`*:${channel}`);if(Number.isInteger(route)){keys.add(`${route}:*`);if(Number.isInteger(channel))keys.add(`${route}:${channel}`);}
+  const keys=new Set([`${route}:*`]);if(Number.isInteger(channel))keys.add(`${route}:${channel}`);
   let count=0,first;
   for(const key of keys){const group=groups.get(key);if(group){count+=group.count;first=group.first;}}
   if(!count)return unknown;
