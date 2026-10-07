@@ -13,7 +13,7 @@ async function fixture(){
  const score=humanModTimbreFixture().score,compiled=humanModFixtureCompilation(),server=await nativeScoreServer({scores:[score]});
  server.setRoute(({path,body})=>path==='/api/compile'&&body.id===score.id?nativeResponse(compiled):undefined);
  let wall=1000;const app=await nativeStorageApp(server,{now:()=>wall}),saved=[...server.records.keys()][0];
- await app.until(()=>Boolean(app.savedButton(saved)));await app.click('home-single-player');app.savedButton(saved).click();await app.until(()=>!app.$('configure-song-mod').disabled);await app.click('configure-song-mod');await app.click('song-mod-all-human');app.$('song-mod-unify-sound').value='guitar';app.emit(app.$('song-mod-unify-sound'),'change');await app.click('song-mod-unify-human');await app.click('song-mod-apply');await app.until(()=>!app.$('song-mod-dialog').open);app.$('count-in').checked=false;app.$('metronome-enabled').checked=false;
+ await app.until(()=>Boolean(app.savedButton(saved)));await app.click('home-single-player');app.savedButton(saved).click();await app.until(()=>!app.$('configure-song-mod').disabled);await app.click('configure-song-mod');await app.click('song-mod-all-human');assert.equal(app.$('song-mod-unify-sound'),null);await app.click('song-mod-apply');await app.until(()=>!app.$('song-mod-dialog').open);app.$('count-in').checked=false;app.$('metronome-enabled').checked=false;
  const previous=Object.getOwnPropertyDescriptor(globalThis,'__wmhReadPlaybackClock');Object.defineProperty(globalThis,'__wmhReadPlaybackClock',{configurable:true,value:()=>readPlaybackClock(app.document)});
  return{app,score,time(ms){wall=ms;app.renderAudioTo((ms-1000)/1000);app.frame();},async close(){if(previous)Object.defineProperty(globalThis,'__wmhReadPlaybackClock',previous);else delete globalThis.__wmhReadPlaybackClock;await app.close();}};
 }
@@ -90,7 +90,7 @@ test('human source and take exports close their visible panels before repeated M
    assert.deepEqual(await readHumanModExport(driver.page,()=>panelExport(app,'export-button')),f.score);
    assert.equal(app.document.querySelector('dialog[open]'),null);assert.deepEqual(readPlaybackClock(app.document),clock);
    await app.click('edit-song-mod');assert.equal(app.$('song-mod-dialog').open,true);
-   if(!repeat){app.$('song-mod-unify-sound').value='piano';app.emit(app.$('song-mod-unify-sound'),'change');await app.click('song-mod-unify-human');await app.click('song-mod-cancel');}
+   if(!repeat){await app.click('song-mod-all-machine');await app.click('song-mod-cancel');}
    else{await app.click('song-mod-apply');await app.until(()=>!app.$('song-mod-dialog').open);}
    assert.deepEqual(await readHumanModExport(driver.page,()=>panelExport(app,'export-takes')),before);
   }

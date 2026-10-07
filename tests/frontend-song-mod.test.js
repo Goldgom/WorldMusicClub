@@ -8,18 +8,23 @@ import {originalMultipartNotation} from './notation-scope-fixtures.js';
 import {beat,pitchMidi} from '../web/music.js';
 import {getAppI18n} from '../web/app-locale.js';
 import {Synth} from '../web/transport.js';
-import {SONG_MOD_STORAGE_PREFIX} from '../web/song-mod.js';
+import {SONG_MOD_STORAGE_PREFIX,SongModStore,defaultSongMod,createSongMod} from '../web/song-mod.js';
 
-async function basicFixture({storageValues=new Map()}={}){
+function seedStoredMod(storageValues,score,cleanSong,edit){
+ const context={score,cleanSong,mode:'practice',part:score.parts[0].id,practiceLayout:'complete'},base=defaultSongMod(context),config=structuredClone(base.config);edit(config);const mod=createSongMod(base,config);storageValues.set(new SongModStore().key(mod),JSON.stringify(mod));return mod;
+}
+async function basicFixture({storageValues=new Map(),legacyLive=null,legacyHumans=null}={}){
  const opened=basicKeyRenditionFixture(),descriptor=opened.clean_package,score=JSON.parse(descriptor.score_json).notation,server=await nativeScoreServer(),key=`song-${descriptor.content_sha256}`;
  const summary={version:2,content_sha256:descriptor.content_sha256,profile:descriptor.profile,capabilities:descriptor.capabilities,coverage:descriptor.coverage,notation_available:true,media:[]};
  server.records.set(key,{...opened,entry:{key,revision:1,title:score.title,composer:score.composer,score_id:score.id,label:score.title,score_bytes:Buffer.byteLength(JSON.stringify(score)),saved_at_unix_ms:1700000000000,clean_package:summary}});
  const pages=JSON.parse(readFileSync(new URL('./fixtures/basic-key-rendition-notation-page.json',import.meta.url))),third=JSON.parse(readFileSync(new URL('./fixtures/basic-key-rendition-third-part.json',import.meta.url)));
  server.setRoute(({path,body})=>path==='/api/library/basic-keys/notation'?nativeResponse(body.settings.part_id===score.parts[1].id?pages.percussion.response:body.settings.part_id===score.parts[2].id?third.response:pages.melodic.response):undefined);
- let clock=1000;const app=await nativeStorageApp(server,{now:()=>clock,storageValues});await app.until(()=>app.savedButton(key)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('configure-song-mod').disabled);await app.click('basic-key-preview-piano-88');await app.until(()=>!app.$('start-performance').disabled);return{app,score,descriptor,server,storageValues,time:ms=>{clock=ms;app.renderAudioTo((ms-1000)/1000);app.frame();}};
+ if(legacyLive)seedStoredMod(storageValues,score,{identity:descriptor.content_sha256},config=>config.parts.forEach((part,index)=>{part.liveInstrument=legacyLive[index]||'follow';if(legacyHumans)part.performer=legacyHumans.includes(index)?'human':'machine';}));
+ let clock=1000;const app=await nativeStorageApp(server,{now:()=>clock,storageValues});await app.until(()=>app.savedButton(key)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('configure-song-mod').disabled);await app.click('basic-key-preview-piano-88');await app.until(()=>!app.$('start-performance').disabled||app.$('song-mod-preview-summary').textContent.includes('Conflicting human sounds'));return{app,score,descriptor,server,storageValues,time:ms=>{clock=ms;app.renderAudioTo((ms-1000)/1000);app.frame();}};
 }
 const control=(app,kind,id)=>app.$('song-mod-parts').querySelector(`[data-mod-${kind}="${id}"]`);
 const set=(app,kind,id,value)=>{const node=control(app,kind,id);if(typeof value==='boolean')node.checked=value;else node.value=value;app.emit(node,'change');};
+const changeDormantRecipe=(app,id,value='reed')=>{set(app,'performer',id,'machine');set(app,'instrument',id,value);set(app,'performer',id,'human');};
 const source=app=>app.audioNodes.findLast(node=>node.kind==='audio-worklet'&&node.connected&&node.core.plan?.count!==undefined);
 const apply=async app=>{assert.equal(app.$('song-mod-assistance-reset-label').hidden,true,'Ordinary Original Mod uses its existing reset warning and Apply');assert.equal(app.$('song-mod-apply').disabled,false);await app.click('song-mod-apply');await app.until(()=>!app.$('song-mod-dialog').open);};
 
@@ -80,7 +85,7 @@ test('compact stage Mod keeps its complete current summary available on the real
 });
 
 test('a reopened Basic source restores saved Mod assignment rather than a first-part fallback',async()=>{
- const storageValues=new Map();let f=await basicFixture({storageValues});
+ const storageValues=new Map();let f=await basicFixture({storageValues,legacyLive:['guitar']});
  try{await f.app.click('configure-song-mod');await f.app.click('song-mod-all-machine');set(f.app,'mute',f.score.parts[1].id,true);await apply(f.app);}finally{await f.app.close();}
  f=await basicFixture({storageValues});try{await f.app.click('configure-song-mod');assert.ok(f.score.parts.every(part=>control(f.app,'performer',part.id).value==='machine'));assert.equal(control(f.app,'mute',f.score.parts[1].id).checked,true);await f.app.click('song-mod-cancel');await f.app.click('start-performance');await f.app.until(()=>f.app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(f.app.$('session-mode').value,'listen');assert.equal(source(f.app).core.plan.count,4);}finally{await f.app.close();}
 });
@@ -119,7 +124,7 @@ test('derived canonical tempo revision keeps its Mod through library reentry and
 
 test('stage Apply prepares targets before atomically committing and closing its cancellable draft',async()=>{
  const score=originalMultipartNotation({partCount:2,measures:4}),server=await nativeScoreServer({scores:[score]}),app=await nativeStorageApp(server,{now:()=>1000});let release,gate=false;
- try{const key=[...server.records.keys()][0];await app.until(()=>app.savedButton(key)&&!app.$('start-performance').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('start-performance').disabled);await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');await app.click('edit-song-mod');await app.click('song-mod-all-human');set(app,'live-instrument',score.parts[0].id,'guitar');set(app,'live-instrument',score.parts[1].id,'guitar');
+ try{const key=[...server.records.keys()][0];await app.until(()=>app.savedButton(key)&&!app.$('start-performance').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('start-performance').disabled);await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');await app.click('edit-song-mod');await app.click('song-mod-all-human');changeDormantRecipe(app,score.parts[0].id);
   server.setRoute(({path,defaultReply})=>gate&&path==='/api/practice-targets'?new Promise(resolve=>{release=()=>resolve(defaultReply());}):undefined);gate=true;assert.equal(app.$('song-mod-assistance-reset-label').hidden,true);assert.equal(app.$('song-mod-apply').disabled,false);app.$('song-mod-apply').click();await app.until(()=>Boolean(release));assert.equal(app.$('song-mod-dialog').open,true,'Cancel remains available throughout asynchronous preparation');assert.equal(app.$('session-mode').value,'practice');assert.equal((await app.exported('export-takes')).passes.length,1);release();gate=false;await app.until(()=>!app.$('song-mod-dialog').open);await app.until(()=>!app.$('play-button').disabled);assert.equal((await app.exported('export-takes')).passes.length,0);
  }finally{release?.();await app.close();}
 });
@@ -231,36 +236,37 @@ const liveCore=app=>app.audioNodes.findLast(node=>node.kind==='live-audio-workle
 const manualPlays=app=>app.plays.filter(args=>String(args[0]).startsWith('manual:'));
 
 test('human Mod sound reaches one actual live worklet voice; Cancel, Apply and navigation clean held and pending input while free sound stays unchanged',async()=>{
- const f=await basicFixture(),{app,score}=f,part=score.parts[0].id;
+ const f=await basicFixture({legacyLive:['guitar']}),{app,score}=f,part=score.parts[0].id;
  try{
-  await app.click('configure-song-mod');set(app,'live-instrument',part,'guitar');await apply(app);
+  await app.click('configure-song-mod');assert.equal(control(app,'live-instrument',part),null);await apply(app);
   await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');f.time(1120);
   const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:91,button:0});await app.tick();f.time(1160);
   assert.equal(manualPlays(app).at(-1)[4],'guitar');assert.equal(liveCore(app).activeNotes,1);assert.equal(liveCore(app).notes.find(note=>note.occupied).guitar,true);assert.ok(liveCore(app).pcmEnergy>0);assert.equal((await app.exported('export-takes')).passes[0].inputs.length,1);
-  await app.click('edit-song-mod');assert.equal(liveCore(app).activeNotes,0);set(app,'live-instrument',part,'piano');assert.match(app.$('song-mod-warning').textContent,/restarts this session/);await app.click('song-mod-cancel');
+  await app.click('edit-song-mod');assert.equal(liveCore(app).activeNotes,0);await app.click('song-mod-restore');assert.match(app.$('song-mod-warning').textContent,/restarts this session/);await app.click('song-mod-cancel');
   assert.equal((await app.exported('export-takes')).song_mod.config.parts[0].liveInstrument,'guitar');assert.equal((await app.exported('export-takes')).passes[0].inputs.length,1);
-  await app.click('edit-song-mod');set(app,'live-instrument',part,'piano');await apply(app);assert.equal((await app.exported('export-takes')).passes.length,0);
+  await app.click('edit-song-mod');await app.click('song-mod-restore');await apply(app);assert.equal((await app.exported('export-takes')).passes.length,0);
   await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');f.time(1220);app.emit(key,'pointerdown',{pointerId:92,button:0});await app.tick();f.time(1250);
   assert.equal(manualPlays(app).at(-1)[4],'piano');assert.equal(liveCore(app).notes.find(note=>note.occupied).guitar,false);
-  await app.click('edit-song-mod');set(app,'live-instrument',part,'guitar');await apply(app);await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');f.time(1320);
+  await app.click('edit-song-mod');changeDormantRecipe(app,part);await apply(app);await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');f.time(1320);
   let release;app.setUnlock(()=>new Promise(resolve=>{release=resolve;}));const before=manualPlays(app).length;app.emit(key,'pointerdown',{pointerId:93,button:0});await app.until(()=>Boolean(release));await app.click('edit-song-mod');await app.click('song-mod-cancel');release();await app.tick();assert.equal(manualPlays(app).length,before);assert.equal(liveCore(app).activeNotes,0);app.setUnlock(null);
-  app.emit(key,'pointerdown',{pointerId:94,button:0});await app.tick();assert.equal(manualPlays(app).at(-1)[4],'guitar');await app.click('back-to-library');assert.equal(liveCore(app).activeNotes,0);
+  app.emit(key,'pointerdown',{pointerId:94,button:0});await app.tick();assert.equal(manualPlays(app).at(-1)[4],'piano');await app.click('back-to-library');assert.equal(liveCore(app).activeNotes,0);
   await app.click('start-free-practice');app.emit(app.$('free-practice-title'),'keydown',{code:'KeyA',key:'a',repeat:false});await app.tick();assert.equal(manualPlays(app).at(-1)[4],'piano','Free practice retains its shared performance preference');app.emit(app.$('free-practice-title'),'keyup',{code:'KeyA',key:'a'});
   assert.equal(app.audioNodes.filter(node=>node.kind==='oscillator').length,0,'No main-thread oscillator fallback');
  }finally{await app.close();}
 });
 
-test('conflicts name all human parts, block Apply and Start, and Unify explicitly names its destination and affected group in both locales',async()=>{
- const f=await basicFixture(),{app,score,storageValues}=f,[first,second,third]=score.parts,i18n=getAppI18n(app.document);
+test('legacy conflicts offer only explicit reset to the performance instrument',async()=>{
+ const f=await basicFixture({legacyLive:['piano','guitar','follow'],legacyHumans:[0,1]}),{app,score,storageValues}=f,[first,second,third]=score.parts,i18n=getAppI18n(app.document),saved=[...storageValues];
  try{
-  await app.click('configure-song-mod');set(app,'performer',second.id,'human');set(app,'live-instrument',first.id,'piano');set(app,'live-instrument',second.id,'guitar');
-  for(const locale of ['zh-CN','en']){i18n.setLocale(locale);assert.equal(app.$('song-mod-apply').disabled,true);assert.equal(app.$('song-mod-input-routing').dataset.liveSoundStatus,'conflict');for(const part of [first,second])assert.ok(app.$('song-mod-input-routing').textContent.includes(part.name));}
-  await app.click('song-mod-apply');assert.equal([...storageValues.keys()].filter(key=>key.startsWith(SONG_MOD_STORAGE_PREFIX)).length,0);assert.equal(app.$('song-mod-dialog').open,true);
-  app.$('song-mod-unify-sound').value='guitar';app.emit(app.$('song-mod-unify-sound'),'change');assert.match(app.$('song-mod-unify-description').textContent,/Guitar-style basic synthesis/);for(const part of [first,second])assert.ok(app.$('song-mod-unify-description').textContent.includes(part.name));assert.ok(!app.$('song-mod-unify-description').textContent.includes(third.name));
-  await app.click('song-mod-unify-human');assert.equal(control(app,'live-instrument',first.id).value,'guitar');assert.equal(control(app,'live-instrument',second.id).value,'guitar');assert.equal(control(app,'live-instrument',third.id).value,'follow');assert.equal(app.$('song-mod-apply').disabled,false);
-  set(app,'live-instrument',first.id,'piano');set(app,'live-instrument',second.id,'follow');await apply(app);assert.equal(app.$('start-performance').disabled,false);
-  app.$('instrument').value='guitar';app.emit(app.$('instrument'),'change');await app.until(()=>app.$('song-mod-preview-summary').textContent.includes('Conflicting human sounds'));assert.equal(app.$('start-performance').disabled,true);assert.equal(app.audioNodes.filter(node=>node.kind==='audio-worklet'&&node.connected).length,0);
-  await app.click('configure-song-mod');assert.equal(control(app,'live-instrument',first.id).value,'piano');assert.equal(control(app,'live-instrument',second.id).value,'follow');assert.equal(app.$('song-mod-apply').disabled,true);await app.click('song-mod-unify-human');await apply(app);await app.until(()=>!app.$('start-performance').disabled);
+  assert.equal(app.$('start-performance').disabled,true);await app.click('configure-song-mod');
+  assert.equal(app.$('song-mod-unify-sound'),null);
+  for(const part of score.parts)assert.equal(control(app,'live-instrument',part.id),null);
+  for(const locale of ['zh-CN','en']){i18n.setLocale(locale);assert.equal(app.$('song-mod-apply').disabled,true);assert.equal(app.$('song-mod-input-routing').dataset.liveSoundStatus,'conflict');assert.match(app.$('song-mod-input-routing').textContent,locale==='en'?/Saved human-sound overrides conflict/:/旧真人音色覆盖存在冲突/);}
+  await app.click('song-mod-apply');assert.deepEqual([...storageValues],saved);assert.equal(app.$('song-mod-dialog').open,true);
+  assert.equal(app.$('song-mod-unify-row').hidden,false);await app.click('song-mod-unify-human');assert.equal(app.$('song-mod-apply').disabled,false);await app.click('song-mod-cancel');assert.deepEqual([...storageValues],saved);assert.equal(app.$('start-performance').disabled,true);
+  await app.click('configure-song-mod');await app.click('song-mod-unify-human');await apply(app);await app.until(()=>!app.$('start-performance').disabled);
+  const mod=JSON.parse([...storageValues].find(([key])=>key.startsWith(SONG_MOD_STORAGE_PREFIX))[1]);assert.deepEqual(mod.config.parts.map(part=>part.liveInstrument),['follow','follow','follow']);assert.equal(mod.config.parts.find(part=>part.partId===third.id).performer,'machine');
+  await app.click('configure-song-mod');assert.equal(app.$('song-mod-unify-row').hidden,true);await app.click('song-mod-cancel');
  }finally{await app.close();}
 });
 
@@ -272,26 +278,26 @@ test('human same-key owners keep one scored event and one live voice through the
  server.setRoute(({path,body})=>{if(path!=='/api/practice-targets'||body.timeline.notes.length!==2||!body.timeline.notes.every(note=>note.id.startsWith('shared-note-')))return;const [one,two]=body.timeline.notes,target={...one,source_note_ids:[one.id,two.id]};return nativeResponse({timeline:{...body.timeline,notes:[target]},groups:[{target_id:one.id,source_occurrence_ids:[one.id,two.id],source_note_ids:[one.id,two.id],part_ids:score.parts.map(part=>part.id)}],diagnostics:[],source_note_count:2,target_count:1,playable:true});});
  let clock=1000;const app=await nativeStorageApp(server,{now:()=>clock});
  try{
-  const key=[...server.records.keys()][0];await app.until(()=>app.savedButton(key)&&!app.$('start-performance').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('configure-song-mod').disabled);await app.click('configure-song-mod');await app.click('song-mod-all-human');app.$('song-mod-unify-sound').value='guitar';app.emit(app.$('song-mod-unify-sound'),'change');await app.click('song-mod-unify-human');await apply(app);app.$('count-in').checked=false;await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');
+  const key=[...server.records.keys()][0];await app.until(()=>app.savedButton(key)&&!app.$('start-performance').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('configure-song-mod').disabled);await app.click('configure-song-mod');await app.click('song-mod-all-human');assert.equal(app.$('song-mod-unify-sound'),null);await apply(app);app.$('count-in').checked=false;await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');
   clock=1120;app.renderAudioTo(.12);app.frame();const keyNode=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(keyNode,'pointerdown',{pointerId:95,button:0});await app.tick();clock=1150;app.renderAudioTo(.15);app.frame();
-  assert.equal(liveCore(app).activeNotes,1);assert.equal(liveCore(app).started,1);assert.equal(manualPlays(app).length,1);assert.equal(manualPlays(app)[0][4],'guitar');assert.equal(source(app).core.plan.count,0);
+  assert.equal(liveCore(app).activeNotes,1);assert.equal(liveCore(app).started,1);assert.equal(manualPlays(app).length,1);assert.equal(manualPlays(app)[0][4],'piano');assert.equal(source(app).core.plan.count,0);
   const take=await app.exported('export-takes');assert.equal(take.passes[0].inputs.length,1);assert.equal(take.target_plan.target_count,1);assert.deepEqual(take.target_plan.groups[0].part_ids,score.parts.map(part=>part.id));
   await app.click('reset-button');assert.equal(liveCore(app).activeNotes,0);assert.equal((await app.exported('export-takes')).passes.length,0);
  }finally{await app.close();}
 });
 
 test('human live preference and dormant machine recipe reopen unchanged after application restart',async()=>{
- const storageValues=new Map();let f=await basicFixture({storageValues});
- try{const part=f.score.parts[0].id;await f.app.click('configure-song-mod');set(f.app,'performer',part,'machine');set(f.app,'instrument',part,'reed');set(f.app,'performer',part,'human');set(f.app,'live-instrument',part,'guitar');await apply(f.app);}finally{await f.app.close();}
+ const storageValues=new Map();let f=await basicFixture({storageValues,legacyLive:['guitar']});
+ try{const part=f.score.parts[0].id;await f.app.click('configure-song-mod');set(f.app,'performer',part,'machine');set(f.app,'instrument',part,'reed');set(f.app,'performer',part,'human');assert.equal(control(f.app,'live-instrument',part),null);await apply(f.app);}finally{await f.app.close();}
  f=await basicFixture({storageValues});
- try{const part=f.score.parts[0].id;await f.app.click('configure-song-mod');assert.equal(control(f.app,'live-instrument',part).value,'guitar');assert.equal(control(f.app,'instrument',part).value,'reed');assert.equal(control(f.app,'live-instrument',part).disabled,false);set(f.app,'performer',part,'machine');assert.equal(control(f.app,'live-instrument',part).value,'guitar');assert.equal(control(f.app,'live-instrument',part).disabled,true);assert.equal(control(f.app,'instrument',part).value,'reed');await f.app.click('song-mod-cancel');await f.app.click('start-performance');await f.app.until(()=>f.app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal((await f.app.exported('export-takes')).song_mod.config.parts[0].liveInstrument,'guitar');}finally{await f.app.close();}
+ try{const part=f.score.parts[0].id;await f.app.click('configure-song-mod');assert.equal(control(f.app,'live-instrument',part),null);assert.equal(control(f.app,'instrument',part).value,'reed');set(f.app,'performer',part,'machine');assert.equal(control(f.app,'live-instrument',part),null);assert.equal(control(f.app,'instrument',part).value,'reed');await f.app.click('song-mod-cancel');await f.app.click('start-performance');await f.app.until(()=>f.app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal((await f.app.exported('export-takes')).song_mod.config.parts[0].liveInstrument,'guitar');}finally{await f.app.close();}
 });
 
 test('changing the performance instrument during pending stage Apply rejects its captured sound policy without saving',async()=>{
  const f=await basicFixture(),{app,server,score,storageValues}=f;let release,delayNext=false;
  server.setRoute(({path,defaultReply})=>{if(delayNext&&path==='/api/practice-targets'){delayNext=false;return new Promise(resolve=>{release=()=>resolve(defaultReply());});}});
  try{
-  await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');await app.click('edit-song-mod');set(app,'live-instrument',score.parts[0].id,'guitar');assert.equal(app.$('song-mod-assistance-reset-label').hidden,true);assert.equal(app.$('song-mod-apply').disabled,false);delayNext=true;app.$('song-mod-apply').click();await app.until(()=>Boolean(release));
+  await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');await app.click('edit-song-mod');changeDormantRecipe(app,score.parts[0].id);assert.equal(app.$('song-mod-assistance-reset-label').hidden,true);assert.equal(app.$('song-mod-apply').disabled,false);delayNext=true;app.$('song-mod-apply').click();await app.until(()=>Boolean(release));
   const saved=[...storageValues].filter(([key])=>key.startsWith(SONG_MOD_STORAGE_PREFIX));app.$('instrument').value='guitar';app.emit(app.$('instrument'),'change');release();await app.until(()=>!app.$('song-mod-dialog').open);assert.deepEqual([...storageValues].filter(([key])=>key.startsWith(SONG_MOD_STORAGE_PREFIX)),saved);
   assert.equal((await app.exported('export-takes')).song_mod.config.parts[0].liveInstrument,'follow');assert.equal(liveCore(app).activeNotes,0);
  }finally{release?.();await app.close();}
@@ -304,7 +310,7 @@ test('a canceled key awaiting live worklet preparation cannot play or surface a 
   await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');f.time(1120);
   Synth.prototype.prepareLiveAudio=async function(...args){const receiver=await originalPrepare.apply(this,args);await new Promise(resolve=>{release=resolve;});return receiver;};
   const key=app.document.querySelector('#keyboard [data-midi="60"]'),before=manualPlays(app).length;app.emit(key,'pointerdown',{pointerId:96,button:0});await app.until(()=>Boolean(release));
-  await app.click('edit-song-mod');set(app,'live-instrument',score.parts[0].id,'guitar');await apply(app);release();await app.tick();
+  await app.click('edit-song-mod');changeDormantRecipe(app,score.parts[0].id);await apply(app);release();await app.tick();
   assert.equal(manualPlays(app).length,before);assert.equal(liveCore(app).activeNotes,0);assert.doesNotMatch(app.$('notice').textContent,/no longer matches/);
  }finally{Synth.prototype.prepareLiveAudio=originalPrepare;release?.();await app.close();}
 });
@@ -319,7 +325,7 @@ async function proceduralModFixture({audioWorklet=true}={}){
 test('procedural source human Mod is blocked before Apply or Start without live worklet support; source-only Listen and silent practice remain usable',async()=>{
  const {app,score,storageValues,time}=await proceduralModFixture({audioWorklet:false});
  try{
-  assert.equal(app.$('start-performance').disabled,true);assert.match(app.$('song-mod-preview-summary').textContent,/audio thread|AudioWorklet/i);await app.click('configure-song-mod');set(app,'live-instrument',score.parts[0].id,'guitar');assert.equal(app.$('song-mod-apply').disabled,true);assert.match(app.$('song-mod-input-routing').textContent,/requires AudioWorklet/);await app.click('song-mod-apply');assert.equal(app.$('song-mod-dialog').open,true);assert.equal([...storageValues.keys()].some(key=>key.startsWith(SONG_MOD_STORAGE_PREFIX)),false);await app.click('song-mod-cancel');
+  assert.equal(app.$('start-performance').disabled,true);assert.match(app.$('song-mod-preview-summary').textContent,/audio thread|AudioWorklet/i);await app.click('configure-song-mod');assert.equal(control(app,'live-instrument',score.parts[0].id),null);assert.equal(app.$('song-mod-apply').disabled,true);assert.match(app.$('song-mod-input-routing').textContent,/requires AudioWorklet/);await app.click('song-mod-apply');assert.equal(app.$('song-mod-dialog').open,true);assert.equal([...storageValues.keys()].some(key=>key.startsWith(SONG_MOD_STORAGE_PREFIX)),false);await app.click('song-mod-cancel');
   await app.click('start-performance');assert.equal(app.document.body.dataset.screen,'library');assert.equal(app.audio().contexts,0);assert.equal((await app.exported('export-takes')).passes.length,0);assert.equal(manualPlays(app).length,0);
   await app.click('configure-song-mod');await app.click('song-mod-all-machine');assert.equal(app.$('song-mod-apply').disabled,false);await apply(app);assert.equal(app.$('start-performance').disabled,false);await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing','Procedural Listen should run');assert.equal((await app.exported('export-takes')).passes.length,0);assert.equal(app.audioNodes.some(node=>node.kind==='live-audio-worklet'),false);
   await app.click('sound-button');await app.click('edit-song-mod');await app.click('song-mod-all-human');await apply(app);await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing','Explicit silent practice should run');time(1120);const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:97,button:0});await app.tick();assert.equal((await app.exported('export-takes')).passes[0].inputs.length,1);assert.equal(manualPlays(app).length,0,'Explicit silent practice does not construct a live voice');
@@ -329,7 +335,7 @@ test('procedural source human Mod is blocked before Apply or Start without live 
 test('procedural source awaits live worklet readiness before starting a human take and fails without a partial onset',async()=>{
  const {app,score}=await proceduralModFixture();let rejectModule;
  try{
-  await app.click('configure-song-mod');set(app,'live-instrument',score.parts[0].id,'guitar');await apply(app);app.setAudioModule(()=>new Promise((resolve,reject)=>{rejectModule=reject;}));app.$('start-performance').click();await app.until(()=>Boolean(rejectModule));
+  await app.click('configure-song-mod');assert.equal(control(app,'live-instrument',score.parts[0].id),null);await apply(app);app.setAudioModule(()=>new Promise((resolve,reject)=>{rejectModule=reject;}));app.$('start-performance').click();await app.until(()=>Boolean(rejectModule));
   assert.equal((await app.exported('export-takes')).passes.length,0);assert.equal(app.$('progress').getAttribute('data-playback-clock')&&JSON.parse(app.$('progress').getAttribute('data-playback-clock')).running,false);assert.equal(manualPlays(app).length,0);
   rejectModule(Error('Original test: live worklet unavailable'));await app.until(()=>app.$('notice').textContent.includes('Original test: live worklet unavailable'));assert.equal((await app.exported('export-takes')).passes.length,0);assert.equal(manualPlays(app).length,0);assert.equal(app.audioNodes.filter(node=>node.kind==='oscillator').length,0);
   app.setAudioModule(null);await app.click('edit-song-mod');await app.click('song-mod-all-machine');await apply(app);await app.until(()=>!app.$('play-button').disabled);await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.ok(app.audioNodes.some(node=>node.kind==='oscillator'&&!node.disconnected),'Existing procedural machine source can recover independently');assert.equal((await app.exported('export-takes')).passes.length,0);
@@ -338,9 +344,9 @@ test('procedural source awaits live worklet readiness before starting a human ta
  }finally{rejectModule?.(Error('Test cleanup'));await app.close();}
 });
 
-test('procedural accompaniment admits human live guitar on its existing worklet before recording',async()=>{
+test('procedural accompaniment admits the human performance instrument on its existing worklet before recording',async()=>{
  const {app,score,time}=await proceduralModFixture();
- try{await app.click('configure-song-mod');set(app,'live-instrument',score.parts[0].id,'guitar');await apply(app);await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(liveCore(app).state,'ready');time(1120);const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:98,button:0});await app.tick();time(1160);assert.equal(manualPlays(app).length,1);assert.equal(manualPlays(app)[0][4],'guitar');assert.equal(liveCore(app).activeNotes,1);assert.ok(liveCore(app).pcmEnergy>0);assert.equal((await app.exported('export-takes')).passes[0].inputs.length,1);}finally{await app.close();}
+ try{await app.click('configure-song-mod');assert.equal(control(app,'live-instrument',score.parts[0].id),null);await apply(app);await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(liveCore(app).state,'ready');time(1120);const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:98,button:0});await app.tick();time(1160);assert.equal(manualPlays(app).length,1);assert.equal(manualPlays(app)[0][4],'piano');assert.equal(liveCore(app).activeNotes,1);assert.ok(liveCore(app).pcmEnergy>0);assert.equal((await app.exported('export-takes')).passes[0].inputs.length,1);}finally{await app.close();}
 });
 
 test('a newer loop request fences both pending Mod admissions before targets, sound or takes can commit',async()=>{
@@ -353,7 +359,7 @@ test('a newer loop request fences both pending Mod admissions before targets, so
   const key=[...server.records.keys()][0];await app.until(()=>app.savedButton(key)&&!app.$('start-performance').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('start-performance').disabled);app.$('count-in').checked=false;await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');await app.click('play-button');
   app.$('loop-to').value='1';await app.click('loop-apply');await app.until(()=>app.$('loop-enabled').checked&&!app.$('play-button').disabled);await app.click('play-button');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');await app.click('play-button');
   const before=await app.exported('export-takes'),stored=[...storageValues];assert.equal(before.passes.length,1);
-  await app.click('edit-song-mod');set(app,'live-instrument',score.parts[0].id,'guitar');set(app,'live-instrument',score.parts[1].id,'guitar');hold=true;await app.click('song-mod-apply');await app.until(()=>Boolean(releaseMod));
+  await app.click('edit-song-mod');changeDormantRecipe(app,score.parts[0].id);hold=true;await app.click('song-mod-apply');await app.until(()=>Boolean(releaseMod));
   // Adversarial DOM delivery while Mod is waiting: loop request identity changes
   // before its source range is published or the recorder generation advances.
   app.$('loop-to').value='2';await app.click('loop-apply');await app.until(()=>Boolean(releaseLoop));releaseMod();await app.until(()=>!app.$('song-mod-dialog').open);
