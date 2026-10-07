@@ -100,3 +100,36 @@ export function renderSourceInstrumentDetails(options) {
     jump.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();go();}});button(controls,text('Go to page','转到此页'),false,go);
   }
 }
+
+const summaryIndexes=new WeakMap();
+/** Source-declared names are not an acoustic identity or an eligibility decision. */
+export function sourceInstrumentSummary(part,details,locale='en'){
+  const text=(en,zh)=>locale==='en'?en:zh,unknown=text('Original instrument: not identified · Source details','原始乐器：未识别 · 源文件详情');
+  if(!details)return unknown;
+  let index=summaryIndexes.get(details);
+  if(!index){
+    index={parts:new Map((details.parts||[]).map(value=>[value.part_id,value])),tracks:new Map((details.tracks||[]).map(value=>[value.id,value])),channels:new Map((details.channels||[]).map(value=>[value.id,value])),routes:new Map((details.routes||[]).map(value=>[value.id,value])),names:new Map()};summaryIndexes.set(details,index);
+  }
+  const sourcePart=index.parts.get(part.id);if(!sourcePart)return unknown;
+  const track=index.tracks.get(sourcePart.track_id),channel=index.channels.get(sourcePart.channel_id)?.channel,route=index.routes.get(sourcePart.route_id)?.source_route_index;
+  let groups=index.names.get(sourcePart.track_id);
+  if(!groups){
+    groups=new Map();index.names.set(sourcePart.track_id,groups);
+    for(const name of track?.names||[]){
+      if(name.role!=='instrument_name'||!['unscoped','declared_channel'].includes(name.channel_prefix_scope))continue;
+      if(name.channel_prefix_scope==='declared_channel'&&(!Number.isInteger(name.channel_prefix)||name.channel_prefix<0||name.channel_prefix>15))continue;
+      const key=`${name.source_route_index??'*'}:${name.channel_prefix_scope==='declared_channel'?name.channel_prefix:'*'}`,group=groups.get(key);
+      if(group)group.count++;else groups.set(key,{count:1,first:name.utf8});
+    }
+  }
+  const keys=new Set(['*:*']);if(Number.isInteger(channel))keys.add(`*:${channel}`);if(Number.isInteger(route)){keys.add(`${route}:*`);if(Number.isInteger(channel))keys.add(`${route}:${channel}`);}
+  let count=0,first;
+  for(const key of keys){const group=groups.get(key);if(group){count+=group.count;first=group.first;}}
+  if(!count)return unknown;
+  const label=text('Instrument name in file','文件中的乐器名称'),suffix=text(' · Source details',' · 源文件详情');
+  if(count>1)return label+text(`: ${count} declarations`, `：${count} 条声明`)+suffix;
+  if(typeof first!=='string')return label+text(': name encoding unknown','：名称编码未知')+suffix;
+  // A summary has a strict text budget; full source text remains paginated below.
+  const limit=100,end=first.length>limit&&/[\uD800-\uDBFF]/.test(first[limit-1])&&/[\uDC00-\uDFFF]/.test(first[limit])?limit-1:limit;
+  return label+text(': ','：')+first.slice(0,end)+(first.length>end?text('… (continued in details)','…（详见详情）'):'')+suffix;
+}

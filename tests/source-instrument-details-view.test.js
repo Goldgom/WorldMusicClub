@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseHTML} from 'linkedom';
-import {sourceInstrumentDetailRows,sourceInstrumentDetailPage,renderSourceInstrumentDetails,SOURCE_DETAIL_PAGE_SIZE,SOURCE_DETAIL_TEXT_PAGE_SIZE} from '../web/source-instrument-details-view.js';
+import {sourceInstrumentDetailRows,sourceInstrumentDetailPage,sourceInstrumentSummary,renderSourceInstrumentDetails,SOURCE_DETAIL_PAGE_SIZE,SOURCE_DETAIL_TEXT_PAGE_SIZE} from '../web/source-instrument-details-view.js';
 import {setupSongModView} from '../web/song-mod-view.js';
 import {createSongMod} from '../web/song-mod.js';
 
@@ -83,4 +83,24 @@ test('large evidence is lazy and paginated with truthful totals, bounded text, a
  find('Next text').click();assert.match(body.textContent,/Text positions 501–/);assert.ok(body.querySelectorAll('dt').length<=SOURCE_DETAIL_PAGE_SIZE+1);
  const jump=body.querySelector('.song-mod-detail-pages input');jump.value='5001';jump.dispatchEvent(Object.assign(new f.window.Event('keydown'),{key:'Enter'}));assert.match(body.textContent,/Details 100001–100011 of 100011/);assert.equal(find('Next details').disabled,true);assert.ok(body.querySelectorAll('dt').length<=SOURCE_DETAIL_PAGE_SIZE+1);
  assert.equal(data.tracks[0].names.length,50000);assert.equal(data.parts[0].selection_summary.observed_selections.length,50000);
+});
+
+
+test('collapsed summary uses only applicable bounded instrument-name declarations, never an inferred instrument',()=>{
+ const summarize=(names,locale='en')=>{const data=evidence();data.tracks[0].names=names;return sourceInstrumentSummary({id:'p1'},data,locale);};
+ const name=(utf8,scope='unscoped',channel_prefix=null)=>({role:'instrument_name',utf8,channel_prefix_scope:scope,channel_prefix});
+ assert.match(summarize([name('Violin')]),/^Instrument name in file: Violin/);
+ assert.match(summarize([name('Violin','declared_channel',0)],'zh-CN'),/^文件中的乐器名称：Violin/);
+ assert.match(summarize([name('Other channel','declared_channel',1)]),/not identified/);
+ assert.match(summarize([name('Invalid','invalid_declaration',0)]),/not identified/);
+ assert.match(summarize([name('Bad channel','declared_channel',19)]),/not identified/);
+ assert.match(summarize([name('Unknown encoding','declared_channel',null)]),/not identified/);
+ assert.match(summarize([name('Violin'),name('Flute','declared_channel',0)]),/2 declarations/);
+ assert.doesNotMatch(summarize([name('Violin'),name('Flute','declared_channel',0)]),/Violin|Flute/);
+ assert.match(summarize([{...name('Wrong route'),source_route_index:99}]),/not identified/);
+ assert.match(summarize([name(null)]),/name encoding unknown/);
+ const long='<img src=x onerror=alert(1)>'+ '🎻'.repeat(100000),summary=summarize([name(long)]);
+ assert.ok(summary.length<190);assert.match(summary,/continued in details/);assert.doesNotMatch(summary,/\uFFFD/);
+ const f=fixture(),data=evidence();data.tracks[0].names=[name(long)];f.update({sourceInstrumentDetails:data,sourceInstrumentDetailsStatus:'ready'});
+ const disclosure=f.document.querySelector('[data-source-details="p1"]');assert.equal(disclosure.querySelector('img'),null);assert.match(disclosure.querySelector('summary').textContent,/<img src=x/);assert.equal(disclosure.querySelector('dl').children.length,0);
 });

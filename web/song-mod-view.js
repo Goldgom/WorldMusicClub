@@ -1,4 +1,4 @@
-import {renderSourceInstrumentDetails} from './source-instrument-details-view.js';
+import {renderSourceInstrumentDetails,sourceInstrumentSummary} from './source-instrument-details-view.js';
 import {createSongMod,songModChanges,songModOptions,SONG_MOD_INSTRUMENTS} from './song-mod.js';
 import {createPartInstrumentPolicy,partInstrumentPolicyIssue} from './part-instrument-policy.js';
 import {setupPracticeAssistanceView,assistanceSummary} from './practice-assistance-view.js';
@@ -58,7 +58,7 @@ export function setupSongModView({document,i18n,getContext,onOpen=()=>{},onApply
     for(const [id,row]of rows){
       row.root.dataset.liveInstrument=row.liveInstrument;
       row.name.textContent=text(`Part ${row.index+1} · ${row.part.name}`,`声部 ${row.index+1} · ${row.part.name}`);
-      row.detailsSummary.textContent=text('Original instrument: not identified · Source details','原始乐器：未识别 · 源文件详情');
+      row.detailsSummary.textContent=sourceInstrumentSummary(row.part,context.sourceInstrumentDetails,i18n.locale);
       if(row.details.open)renderSourceInstrumentDetails({document,root:row.detailsBody,part:row.part,details:context.sourceInstrumentDetails,locale:i18n.locale,status:context.sourceInstrumentDetailsStatus,error:context.sourceInstrumentDetailsError});else row.detailsBody.replaceChildren();
       row.actorLabel.textContent=text('Performer','演奏者');row.actor.options[0].textContent=text('Human','真人');row.actor.options[1].textContent=text('Machine','机器');row.instrumentLabel.textContent=text('Machine sound','机器音色');
       for(const option of row.instrument.options)option.textContent=synthesisName(option.value);
