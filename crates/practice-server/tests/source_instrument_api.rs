@@ -1,5 +1,9 @@
 use practice_server::{api_response, content_type_allowed, is_song_api_route, MAX_REQUEST_BYTES};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+fn request_hash(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
 const CANONICAL: &str = "/api/source-instrument-details/canonical";
 const BASIC: &str = "/api/source-instrument-details/basic";
 
@@ -27,7 +31,7 @@ fn wrappers_are_exact_core_evidence_without_runtime_or_assignment() {
     let result = value(CANONICAL, original.clone(), 200);
     assert_eq!(
         result,
-        json!({"details":score_core::source_instrument::describe_canonical_midi(&score).unwrap()})
+        json!({"request_sha256":request_hash(&original),"details":score_core::source_instrument::describe_canonical_midi(&score).unwrap()})
     );
     assert_eq!(result["details"]["instrument_namespace"], "unknown");
     assert_eq!(
@@ -43,7 +47,7 @@ fn wrappers_are_exact_core_evidence_without_runtime_or_assignment() {
     );
     assert_eq!(
         result,
-        json!({"details":score_core::source_instrument::describe_basic(&basic).unwrap()})
+        json!({"request_sha256":request_hash(&score_core::basic_keys::encode_json(&basic).unwrap()),"details":score_core::source_instrument::describe_basic(&basic).unwrap()})
     );
     assert_eq!(
         result["details"]["original_bytes_verification"],
@@ -96,4 +100,51 @@ fn invalid_unsupported_and_budgets_fail_explicitly_without_partial_details() {
         value(CANONICAL, serde_json::to_vec(&score).unwrap(), 400)["code"],
         "source_instrument_invalid_request"
     );
+}
+
+#[test]
+fn request_digest_distinguishes_exact_transport_bytes_from_source_binding() {
+    let score = score_core::import_midi(&midi()).unwrap().0;
+    let basic = score_core::basic_keys::convert_midi(&midi(), "Mechanical source").unwrap();
+    for (path, bytes) in [
+        (CANONICAL, serde_json::to_vec(&score).unwrap()),
+        (BASIC, score_core::basic_keys::encode_json(&basic).unwrap()),
+    ] {
+        let first = value(path, bytes.clone(), 200);
+        let mut padded = bytes.clone();
+        padded.extend_from_slice(b" \n\t");
+        let second = value(path, padded.clone(), 200);
+        assert_eq!(first["details"], second["details"]);
+        assert_eq!(first["request_sha256"], request_hash(&bytes));
+        assert_eq!(second["request_sha256"], request_hash(&padded));
+        assert_ne!(first["request_sha256"], second["request_sha256"]);
+        // A response for semantically identical JSON with different whitespace
+        // must still fail a caller's exact-request transport comparison.
+        assert_ne!(second["request_sha256"], request_hash(&bytes));
+    }
+}
+
+#[test]
+fn same_part_ids_do_not_allow_a_response_for_another_source() {
+    let first_score = score_core::import_midi(&midi()).unwrap().0;
+    let mut other_midi = midi();
+    other_midi[24] = 73; // Different declared program, same notes and part IDs.
+    let second_score = score_core::import_midi(&other_midi).unwrap().0;
+    assert_eq!(first_score.parts[0].id, second_score.parts[0].id);
+    let first_bytes = serde_json::to_vec(&first_score).unwrap();
+    let second_bytes = serde_json::to_vec(&second_score).unwrap();
+    let first = value(CANONICAL, first_bytes.clone(), 200);
+    let second = value(CANONICAL, second_bytes.clone(), 200);
+    assert_ne!(
+        first["details"]["source_binding"],
+        second["details"]["source_binding"]
+    );
+    assert_eq!(first["request_sha256"], request_hash(&first_bytes));
+    assert_eq!(second["request_sha256"], request_hash(&second_bytes));
+    assert_ne!(second["request_sha256"], request_hash(&first_bytes));
+    let mut injected = serde_json::to_value(first_score).unwrap();
+    injected["request_sha256"] = first["request_sha256"].clone();
+    let rejected = value(CANONICAL, serde_json::to_vec(&injected).unwrap(), 400);
+    assert!(rejected.get("request_sha256").is_none());
+    assert!(rejected.get("details").is_none());
 }

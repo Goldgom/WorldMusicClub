@@ -3,9 +3,12 @@
 use crate::song_api::{bounded_response, song_api_error, ApiResponse};
 use score_core::{basic_keys, source_instrument};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 #[derive(Serialize)]
 struct Response {
+    /// Transport identity of the exact JSON request bytes, not a source receipt.
+    request_sha256: String,
     details: source_instrument::SourceInstrumentDetails,
 }
 
@@ -30,7 +33,13 @@ pub(crate) fn response(bytes: &[u8], basic: bool) -> ApiResponse {
         }
     };
     match result {
-        Ok(details) => bounded_response(200, &Response { details }),
+        Ok(details) => bounded_response(
+            200,
+            &Response {
+                request_sha256: format!("{:x}", Sha256::digest(bytes)),
+                details,
+            },
+        ),
         Err(error) => song_api_error(
             if error.code == "source_disclosure_limit" {
                 413

@@ -26,8 +26,16 @@ are not original source policies.
 
 ## Response
 
-Stateless success: `{"details": SourceInstrumentDetails}`.
+Stateless success: `{"request_sha256":"…", "details": SourceInstrumentDetails}`.
 Native success: `{"source": <verified request descriptor>, "details": SourceInstrumentDetails}`.
+
+`request_sha256` is the lowercase hexadecimal SHA-256 of the exact raw JSON
+request body bytes, including whitespace and property order. It is computed
+from the received byte slice, not a reserialized score. Snapshot the outgoing
+JSON once and verify this echo before accepting a delayed response. It is a
+transport correlation check, not a source receipt or replacement for the core
+binding. The native saved-source envelope is unchanged and uses its separately
+verified `source` descriptor. Error envelopes never include a request digest.
 
 The details serialize the score-core disclosure directly. Match its complete
 `source_binding`, including format/version/domain/hash, before reuse. Native's
