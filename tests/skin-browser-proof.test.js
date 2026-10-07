@@ -1,3 +1,4 @@
+import {readPureTestFiles} from '../scripts/run-pure-tests.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -99,5 +100,5 @@ test('skin registration reaches aggregate, focused and hosted preview gates whil
   for (const {name} of SKIN_BROWSER_CASES) assert.ok(expression.test(name));
   for (const route of ['settings','authoring']) for (const release of ['keyup','navigation']) assert.ok(expression.test(`real unmuted live worklet verifies finite silence through ${route} after ${release}`));
   const {scripts} = JSON.parse(packageText);
-  for (const key of ['test','test:skin']) assert.equal(scripts[key].split(/\s+/).filter(path=>path==='tests/skin-browser-proof.test.js').length,1);
+  for (const files of [readPureTestFiles(),scripts['test:skin'].split(/\s+/)]) assert.equal(files.filter(path=>path==='tests/skin-browser-proof.test.js').length,1);
 });

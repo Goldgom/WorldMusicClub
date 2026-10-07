@@ -1,3 +1,4 @@
+import {readPureTestFiles} from '../scripts/run-pure-tests.mjs';
 import './native-picker-observation.test.js';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -402,7 +403,7 @@ test('complete performance uses the exact built driver, both viewport gates and 
   assert.match(pack, /\$currentExeBytes=\(Get-Item target\/release\/worldmusichub-desktop\.exe\)\.Length/);
   assert.ok(pack.indexOf('verify-native-performance-song-evidence.mjs --check') < pack.indexOf('Copy-Item target/release/worldmusichub-desktop.exe'));
   assert.match(pack, /native-release-manifest\.py create .* --performance-song desktop-performance-song/);
-  const testCommand = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).scripts.test.split(/\s+/);
+  const testCommand = readPureTestFiles();
   for (const file of ['performance-song-fixtures.test.js', 'native-performance-song-evidence.test.js', 'vsq-fingering-evidence.test.js']) {
     assert.equal(testCommand.filter(token => token === `tests/${file}`).length, 1);
     assert.ok(nativeSteps.some(step => step.includes('run: node --test ') && step.includes(`tests/${file}`)));
@@ -459,7 +460,7 @@ test('pitch browser heights and actual Windows scenario are mandatory before the
   assert.match(pack, /if \(\$LASTEXITCODE -ne 0\) \{ throw 'Native pitch-bend focused manifest failed' \}/);
   for (const proof of ['verify-native-pitch-bend-evidence.mjs --check', 'native-pitch-bend-manifest.py desktop-pitch-bend']) assert.ok(pack.indexOf(proof) < pack.indexOf('Copy-Item target/release/worldmusichub-desktop.exe'));
   assert.match(pack, /native-release-manifest\.py create .* --pitch-bend desktop-pitch-bend/);
-  const testCommand = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).scripts.test.split(/\s+/);
+  const testCommand = readPureTestFiles();
   for (const file of ['pitch-bend-import-baseline.test.js', 'native-pitch-bend-evidence.test.js', 'pitch-bend-acceptance-workflow.test.js']) {
     assert.equal(testCommand.filter(token => token === `tests/${file}`).length, 1);
     for (const jobSteps of [browserSteps, nativeSteps]) assert.ok(jobSteps.some(step => step.includes('run: node --test ') && step.includes(`tests/${file}`)));
@@ -550,8 +551,7 @@ test('complete-practice stays mandatory in normal validation, package source bin
     const artifact = jobSteps.find(step => paths.every(path => step.includes(path)));
     assert.ok(artifact); assert.match(artifact, /^        if: always\(\)$/m); assert.match(artifact, /actions\/upload-artifact@/);
   }
-  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-  assert.equal(pkg.scripts.test.split(/\s+/).filter(file => file === 'tests/complete-practice-acceptance.test.js').length, 1);
+  assert.equal(readPureTestFiles().filter(file => file === 'tests/complete-practice-acceptance.test.js').length, 1);
   const quick = readFileSync(new URL('../scripts/quick-development-checks.mjs', import.meta.url), 'utf8');
   assert.match(quick, /real browser and screenshots/); assert.match(quick, /Windows Rust\/native input/); assert.match(quick, /accepted:false/);
 });

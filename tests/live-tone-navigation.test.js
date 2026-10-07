@@ -1,3 +1,4 @@
+import {readPureTestFiles} from '../scripts/run-pure-tests.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -83,8 +84,8 @@ test('all four navigation cases remain registered in full browser acceptance and
   assert.doesNotThrow(()=>new Script(liveToneNavigationBootstrap));
   const registered=[];registerLiveToneNavigationBrowserRegressions({test:(name,options,run)=>registered.push({name,options,run})});
   assert.equal(registered.length,4);assert.equal(new Set(registered.map(row=>row.name)).size,4);assert.ok(registered.every(row=>typeof row.run==='function'&&row.options.timeout===60_000));
-  const [suite,runner,manifest]=await Promise.all(['tests/full-app-browser.test.js','tests/live-tone-navigation-browser-regression.js','package.json'].map(path=>readFile(new URL(`../${path}`,import.meta.url),'utf8')));
-  assert.match(suite,/registerLiveToneNavigationBrowserRegressions\(\{test,getPage/);assert.match(JSON.parse(manifest).scripts.test,/tests\/live-tone-navigation.test.js/);
+  const [suite,runner]=await Promise.all(['tests/full-app-browser.test.js','tests/live-tone-navigation-browser-regression.js'].map(path=>readFile(new URL(`../${path}`,import.meta.url),'utf8')));
+  assert.match(suite,/registerLiveToneNavigationBrowserRegressions\(\{test,getPage/);assert.ok(readPureTestFiles().includes('tests/live-tone-navigation.test.js'));
   assert.match(runner,/for\(const route of \['settings','authoring'\]\)for\(const release of \['keyup','navigation'\]\)/);
   assert.ok(runner.indexOf('page.reload(')<runner.indexOf('await installCanonicalPreviewAudio(page)'));assert.ok(runner.indexOf('__wmhLiveNavigation=await')<runner.indexOf('await startPreview('));
   assert.match(runner,/page.keyboard.down\('r'\)/);assert.match(runner,/page.keyboard.up\('r'\)/);assert.match(runner,/physicalAudio:false/);assert.match(runner,/validateLiveToneNavigation\(report.audio,report\)/);

@@ -1,3 +1,4 @@
+import {readPureTestFiles} from '../scripts/run-pure-tests.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -39,7 +40,7 @@ test('the native source inventory includes the complete current runtime binding 
   assert.ok(LIVE_TONE_NAVIGATION_SOURCE_FILES.length<=LIVE_TONE_NAVIGATION_SOURCE_LIMIT);assert.equal(new Set(LIVE_TONE_NAVIGATION_SOURCE_FILES).size,LIVE_TONE_NAVIGATION_SOURCE_FILES.length);
   for(const path of CANONICAL_PRACTICE_SOURCE_FILES)assert.ok(LIVE_TONE_NAVIGATION_SOURCE_FILES.includes(path),`Missing inherited runtime module: ${path}`);
   for(const path of ['scripts/windows-live-tone-navigation.cs','.github/workflows/native-live-tone-navigation.yml','crates/desktop-shell/live-tone-navigation-acceptance.js','tests/live-tone-navigation-proof.js'])assert.ok(LIVE_TONE_NAVIGATION_SOURCE_FILES.includes(path));
-  const scripts=JSON.parse(read('package.json')).scripts;for(const name of ['native-live-tone-navigation-renderer','native-live-tone-navigation-evidence','native-live-tone-navigation-registration']){assert.ok(scripts.test.includes(`tests/${name}.test.js`));assert.ok(scripts['test:native-live-navigation'].includes(`tests/${name}.test.js`));}
+  const scripts=JSON.parse(read('package.json')).scripts;for(const name of ['native-live-tone-navigation-renderer','native-live-tone-navigation-evidence','native-live-tone-navigation-registration']){assert.ok(readPureTestFiles().includes(`tests/${name}.test.js`));assert.ok(scripts['test:native-live-navigation'].includes(`tests/${name}.test.js`));}
 });
 
 test('the optional native workflow builds and rechecks one exact source without package promotion, retaining failed diagnostics',()=>{

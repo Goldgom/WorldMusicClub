@@ -1,3 +1,4 @@
+import {readPureTestFiles} from '../scripts/run-pure-tests.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -91,5 +92,5 @@ test('guitar union case is required by focused UI preview, full browser suite an
   for(const existing of ['LiveSilence','Skin','Home','HumanModTimbre'])assert.ok(verifier.includes(`verifyUiPreview${existing}(directory,tap)`));
   for(const suffix of ['json','png'])assert.ok(workflow.includes(`ui-preview/worldmusichub-guitar-human-union*.${suffix}`));
   assert.ok(read('tests/full-app-browser.test.js').includes('test(GUITAR_UNION_BROWSER_CASE,{timeout:60_000}'));
-  const pkg=JSON.parse(read('package.json'));assert.ok(pkg.scripts.test.includes('tests/guitar-union-preview.test.js'));assert.equal(pkg.scripts['test:full-app'],'node --test tests/full-app-browser.test.js');
+  const pkg=JSON.parse(read('package.json'));assert.ok(readPureTestFiles().includes('tests/guitar-union-preview.test.js'));assert.equal(pkg.scripts['test:full-app'],'node --test tests/full-app-browser.test.js');
 });

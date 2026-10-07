@@ -1,3 +1,4 @@
+import {readPureTestFiles} from '../scripts/run-pure-tests.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
@@ -45,7 +46,7 @@ test('removing any viewport, source/EXE binding, package argument, prerequisite 
  ]){const changed=structuredClone(workflow);edit(changed);assert.throws(()=>validateGate(changed));}
 });
 test('authoring unit and gate tests are mandatory once in the full suite',()=>{
- const command=JSON.parse(read('package.json')).scripts.test.split(/\s+/);for(const file of tests)assert.equal(command.filter(value=>value===file).length,1,file);
+ const command=readPureTestFiles();for(const file of tests)assert.equal(command.filter(value=>value===file).length,1,file);
 });
 test('all CI paths selecting parser-dependent authoring tests provision pinned QA Python first',()=>{
  const consumers=[];

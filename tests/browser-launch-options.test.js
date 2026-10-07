@@ -1,3 +1,4 @@
+import {readPureTestFiles} from '../scripts/run-pure-tests.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -58,8 +59,7 @@ test('all browser bootstraps use managed selection while preserving their startu
     assert.ok(source.includes(`chromium.launch(chromiumLaunchOptions(${options}))`), filename);
     assert.doesNotMatch(source, /\/usr\/bin\/(?:chromium|google-chrome)|PLAYWRIGHT_CHROMIUM_EXECUTABLE/, filename);
   }
-  const {scripts} = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-  const registered = scripts.test.split(/\s+/).filter(argument => argument.endsWith('.test.js'));
+  const registered = readPureTestFiles();
   assert.equal(registered.filter(filename => filename === 'tests/browser-launch-options.test.js').length, 1);
   assert.equal(new Set(registered).size, registered.length, 'npm test must not register duplicate suites');
 });
