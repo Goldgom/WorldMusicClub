@@ -1,4 +1,6 @@
 const en={
+ session:'This session keeps its checked note assignment. Note assistance is saved as Off for the next Start.',
+ offAction:'Turn off note assistance · use full-part practice',offUndo:'Keep note assistance',offDraft:'Apply will turn off note assistance for this source and restore full-part practice.',offExplanation:'Every note in the selected human parts returns to you. Standard instrument checks still apply. This replaces the saved note assignment; the source stays unchanged.',off:'Note assistance is off · full-part practice',
  stale:'The source or profile changed. Close and reopen Mod before applying.',
  title:'Note assistance',mode:'Human note assignment',original:'Original · every note in human parts',automatic:'Automatic · keyboard limits',
  explanation:'One complete song stays unchanged. You play the selected human targets; the machine plays every other original note, including help inside a human part.',
@@ -11,7 +13,7 @@ const en={
  counts:'{human} human targets · {machine} machine occurrences',units:'{human} human source units + {machine} machine source units = {total} retained source units',
  noScore:'This assignment has no playable human targets. Human scoring is unavailable.',
  reset:'I understand: applying this ownership change restarts the session and clears its in-memory takes. Export takes first.',
- replace:'Replace the incompatible saved assistance preference with this checked assignment',
+ replace:'Replace the incompatible saved assistance preference with this explicit choice',
  invalid:'Saved assistance is incompatible and has been preserved. Explicitly choose and confirm a replacement.',
  unsaved:'This tab only. Saving failed; the previous saved preference has been preserved.',
  unavailable:'Saved preferences could not be read. Choose an explicit assignment; persistence is unavailable.',
@@ -19,6 +21,8 @@ const en={
  summary:'{human} human targets · {machine} machine notes',machineWithin:'Machine help in this human part uses its saved machine sound. Human live sound stays separate.',
 };
 const zh={
+ session:'本次演奏保留已检查的音符分配。已保存的关闭辅助选项将在下次开始新演奏时应用。',
+ offAction:'关闭音符辅助 · 使用完整声部练习',offUndo:'保留音符辅助',offDraft:'应用后将关闭此来源的音符辅助，恢复完整声部练习。',offExplanation:'所选真人声部内的全部音符将由您演奏，仍需通过通常的乐器检查。此操作替换已保存的音符分配，不改变原始来源。',off:'音符辅助已关闭 · 完整声部练习',
  stale:'来源或乐器配置已改变。请关闭并重新打开 Mod 后再应用。',
  title:'音符辅助',mode:'真人音符分配',original:'原始 · 真人声部内的全部音符',automatic:'自动 · 键盘限制',
  explanation:'完整歌曲保持不变。您演奏选中的真人目标；其余原始音符全部由机器伴奏，包括真人声部内的辅助音符。',
@@ -31,7 +35,7 @@ const zh={
  counts:'{human} 个真人目标 · {machine} 个机器演奏事件',units:'{human} 个真人源单元 + {machine} 个机器源单元 = {total} 个保留源单元',
  noScore:'此分配没有可演奏的真人目标，无法对真人评分。',
  reset:'我已了解：应用此演奏归属更改会重新开始本次演奏，并清除内存中的演奏记录。请先导出记录。',
- replace:'将不兼容的已保存辅助偏好替换为当前已检查的分配',
+ replace:'将不兼容的已保存辅助偏好替换为当前明确选择',
  invalid:'已保存的辅助偏好不兼容，原值仍被保留。请明确选择并确认替换。',
  unsaved:'仅当前标签页有效。保存失败，之前保存的偏好仍被保留。',
  unavailable:'无法读取已保存偏好。请明确选择分配；当前无法持久保存。',

@@ -55,3 +55,5 @@
 .song-mod-assistance-legend [data-assistance-role=machine] {border-color:var(--skin-machine-fill,#8a91ac);border-inline-start-style:dashed;background:repeating-linear-gradient(135deg,transparent,transparent 5px,#65708015 5px,#65708015 8px)}
 #song-mod-assistance-reset-label,#song-mod-assistance-replace-label {margin:.75rem 0}
 @media(max-width:500px) {.song-mod-assistance-limits {grid-template-columns:1fr}.song-mod-assistance {padding:.75rem}.song-mod-assistance>label {flex-wrap:wrap}}
+
+#song-mod-assistance-off {max-width:100%;white-space:normal;text-align:center}

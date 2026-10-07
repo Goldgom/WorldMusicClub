@@ -2,6 +2,7 @@ import {ASSISTANCE_PLANNER_REVISION,assistanceEqual,admitPracticeAssistance,asse
 export {defaultAssistanceSettings,assertPracticeAssistanceCurrent,practiceAssistanceBinding};
 export const ASSISTANCE_PREFERENCE_FORMAT='wmc-practice-assistance-recipe';
 export const ASSISTANCE_PREFERENCE_VERSION=1;
+export const ASSISTANCE_OFF_FORMAT='wmc-practice-assistance-off';
 export const ASSISTANCE_STORAGE_PREFIX='worldmusichub.practice-assistance.v1.';
 const MAX_RECIPE_BYTES=64*1024;
 const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
@@ -19,6 +20,11 @@ export function validateAssistanceRecipe(recipe,context){
   if(context&&(recipe.preference_key!==preferenceKey(context)||!assistanceEqual(recipe.source,context.source)))fail('assistance_preference_mismatch','Saved assistance belongs to another source revision.');
   return recipe;
 }
+function offRecord(context){return{format:ASSISTANCE_OFF_FORMAT,version:1,preference_key:preferenceKey(context),source:copy(context.source)};}
+function validateOffRecord(value,context){
+  if(!fields(value,['format','version','preference_key','source'])||value.format!==ASSISTANCE_OFF_FORMAT||value.version!==1||value.preference_key!==preferenceKey(context)||!assistanceEqual(value.source,context.source))fail('assistance_preference_invalid','The saved assistance-off choice belongs to another source or schema.');
+  validateAssistanceSource(value.source);return value;
+}
 function recipeFrom(assistance,context){
   const p=assistance.plan;
   return validateAssistanceRecipe({format:ASSISTANCE_PREFERENCE_FORMAT,version:ASSISTANCE_PREFERENCE_VERSION,preference_key:preferenceKey(context),source:copy(context.source),selection:copy(p.selection),mode:p.mode,settings:copy(p.settings),planner_revision:p.planner_revision,revision:p.revision,expected_selection_digest:p.selection_digest},context);
@@ -32,9 +38,21 @@ export class PracticeAssistanceStore {
     try{
       const storage=this.target();if(typeof storage?.getItem!=='function')return{status:'unavailable',recipe:null,raw:null};
       const raw=storage.getItem(this.key(context));if(raw===null)return{status:'default',recipe:null,raw:null};
-      try{if(typeof raw!=='string'||raw.length>MAX_RECIPE_BYTES)fail('assistance_preference_invalid','Saved assistance exceeds the supported recipe size.');return{status:'saved',recipe:copy(validateAssistanceRecipe(JSON.parse(raw),context)),raw};}
+      try{if(typeof raw!=='string'||raw.length>MAX_RECIPE_BYTES)fail('assistance_preference_invalid','Saved assistance exceeds the supported recipe size.');const value=JSON.parse(raw);if(value?.format===ASSISTANCE_OFF_FORMAT){validateOffRecord(value,context);return{status:'off',recipe:null,raw};}return{status:'saved',recipe:copy(validateAssistanceRecipe(value,context)),raw};}
       catch(error){return{status:'invalid',recipe:null,raw,error};}
     }catch(error){return{status:'unavailable',recipe:null,raw:null,error};}
+  }
+  /** Replaces only this source's recipe with an explicit Off marker. The
+   * expected-byte check is optimistic; localStorage has no cross-tab transaction. */
+  clear(context,{expectedRaw,replaceInvalid=false}={}){
+    const current=PracticeAssistanceStore.prototype.read.call(this,context);
+    if(current.status==='unavailable')fail('assistance_clear_failed','The saved choice cannot be read. Note assistance remains unchanged.');
+    if(current.status==='invalid'&&!replaceInvalid)fail('assistance_preference_replace_required','Explicitly confirm replacing the incompatible saved preference before turning assistance off.');
+    if(expectedRaw!==undefined&&current.raw!==expectedRaw)fail('assistance_preference_changed','Saved assistance changed in another window. Reopen Mod before turning it off.');
+    const raw=JSON.stringify(offRecord(context));
+    try{const storage=this.target();if(typeof storage?.setItem!=='function')throw Error('Saving is unavailable');storage.setItem(this.key(context),raw);}
+    catch(error){fail('assistance_clear_failed','Turning note assistance off could not be saved. The previous assignment and saved preference are unchanged.');}
+    return{status:'off',recipe:null,raw};
   }
   save(context,recipe,{expectedRaw,replaceInvalid=false}={}){
     validateAssistanceRecipe(recipe,context);const current=this.read(context);
@@ -78,10 +96,10 @@ export function createPracticeAssistanceController({api,getContext,onChange=()=>
     return admitPracticeAssistance(response,binding);
   }
   function restore(){
-    const context=synchronize();if(!context)return Promise.resolve(null);if(pending)return pending;if(active||phase==='default'||phase==='blocked'||phase==='error')return Promise.resolve(active);
+    const context=synchronize();if(!context)return Promise.resolve(null);if(pending)return pending;if(active||phase==='default'||phase==='off'||phase==='blocked'||phase==='error')return Promise.resolve(active);
     persistence=store.read(context);
     if(['invalid','unavailable'].includes(persistence.status)){phase='blocked';error=persistence.error||Object.assign(new Error('Saved assistance could not be read. Choose an explicit session assignment in Mod.'),{code:'assistance_storage_unavailable'});notify();return Promise.resolve(null);}
-    if(!persistence.recipe){phase='default';notify();return Promise.resolve(null);}
+    if(!persistence.recipe){phase=persistence.status==='off'?'off':'default';notify();return Promise.resolve(null);}
     if(!assistanceEqual(normalizeAssistanceSelection(persistence.recipe.selection),context.selection)){phase='blocked';error=Object.assign(new Error('The saved assignment uses a different part or instrument selection. Reopen Mod to explicitly replace it.'),{code:'assistance_preference_selection'});notify();return Promise.resolve(null);}
     const current=++epoch;abort=new AbortController();phase='loading';error=null;
     pending=Promise.resolve().then(()=>request(context,persistence.recipe,current)).then(result=>{if(current!==epoch)return null;if(result){active=result;phase='ready';notify();}return result;}).catch(failure=>{if(current===epoch){phase='blocked';error=failure;notify();}return null;}).finally(()=>{if(current===epoch){pending=null;abort=null;}});notify();return pending;
@@ -107,7 +125,7 @@ export function createPracticeAssistanceController({api,getContext,onChange=()=>
     const recipe=copy(draft),current=++epoch;abort=new AbortController();phase='preparing';error=null;
     pending=Promise.resolve().then(()=>request(context,recipe,current)).then(result=>{if(current!==epoch)return null;if(result){prepared=result;phase='prepared';notify();}return result;}).catch(failure=>{if(current===epoch){phase='error';error=failure;notify();}throw failure;}).finally(()=>{if(current===epoch){pending=null;abort=null;}});notify();return pending;
   }
-  function cancelDraft(){synchronize();invalidate();draft=null;phase=active?'ready':persistence.recipe||persistence.status==='invalid'?'blocked':'default';error=null;notify();}
+  function cancelDraft(){synchronize();invalidate();draft=null;phase=active?'ready':persistence.recipe||persistence.status==='invalid'?'blocked':persistence.status==='off'?'off':'default';error=null;notify();}
   function commitDraft({resetConfirmed=false,isCurrent=()=>true,replaceInvalid=false}={}){
     const context=synchronize();if(!context||!draft||!prepared||!isCurrent())fail('assistance_stale_draft','This assistance draft is no longer current.');
     const changed=value().requiresReset;if(changed&&!resetConfirmed)fail('assistance_reset_required','Changing human note ownership restarts the take. Confirm the reset before applying.');
@@ -117,7 +135,13 @@ export function createPracticeAssistanceController({api,getContext,onChange=()=>
     // Cache the new selection so the next context read can recognize that commit.
     captured={...captured,selection:copy(draft.selection)};active=prepared;persistence=saved;invalidate();draft=null;phase='ready';error=null;return active;
   }
-  return{restore,beginDraft,setDraft,prepareDraft,cancelDraft,commitDraft,
+  function disableDraft({resetConfirmed=false,isCurrent=()=>true,replaceInvalid=false}={}){
+    const context=synchronize();if(!context||!draft||!isCurrent())fail('assistance_stale_draft','This assistance-off draft is no longer current.');
+    if(!resetConfirmed)fail('assistance_reset_required','Turning note assistance off restarts the take. Confirm the reset before applying.');
+    const saved=store.clear(context,{expectedRaw:persistence.raw,replaceInvalid});
+    captured={...captured,selection:copy(draft.selection)};active=null;persistence=saved;invalidate();draft=null;phase='off';error=null;return null;
+  }
+  return{restore,beginDraft,setDraft,prepareDraft,cancelDraft,commitDraft,disableDraft,
     state(){synchronize();return value();},
     current(){const context=synchronize();if(!active||!context)return null;return assertPracticeAssistanceCurrent(active,recipeBinding(context,active.plan));},
     reset(){invalidate();captured=null;active=null;draft=null;phase='idle';error=null;persistence={status:'default',recipe:null,raw:null};notify();},

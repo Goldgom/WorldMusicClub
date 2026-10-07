@@ -1,9 +1,9 @@
 # Automatic note assistance
 
-This document describes the current source candidate. The application wires
+This document describes the implementation contract. The application wires
 checked ownership into Song Mod, scoring, playback, displays and take exports.
-It has not yet received real-browser GUI or Windows/native package acceptance
-for this increment. Focused tests are development evidence, not release acceptance.
+Acceptance requires the complete browser and native gates for the exact source;
+focused tests alone do not establish release or physical-device acceptance.
 
 ## User-facing contract
 
@@ -21,6 +21,13 @@ machine-occurrence and source-unit counts. **Apply Mod** commits the checked
 assignment with its matching part selection. Checking and applying do not start
 transport. **Cancel** discards the draft. **Restore original settings** restores
 the Mod defaults and sets assistance to Original; it still needs Apply Mod.
+
+**Turn off note assistance · use full-part practice** is a separate explicit
+action. After Apply and any required reset acknowledgement, it returns to the
+existing full-part target and audio admission path without requesting a checked
+Original plan. This remains usable when a checked Original response exceeds its
+size limit. A failed Check never turns assistance off automatically. Source notes,
+part selection and the normal instrument compatibility checks are preserved.
 
 The complete song remains the source. In practice, only checked human targets
 are scored. Every remaining original occurrence belongs to the machine,
@@ -192,11 +199,12 @@ current source. Async results are fenced by the actual source/runtime objects,
 selection and request generation; an old result cannot become active after a
 source, instrument or part change.
 
-Stage ownership changes restart the session and clear in-memory takes. If the
-stage already has takes, an active assignment or a saved recipe, the user must
-acknowledge that reset before applying; export takes first. Fallible target and
-audio preparation happens before the synchronous ownership/Mod commit. Check
-or admission failures leave the applied assignment intact.
+Stage ownership changes restart the session and clear in-memory takes. Changes
+involving checked assistance or explicit Off require reset acknowledgement when
+a stage has takes or an active/saved assignment; export takes first. Ordinary
+untouched Original Mod edits retain their existing warning and Apply flow.
+Fallible target and audio preparation happens before the synchronous ownership/Mod
+commit. Check or admission failures leave the applied assignment intact.
 
 Incompatible saved preferences remain preserved until the user explicitly
 confirms replacement. A preference changed in another window must be reopened
@@ -206,6 +214,19 @@ Unavailable storage requires an explicit session assignment. Take exports
 include a checked plan/receipt and human-target/machine-occurrence identity
 snapshot, with per-pass interpretation records, so a later assignment cannot
 silently relabel an earlier take.
+
+Explicit Off replaces the recipe at the same source key with a closed four-field
+`wmc-practice-assistance-off` version-1 marker: `format`, `version`,
+`preference_key` and `source`. It is validated against the current source and
+remains distinct from a missing or invalid preference. The expected stored bytes
+are compared before the write; this detects observed conflicts but is not a
+cross-tab transaction guarantee. A failed or conflicting Off write leaves the
+applied Automatic assignment and its takes intact and reports the failure.
+
+Changing the library preference affects the next Start. Resuming an existing
+session keeps its pinned assignment, even after library Off or recipe edits. A
+new Start uses the new preference and a new matching take. Explicit stage Off
+resets that stage only after target/audio preparation and persistence succeed.
 
 **Stage view** offers **Complete ensemble** and **Human parts only**, alongside
 **Show machine accompaniment**. Falling notes, Jianpu and individually mapped

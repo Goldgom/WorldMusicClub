@@ -27,12 +27,13 @@ export function currentAppAssistanceBinding(controller,context) {
 export class AppAssistanceStore extends PracticeAssistanceStore {
   constructor(options){super(options);this.session=new Map();}
   read(context){const stored=super.read(context),session=this.session.get(this.key(context));return session&&stored.status!=='invalid'&&stored.raw===session.raw?session:stored;}
+  clear(context,options){const cleared=super.clear(context,options);this.session.delete(this.key(context));return cleared;}
   save(context,recipe,options){const saved=super.save(context,recipe,options);if(saved.status==='unsaved')this.session.set(this.key(context),saved);else this.session.delete(this.key(context));return saved;}
 }
 
 export function assistancePracticeGate(controller) {
   const state=controller.state();
-  if(['default','ready','editing','prepared'].includes(state.phase)&&(state.active||state.persistence.status==='default'))return null;
+  if(['default','off','ready','editing','prepared'].includes(state.phase)&&(state.active||['default','off'].includes(state.persistence.status)))return null;
   return {status:['loading','preparing','idle'].includes(state.phase)?'pending':'blocked',reason:state.error?.message||'Validate the saved note assignment in Mod before practicing.',assistance:true};
 }
 

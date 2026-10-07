@@ -16,19 +16,21 @@ export function setupPracticeAssistanceView({document,parent,i18n,onChange=()=>{
   const model=make('p',null,root),availability=make('p','song-mod-assistance-availability',root),check=make('button','song-mod-assistance-check',root),status=make('p','song-mod-assistance-status',root),units=make('p','song-mod-assistance-units',root),legend=make('div','song-mod-assistance-legend',root),human=make('span',null,legend),machine=make('span',null,legend);
   check.type='button';check.className='button secondary compact';status.setAttribute('role','status');status.setAttribute('aria-live','polite');legend.className='song-mod-assistance-legend';human.dataset.assistanceRole='human';machine.dataset.assistanceRole='machine';
   const persistence=make('p','song-mod-assistance-persistence',root),replaceLabel=make('label','song-mod-assistance-replace-label',root),replace=make('input','song-mod-assistance-replace',replaceLabel),replaceText=make('span',null,replaceLabel),resetLabel=make('label','song-mod-assistance-reset-label',root),reset=make('input','song-mod-assistance-reset',resetLabel),resetText=make('span',null,resetLabel);replace.type=reset.type='checkbox';resetLabel.className='warning';
+  const off=make('button','song-mod-assistance-off',root);off.type='button';off.className='button secondary compact';off.setAttribute('aria-describedby','song-mod-assistance-status');
+  let disableRequested=false;
   let controller=null,initial=null,origin='preview',hasTakes=false,externalBusy=false,modReset=false,localError=null,checking=false,generation=0,rendering=false,explicitOptIn=false;
   const t=(key,params)=>assistanceText(i18n.locale,key,params),machineParts=new WeakMap();
   function state(){return controller?.state()||null;}
   function changed(){
-    const s=state();if(!s?.draft)return false;
+    const s=state();if(!s?.draft)return false;if(disableRequested)return true;
     // Existing unassisted Original Mod edits retain the established part-based
     // path. Merely changing its union must not opt into stricter note atoms.
-    const defaultOriginal=s.draft.mode==='original'&&!s.active&&!s.persistence.recipe&&s.persistence.status==='default';
+    const defaultOriginal=s.draft.mode==='original'&&!s.active&&!s.persistence.recipe&&['default','off'].includes(s.persistence.status);
     if(defaultOriginal)return explicitOptIn;
     const pick=d=>({mode:d.mode,settings:d.settings,selection:d.selection});
     return s.replaceInvalidRequired||s.persistence.status==='unavailable'||!assistanceEqual(pick(s.draft),pick(initial))||(!s.active&&Boolean(s.persistence.recipe));
   }
-  function checked(){const s=state();return s?.prepared||(!changed()?s?.active:null)||null;}
+  function checked(){if(disableRequested)return null;const s=state();return s?.prepared||(!changed()?s?.active:null)||null;}
   function hasMachine(partId){const plan=checked();if(!plan)return false;let parts=machineParts.get(plan);if(!parts){parts=new Set(plan.source_ownership.filter(source=>source.owner==='machine').map(source=>source.part_id));machineParts.set(plan,parts);}return parts.has(partId);}
   function resetRequired(){const s=state(),assistanceChange=changed(),assisted=Boolean(s?.active||s?.persistence.recipe||assistanceChange);return origin==='stage'&&assisted&&Boolean(hasTakes||s?.active||s?.persistence.recipe)&&(modReset||assistanceChange);}
   function render(){
@@ -36,20 +38,21 @@ export function setupPracticeAssistanceView({document,parent,i18n,onChange=()=>{
     try{
       root.hidden=!controller;if(!controller)return;const s=state(),draft=s.draft;if(!draft){status.textContent=t('stale');check.disabled=mode.disabled=true;for(const {input}of inputs.values())input.disabled=true;return;}
       const automatic=draft.mode==='automatic',unsupported=draft.selection.profile.kind!=='piano',empty=!draft.selection.selected_part_ids.length,busy=externalBusy||checking||s.phase==='preparing',plan=checked();
-      title.textContent=t('title');intro.textContent=t('explanation');modeText.textContent=t('mode');for(const option of mode.options)option.textContent=t(option.value);mode.value=draft.mode;mode.options[1].disabled=unsupported||empty;mode.disabled=externalBusy;
-      limits.hidden=!automatic;model.hidden=!automatic;model.textContent=t('model');const settings=draft.settings||defaultAssistanceSettings();
+      off.textContent=t(disableRequested?'offUndo':'offAction');off.disabled=busy;off.setAttribute('aria-pressed',String(disableRequested));modeLabel.hidden=disableRequested;
+      title.textContent=t('title');intro.textContent=t(disableRequested?'offExplanation':'explanation');modeText.textContent=t('mode');for(const option of mode.options)option.textContent=t(option.value);mode.value=draft.mode;mode.options[1].disabled=unsupported||empty;mode.disabled=externalBusy;
+      limits.hidden=disableRequested||!automatic;model.hidden=disableRequested||!automatic;model.textContent=t('model');const settings=draft.settings||defaultAssistanceSettings();
       for(const [field,{input,text}] of inputs){text.textContent=t(field);if(document.activeElement!==input)input.value=String(settings[field]);input.disabled=externalBusy;}
-      availability.hidden=!(unsupported||empty);availability.textContent=t(empty?'noHuman':'unsupported');
-      check.textContent=t(busy?'checking':'check');check.disabled=busy||automatic&&(unsupported||empty);
-      status.textContent=localError?t('error')+' '+localError.message:s.error?t('error')+' '+s.error.message:busy?t('checking'):plan?t('counts',{human:plan.coverage.human_target_count,machine:plan.coverage.machine_occurrence_count})+(plan.scored_mode_allowed?'':' · '+t('noScore')):t('unchecked');status.dataset.phase=s.phase;
+      availability.hidden=disableRequested||!(unsupported||empty);availability.textContent=t(empty?'noHuman':'unsupported');
+      check.hidden=disableRequested;check.textContent=t(busy?'checking':'check');check.disabled=busy||automatic&&(unsupported||empty);
+      status.textContent=disableRequested?t('offDraft'):localError?t('error')+' '+localError.message:s.error?t('error')+' '+s.error.message:busy?t('checking'):plan?t('counts',{human:plan.coverage.human_target_count,machine:plan.coverage.machine_occurrence_count})+(plan.scored_mode_allowed?'':' · '+t('noScore')):s.persistence.status==='off'?t('off'):t('unchecked');status.dataset.phase=disableRequested?'off-draft':s.phase;
       units.hidden=!plan;units.textContent=plan?t('units',{human:plan.coverage.human_source_unit_count,machine:plan.coverage.machine_source_unit_count,total:plan.coverage.source_unit_count}):'';
-      human.textContent=t('human');machine.textContent=t('machine');persistence.hidden=!['invalid','unsaved','unavailable'].includes(s.persistence.status);persistence.textContent=persistence.hidden?'':t(s.persistence.status);
+      human.textContent=t('human');machine.textContent=t('machine');persistence.hidden=!['invalid','unsaved','unavailable','off'].includes(s.persistence.status);persistence.textContent=persistence.hidden?'':t(s.active&&s.persistence.status==='off'?'session':s.persistence.status);
       replaceLabel.hidden=!s.replaceInvalidRequired;replaceText.textContent=t('replace');replace.disabled=externalBusy;
       resetLabel.hidden=!resetRequired();resetText.textContent=t('reset');reset.disabled=externalBusy;
     }finally{rendering=false;}
   }
   function edit(){
-    if(!controller||externalBusy)return;if(mode.value==='automatic')explicitOptIn=true;generation++;checking=false;localError=null;reset.checked=false;
+    if(!controller||externalBusy)return;disableRequested=false;if(mode.value==='automatic')explicitOptIn=true;generation++;checking=false;localError=null;reset.checked=false;
     const settings=mode.value==='automatic'?{...defaultAssistanceSettings(),...Object.fromEntries([...inputs].map(([field,{input}])=>[field,input.value.trim()===''?NaN:Number(input.value)]))}:null;
     try{controller.setDraft({mode:mode.value,settings});}catch(error){localError=error;}render();onChange();
   }
@@ -61,16 +64,17 @@ export function setupPracticeAssistanceView({document,parent,i18n,onChange=()=>{
     catch(error){if(current===generation){localError=error;render();}throw error;}
     finally{if(current===generation){checking=false;render();onChange();}}
   }
-  check.addEventListener('click',()=>{if(!controller||externalBusy||checking)return;if(!explicitOptIn)reset.checked=false;explicitOptIn=true;prepare().catch(()=>{});});
-  return{root,render,changed,checked,hasMachine,explicitOptIn:()=>explicitOptIn,
-    open(next,{where='preview',hasTakes:existingTakes=false}={}){generation++;explicitOptIn=false;controller=next||null;origin=where;hasTakes=Boolean(existingTakes);externalBusy=false;modReset=false;localError=null;checking=false;reset.checked=replace.checked=false;if(controller){const s=controller.beginDraft();initial=s?.draft||null;if(!initial)controller=null;}render();},
+  off.addEventListener('click',()=>{if(!controller||externalBusy||checking)return;generation++;disableRequested=!disableRequested;localError=null;reset.checked=false;render();onChange();});
+  check.addEventListener('click',()=>{if(!controller||externalBusy||checking)return;disableRequested=false;if(!explicitOptIn)reset.checked=false;explicitOptIn=true;prepare().catch(()=>{});});
+  return{root,render,changed,checked,hasMachine,disabled:()=>disableRequested,explicitOptIn:()=>explicitOptIn,
+    open(next,{where='preview',hasTakes:existingTakes=false}={}){generation++;disableRequested=false;explicitOptIn=false;controller=next||null;origin=where;hasTakes=Boolean(existingTakes);externalBusy=false;modReset=false;localError=null;checking=false;reset.checked=replace.checked=false;if(controller){const s=controller.beginDraft();initial=s?.draft||null;if(!initial)controller=null;}render();},
     update({selection,busy=false,requiresReset=false}={}){externalBusy=busy;modReset=requiresReset;if(controller&&selection){const s=state();if(s.draft&&!assistanceEqual(s.draft.selection,selection)){generation++;checking=false;reset.checked=false;localError=null;controller.setDraft({selection});}}render();},
-    restoreOriginal(){if(controller){generation++;checking=false;localError=null;reset.checked=false;controller.setDraft({mode:'original',settings:null});render();onChange();}},
-    canApply(){const s=state();return !controller||Boolean(s?.draft&&!checking&&!localError&&(!resetRequired()||reset.checked)&&(!s.replaceInvalidRequired||replace.checked)&&!(s.draft.mode==='automatic'&&(s.draft.selection.profile.kind!=='piano'||!s.draft.selection.selected_part_ids.length)));},
+    restoreOriginal(){if(controller){disableRequested=false;generation++;checking=false;localError=null;reset.checked=false;controller.setDraft({mode:'original',settings:null});render();onChange();}},
+    canApply(){const s=state();return !controller||Boolean(s?.draft&&!checking&&!localError&&(!resetRequired()||reset.checked)&&(!s.replaceInvalidRequired||replace.checked)&&!(!disableRequested&&s.draft.mode==='automatic'&&(s.draft.selection.profile.kind!=='piano'||!s.draft.selection.selected_part_ids.length)));},
     prepare,
     finishUnchanged(){controller?.cancelDraft();},
     resetConfirmed(){return !resetRequired()||reset.checked;},
-    commit({isCurrent=()=>true}={}){return controller?.commitDraft({resetConfirmed:!resetRequired()||reset.checked,isCurrent,replaceInvalid:replace.checked})||null;},
-    close({cancel=true}={}){generation++;checking=false;if(cancel)controller?.cancelDraft();controller=null;initial=null;explicitOptIn=false;localError=null;root.hidden=true;},
+    commit({isCurrent=()=>true}={}){return controller?.[disableRequested?'disableDraft':'commitDraft']({resetConfirmed:!resetRequired()||reset.checked,isCurrent,replaceInvalid:replace.checked})||null;},
+    close({cancel=true}={}){generation++;checking=false;if(cancel)controller?.cancelDraft();controller=null;initial=null;disableRequested=false;explicitOptIn=false;localError=null;root.hidden=true;},
   };
 }
