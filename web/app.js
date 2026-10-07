@@ -23,6 +23,7 @@ import {resolvePracticeSelection,humanPracticePartIds} from './practice-selectio
 import {SongModStore,createSongMod,songModChanges,songModOptions,songModCapabilities,assertSongModSupported,validateSongMod} from './song-mod.js';
 import {createPartInstrumentPolicy,assertPartInstrumentPolicyCurrent,assertPartInstrumentPolicyReady,resolvePartInstrumentInput,partInstrumentPolicyIssue} from './part-instrument-policy.js';
 import {setupSongModView} from './song-mod-view.js';
+import {SourceInstrumentDetailsLoader} from './source-instrument-loader.js';
 import {PitchModStore,preparePitchModView,pitchViewContext,originalPitchContext,pitchModSemitones,pitchModConfiguration} from './pitch-mod.js';
 import {createProgressiveAssistanceController as createPracticeAssistanceController,PracticeProgressionStore} from './practice-progression.js';
 import {progressionForAssistance} from './practice-progression-receipt.js';
@@ -181,6 +182,7 @@ let keyboardInput=null, keyboardInputView=null, cleaningAllInputs=false, keyboar
 let guitarFingering=null,guitarFingeringView=null;
 let pianoFingering=null, beginnerView=null;
 const songMods=new SongModStore(),pitchMods=new PitchModStore();
+const sourceInstrumentDetails=new SourceInstrumentDetailsLoader({api,onChange:()=>refreshSongModView()});
 let songModView=null,completePracticeView=null,fallingNoteLabels=null;
 const practiceDisplayCache=createPracticeDisplayCache({getParts:basicKeysParts});
 let shell=null,preview=null,performanceView=null,startingPreview=false,previewRefreshQueued=false,startRequest=0,enteringPreview=false;
@@ -569,7 +571,7 @@ function modContext(origin) {
   const value=origin==='preview'?preview.value:{score:state.score,compiled:state.compiled,cleanSong:state.cleanSong,pitchView:state.pitchView,mode:state.mode,practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts};
   if(!value?.score||!value.compiled||value.score.parts.length>128)return null;
   const storedPitch=pitchMods.read(value),baseEntry=songMods.read(value),entry=storedPitch&&!storedPitch.error?{...baseEntry,mod:storedPitch.song_mod,status:'saved',explicit:true}:baseEntry,assistanceController=origin==='stage'?stageAssistance:previewAssistance,assistance=assistanceController.current(),persistence=assistanceController.state().persistence;
-  return {...value,...entry,origin,pitchPreferenceRaw:storedPitch?.raw??null,pitchError:storedPitch?.error||null,assistanceController,assistance,assistanceStatus:assistance&&persistence.status==='off'?'session':persistence.storageUnavailable?'sessionDefault':persistence.status,performanceInstrument:state.instrument,mod:origin==='stage'&&state.songMod?state.songMod:entry.mod,capabilities:{...songModCapabilities(value),liveAudio:synth.muted||!liveAudioUnavailable(),liveAudioReason:synth.liveError?liveAudioErrorText(synth.liveError):''},previewVersion:preview.version,navigation:scoreSaveNavigation,generation:state.generation,hasTakes:origin==='stage'&&(transport.hasStarted||state.recorder.passes.length>0)};
+  return {...value,...entry,...sourceInstrumentDetails.read(value),origin,pitchPreferenceRaw:storedPitch?.raw??null,pitchError:storedPitch?.error||null,assistanceController,assistance,assistanceStatus:assistance&&persistence.status==='off'?'session':persistence.storageUnavailable?'sessionDefault':persistence.status,performanceInstrument:state.instrument,mod:origin==='stage'&&state.songMod?state.songMod:entry.mod,capabilities:{...songModCapabilities(value),liveAudio:synth.muted||!liveAudioUnavailable(),liveAudioReason:synth.liveError?liveAudioErrorText(synth.liveError):''},previewVersion:preview.version,navigation:scoreSaveNavigation,generation:state.generation,hasTakes:origin==='stage'&&(transport.hasStarted||state.recorder.passes.length>0)};
 }
 function scoreAdmissionPending(){return Boolean(state.compileController&&!state.compileController.signal.aborted||directMidiImportOwner?.current());}
 function refreshSongModView(){
