@@ -24,11 +24,21 @@ export class CanonicalPracticeSession {
     this.player=playerFactory({onError:error=>{this.phase='stopped';this.errorClock=this.player.lastStopClock;this.onError(error);},onPass:receipt=>{this.passReceipts?.push(receipt);onPass(receipt);},onEnded:result=>{this.phase='ended';this.completion=result;this.onEnded(result);}});
   }
   select(compilation) {this.stop();this.compilation=compilation;this.profile=null;this.interpretation=null;}
-  stop() {this.epoch++;this.controller?.abort();this.controller=null;this.player.stop();this.completion=null;this.preparing=false;this.phase='stopped';this.errorClock=null;this.silentPlan=null;}
+  stop() {this.epoch++;this.controller?.abort();this.controller=null;this.player.stop();this.completion=null;this.preparing=false;this.phase='stopped';this.errorClock=null;this.silentPlan=null;this.clockOrigin=null;}
   get running(){return this.player.running;}
   get plan(){return this.player.plan||this.silentPlan;}
-  sourcePositionMs(){return this.player.sourcePositionMs()??this.errorClock?.positionMs??null;}
-  sourceClock(){return this.player.sourceClockAtTime?.()??null;}
+  sourcePositionMs(wallTime=performance.now()){return this.sourceClock(wallTime)?.positionMs??this.player.sourcePositionMs()??this.errorClock?.positionMs??null;}
+  sourceClock(wallTime=performance.now()){
+    const origin=this.clockOrigin,context=this.player.context;
+    if(!origin||this.paused)return this.player.sourceClockAtTime?.()??null;
+    if(context?.state!=='running'||!Number.isFinite(wallTime))return null;
+    // A render quantum may run ahead of the admitted performance clock. Use
+    // the recorder's immutable correlation, never a new unrelated sample.
+    // Conversely, a stalled render clock cannot be advanced by wall time.
+    const projected=origin.audioTime+(wallTime-origin.wallTime)/1000;
+    const projectedFrame=Math.floor(projected*origin.sampleRate),renderedFrame=Math.floor(context.currentTime*origin.sampleRate),frame=Math.min(projectedFrame,renderedFrame);
+    return this.player.sourceClockAtTime?.(Math.max(0,frame)/origin.sampleRate)??null;
+  }
   get held(){return ['pausing','paused','resuming'].includes(this.phase);}
   get paused(){return this.phase==='paused';}
   get pausePending(){return this.phase==='pausing';}
@@ -58,7 +68,12 @@ export class CanonicalPracticeSession {
     finally{if(epoch===this.epoch){this.preparing=false;this.controller=null;}}
   }
   async startPrepared(options){const epoch=this.epoch,result=await this.player.startPrepared(options);if(epoch!==this.epoch||!result)return null;this.phase='running';return result;}
-  bindWallClock({wallTime,audioTime,sampleRate}){this.clockOrigin={wallTime,audioTime,sampleRate};}
+  bindWallClock({wallTime,audioTime,sampleRate}){
+    // This is the existing admission estimate, not measured device latency.
+    // Keep it immutable so earlier captures and later resume/loop boundaries
+    // share one coordinate system even if the clocks drift or batch updates.
+    this.clockOrigin=Object.freeze({wallTime,audioTime,sampleRate,basis:'render-snapshot'});
+  }
   async pause(){
     if(!this.running)return null;
     const epoch=this.epoch;this.phase='pausing';
@@ -69,7 +84,7 @@ export class CanonicalPracticeSession {
   }
   async resume(options){
     if(!this.paused)return null;
-    const epoch=this.epoch,positionMs=this.sourcePositionMs();this.phase='resuming';
+    const epoch=this.epoch,positionMs=this.player.sourcePositionMs();this.phase='resuming';
     try{const result=await this.player.resume(options);if(epoch!==this.epoch||!result)return null;this.phase='running';return {...result,positionMs,anchorTime:result.resumeTime};}
     catch(error){if(epoch!==this.epoch)return null;this.stop();throw error;}
   }

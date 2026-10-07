@@ -53,9 +53,9 @@ for(const boundary of ['unlock','prepared'])test(`canonical Replay crosses a rea
     }
     assert.deepEqual(await app.exported('export-takes'),take,'Admission creates no take and preserves every previous export field');
     gate.resolve();await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');app.frame();
-    const second=f.receiver(),zero=app.sourceStartWall(),clock=readPlaybackClock(app.document);assert.notEqual(second,first);assert.equal(clock.running,true);assert.equal(clock.completed,false);assert.equal(clock.phase,'playing');
+    const second=f.receiver(),zero=app.sourceStartWall(),clock=readPlaybackClock(app.document);assert.notEqual(second,first);assert.equal(clock.running,false);assert.equal(clock.completed,false);assert.equal(clock.phase,'preparing');assert.ok(performance.now()<zero,'The admitted source is still scheduled in the future');
     const replay=await app.exported('export-takes');assert.equal(replay.passes.length,2);assert.deepEqual(replay.passes[0],take.passes[0]);assert.deepEqual(replay.passes[1].inputs,[]);assert.equal(replay.passes[1].clock_segments[0].positionStart,0);assert.ok(replay.passes[1].clock_segments[0].wallStart>take.passes[0].clock_segments.at(-1).wallEnd);
-    f.time(zero+400);await app.tick();assert.doesNotThrow(()=>app.frame());assert.ok(readPlaybackClock(app.document).positionMs>0);assert.equal(readPlaybackClock(app.document).completed,false);
+    f.time(zero+400);await app.tick();assert.doesNotThrow(()=>app.frame());assert.equal(readPlaybackClock(app.document).phase,'playing');assert.ok(readPlaybackClock(app.document).positionMs>0);assert.equal(readPlaybackClock(app.document).completed,false);
     f.time(zero+4300);await app.tick();app.frame();await app.until(()=>readPlaybackClock(app.document).completed&&!app.$('play-button').disabled);const ended=await app.exported('export-takes');assert.deepEqual(ended.passes[0],take.passes[0]);assert.equal(ended.passes.length,2);assert.equal(second.core.startedCount,6);assert.equal(second.core.endedCount,6);
   }finally{app.setUnlock(null);gate.resolve();gate.restore?.();await app.close();}
 });
@@ -69,6 +69,6 @@ for(const outcome of ['cancel','failure'])test(`canonical Replay ${outcome} afte
     for(let frame=0;frame<3;frame++){f.time(f.zero+4702+frame*151);assert.doesNotThrow(()=>app.frame());}
     const clock=readPlaybackClock(app.document);assert.equal(clock.running,false);assert.equal(clock.completed,false);assert.equal(clock.positionMs,0);assert.equal(clock.phase,'ready');assert.equal(f.receiver(),undefined);
     assert.deepEqual(await app.exported('export-takes'),take,'An unadmitted Replay must not erase, reopen or append any recording evidence');
-    gate.restore();await app.click('play-button');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');app.frame();assert.equal(readPlaybackClock(app.document).running,true);assert.equal(readPlaybackClock(app.document).completed,false);const retry=await app.exported('export-takes');assert.equal(retry.passes.length,2);assert.deepEqual(retry.passes[0],take.passes[0]);
+    gate.restore();await app.click('play-button');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');app.frame();assert.equal(readPlaybackClock(app.document).phase,'preparing');assert.equal(readPlaybackClock(app.document).running,false);assert.equal(readPlaybackClock(app.document).completed,false);const retry=await app.exported('export-takes');assert.equal(retry.passes.length,2);assert.deepEqual(retry.passes[0],take.passes[0]);f.time(app.sourceStartWall()+1);app.frame();assert.equal(readPlaybackClock(app.document).running,true);
   }finally{gate.resolve();gate.restore();await app.close();}
 });

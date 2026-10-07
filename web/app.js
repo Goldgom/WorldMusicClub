@@ -155,7 +155,7 @@ let cleanView=null,previewMedia=null,activeMedia=null,previewMediaKey=null,activ
 const cleanMutedParts=new Set(),cleanSoloParts=new Set();
 const cleanPlayer=new CleanSongPlayer({getPositionMs:()=>transport.time(performance.now()),onError:error=>{pausePlayback();notice(()=>cleanErrorText(i18n.locale,error),true);}});
 const canonicalSession=new CanonicalPracticeSession({api,onError:error=>{pausePlayback();notice(()=>canonicalAudioErrorText(i18n.locale,error),true);}});
-function playbackPosition(now=performance.now()){return !state.cleanSong&&transport.running?(canonicalSession.sourcePositionMs()??transport.time(now)):transport.time(now);}
+function playbackPosition(now=performance.now()){return !state.cleanSong&&transport.running?(now<transport.startedAt?transport.position:canonicalSession.sourcePositionMs(now)??transport.time(now)):transport.time(now);}
 let metronome = null;
 let adaptationView = null;
 let transpositionView = null;
@@ -361,7 +361,8 @@ function canSeekPlayback() {
 }
 function updateProgress(position,duration) {
   const progress=$('progress'),bounds=playbackSeekBounds();
-  const clock=publishPlaybackClock(progress,{positionMs:position,durationMs:duration,rangeStartMs:bounds?.start??0,rangeEndMs:bounds?.end??duration,available:Boolean(state.compiled),running:transport.running,completed:transport.completed,hasStarted:transport.hasStarted,preparing:state.playPending});
+  const scheduled=!state.cleanSong&&transport.running&&performance.now()<transport.startedAt;
+  const clock=publishPlaybackClock(progress,{positionMs:position,durationMs:duration,rangeStartMs:bounds?.start??0,rangeEndMs:bounds?.end??duration,available:Boolean(state.compiled),running:transport.running&&!scheduled,completed:transport.completed,hasStarted:transport.hasStarted,preparing:state.playPending||scheduled});
   progress.min=bounds?.start??0;progress.max=bounds?.end??Math.max(1,duration);
   progress.value=Math.min(clock.rangeEndMs,Math.max(clock.rangeStartMs,clock.positionMs));
   progress.disabled=!canSeekPlayback();
@@ -1120,8 +1121,8 @@ async function togglePlayback() {
       if(synth.context.state!=='running'||synth.context.currentTime>=anchor.anchorTime)throw Object.assign(new Error('The shared audio start anchor elapsed before transport admission.'),{code:'clean_late_start'});
       // Use the renderer's quantized sample anchor for both transport and inputs.
       const wallTime=performance.now(),audioTime=synth.context.currentTime;
-      now=wallTime+(anchor.anchorTime-audioTime)*1000;
       if(!song&&!resumeCanonical){canonicalSession.bindWallClock({wallTime,audioTime,sampleRate:synth.context.sampleRate});state.canonicalPassIndex=0;state.canonicalBudgetEnded=false;}
+      now=song?wallTime+(anchor.anchorTime-audioTime)*1000:canonicalSession.wallAtFrame(resumeCanonical?anchor.resumeFrame:anchor.anchorFrame);
       transport.position=anchor.positionMs;
     }else{if(!song){const prepared=await canonicalSession.prepare({...options,soundEnabled:false,audiblePartIds:mode==='listen'&&targetPart&&!state.songMod?[targetPart]:undefined,range:state.loop?{startMs:state.loop.start_ms,endMs:state.loop.end_ms}:undefined,countInMs:countIn,loop:state.loop?{enabled:true}:undefined});if(!prepared||!current())return;state.canonicalPassIndex=0;state.canonicalBudgetEnded=false;}now=performance.now()+(state.cleanSong?50:0);}
     if(!current())return;
@@ -1156,7 +1157,7 @@ function beginPracticePass(now, captureEnabled = true) {
   if(!state.cleanSong&&canonicalSession.interpretation){
     if(!passInterpretations.has(pass))passInterpretations.set(pass,{...structuredClone(canonicalSession.interpretation),practice_part:state.practicePart,practice_selection:structuredClone(state.practiceSelection),practice_layout:state.practiceLayout,source_target_ids:state.sourceTargetTimeline.notes.map(note=>note.id),scoring:'selected_human_parts_key_and_onset_only',playback_segments:[]});
     const clock=canonicalSession.sourceClock();
-    passInterpretations.get(pass).playback_segments.push({wall_start_ms:now,position_start_ms:transport.position,...structuredClone(canonicalSession.interpretation),...(clock?{audio_clock:{player_epoch:clock.playerEpoch,generation:clock.generation,pass_index:clock.passIndex,cycle_start_frame:clock.cycleStartFrame,pass_start_frame:clock.passStartFrame,next_boundary_frame:clock.nextBoundaryFrame,initial_anchor_frame:clock.initialAnchorFrame}}:{})});
+    passInterpretations.get(pass).playback_segments.push({wall_start_ms:now,position_start_ms:transport.position,...structuredClone(canonicalSession.interpretation),...(canonicalSession.clockOrigin?{audio_wall_clock:structuredClone(canonicalSession.clockOrigin)}:{}),...(clock?{audio_clock:{player_epoch:clock.playerEpoch,generation:clock.generation,pass_index:clock.passIndex,cycle_start_frame:clock.cycleStartFrame,pass_start_frame:clock.passStartFrame,next_boundary_frame:clock.nextBoundaryFrame,initial_anchor_frame:clock.initialAnchorFrame}}:{})});
   }
   const interpretation=passInterpretations.get(pass)||{};
   if(!Object.hasOwn(interpretation,'practice_assistance')){interpretation.practice_assistance=assistanceTakeIdentity(stageAssistance.current());if(!stageAssistance.current()&&stageAssistance.state().persistence.status==='off')interpretation.practice_assistance_disabled=true;interpretation.song_mod=state.songMod?structuredClone(state.songMod):null;interpretation.source_revision=structuredClone(songMods.identity(state));passInterpretations.set(pass,interpretation);}
@@ -1274,7 +1275,7 @@ $('retry-assessments').addEventListener('click',()=>{state.recorder.retryFailed(
 $('export-takes').addEventListener('click',async()=>{const recorder=state.recorder;if(canonicalSession.pendingPause){try{await canonicalSession.pendingPause;await Promise.resolve();}catch{return;}if(recorder!==state.recorder)return;}const routing=midiController?.exportRoutingData(),exported=state.recorder.exportData();exported.passes=exported.passes.map((pass,index)=>({...pass,...(passInterpretations.has(state.recorder.passes[index])?{interpretation:passInterpretations.get(state.recorder.passes[index])}:{})}));const data={...exported,score_id:state.score?.id,practice_part:state.practicePart,practice_selection:structuredClone(state.practiceSelection),song_mod:state.songMod?structuredClone(state.songMod):null,view_configuration:{practice_layout:state.practiceLayout,show_other_parts:state.showOtherParts,falling_note_labels:fallingNoteLabels?.enabled()===true},target_plan:state.practicePlan,practice_assistance:assistanceTakeIdentity(stageAssistance.current()),...(!stageAssistance.current()&&stageAssistance.state().persistence.status==='off'?{practice_assistance_disabled:true}:{}),...(routing?{midi_routing:routing}:{}),keyboard_input_configuration:keyboardInput.exportConfigurationData()};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='worldmusichub-practice-session.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
 function advanceLoopClock(now) {
   if(!state.loop||!transport.running)return;
-  const clock=!state.cleanSong?canonicalSession.sourceClock():null;
+  const clock=!state.cleanSong?canonicalSession.sourceClock(now):null;
   if(clock&&canonicalSession.plan?.rangeMode){advanceCanonicalLoopClock(now,clock);return;}
   // A failed/suspended source renderer must never fall through to a wall-clock
   // wrap that could create a new pass after its audio generation was canceled.

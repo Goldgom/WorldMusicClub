@@ -130,7 +130,9 @@ for(const delay of [220,1300])test(`atomic in-take MIDI timestamp survives a ${d
 
 test('audio-backed first-take capture is bound to its admitted sample anchor and original MIDI event wall time',async()=>{
   const f=await setup(),{app}=f;
-  const advance=wall=>{f.time(wall);app.renderAudioTo((wall-1000)/1000);app.frame();};
+  // Publish a frame only after both clocks advance; a wall-only frame would
+  // deliberately model a stalled audio renderer instead of steady playback.
+  const advance=wall=>{app.renderAudioTo((wall-1000)/1000);f.time(wall);};
   try{
     await f.stage();await app.click('midi-button');await f.human();app.$('count-in').checked=false;app.$('metronome-enabled').checked=false;
     await app.click('play-button');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');const anchor=app.sourceStartWall();assert.ok(Number.isFinite(anchor)&&anchor>1000);

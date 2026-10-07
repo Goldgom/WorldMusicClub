@@ -27,7 +27,7 @@
     "test:pack-management-hosted": "node scripts/hosted-pack-management-check.mjs",
     "test:current-basic-catalog-native": "node scripts/check-current-basic-catalog-native.mjs",
     "test:user-pack-catalog-native": "node scripts/check-user-pack-catalog-native.mjs",
-    "test:canonical-audio": "node --test tests/canonical-audio-loop.test.js tests/canonical-audio-plan.test.js tests/canonical-audio-worklet.test.js tests/canonical-player.test.js",
+    "test:canonical-audio": "node --test tests/canonical-audio-loop.test.js tests/canonical-audio-plan.test.js tests/canonical-audio-worklet.test.js tests/canonical-player.test.js tests/canonical-first-take-clock.test.js",
     "test:canonical-hosted": "node scripts/hosted-canonical-audio-check.mjs",
     "test:user-pack-acceptance-flow": "node scripts/check-user-pack-acceptance-flow.mjs",
     "test:canonical-practice-acceptance": "node --test tests/canonical-practice-acceptance.test.js tests/canonical-practice-native-registration.test.js tests/canonical-practice-source-evidence.test.js",

@@ -7,10 +7,10 @@ a sine with the compiler's MIDI pitch and velocity and the common zero-tail
 attack/release envelope. A zero-velocity source stays a silent, ledgered gate.
 The user must accept `wmh-canonical-sine-ms-v1` before preparing it.
 
-This slice does not change app.js, the notation/follow implementation, instrument
-checks, physical target grouping, input dispatch, scoring, feedback, or recorder.
-It must not replace existing Solo loops, tempo copies, transposition or recorder
-passes until their integration is separately complete. A/B passes use the same audio thread with the explicit clip-and-rearticulate
+The audio module preserves the separate instrument checks, physical target
+grouping, input dispatch and scoring contracts. Application integration uses
+`CanonicalPracticeSession` for Solo loops, tempo/transposition copies and recorder
+passes. A/B passes use the same audio thread with the explicit clip-and-rearticulate
 policy described below; there is no Synth/rAF fallback.
 
 ## Rust evidence and host admission
@@ -70,6 +70,21 @@ acknowledgements before admitting the corresponding transport/recorder change.
 Late start/resume acknowledgements close output and cancel, never catch up.
 `stop()`, replacement and device interruption fence generations and disconnect
 output. Device restart requires a new explicit preparation.
+
+The canonical application admits one immutable `performance.now()` / AudioContext
+`currentTime` snapshot per generation. Its recorder anchors, acknowledged resume
+frames and loop boundaries all use that same mapping. Display queries project the
+wall time through it, floor to an audio frame and cap progress at the rendered
+`currentTime` frame. Scheduled leads stay in the preparing state until their
+mapped wall anchor. Render-quantized clock updates cannot publish a source/pass
+boundary before its recorded wall anchor.
+
+Each exported playback segment retains this `audio_wall_clock` mapping with
+`basis: "render-snapshot"`. It is an admission estimate, not measured device/output
+latency. Original event timestamps and the existing single latency correction
+are unchanged. This repair adds no output-timestamp dependency, stall watchdog or
+new exclusion policy for inputs during a running-context render freeze; existing
+context-state and receiver-error behavior remains in force.
 
 The processor receives numeric occurrence indices only. Original IDs and source
 reference tables remain in the immutable host mapping. Audits join those indices
