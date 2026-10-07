@@ -23,7 +23,8 @@ import {resolvePracticeSelection,humanPracticePartIds} from './practice-selectio
 import {SongModStore,createSongMod,songModChanges,songModOptions,songModCapabilities,assertSongModSupported,validateSongMod} from './song-mod.js';
 import {createPartInstrumentPolicy,assertPartInstrumentPolicyCurrent,assertPartInstrumentPolicyReady,resolvePartInstrumentInput,partInstrumentPolicyIssue} from './part-instrument-policy.js';
 import {setupSongModView} from './song-mod-view.js';
-import {createPracticeAssistanceController} from './practice-assistance.js';
+import {createProgressiveAssistanceController as createPracticeAssistanceController,PracticeProgressionStore} from './practice-progression.js';
+import {progressionForAssistance} from './practice-progression-receipt.js';
 import {assertPracticeAssistanceCurrent} from './practice-assistance-receipt.js';
 import {appAssistanceContext,currentAppAssistanceBinding,AppAssistanceStore,assistancePracticeGate,scopedAssistanceTargets,assistanceTakeIdentity} from './app-assistance.js';
 import {setupCompletePracticeView} from './complete-practice-view.js';
@@ -185,15 +186,15 @@ const latencyPreference=readLatencyPreference();
 let catalogIndexController=null,catalogIndexRequest=0,catalogIndexFailed=false;
 const state = {songMod:null,hiddenPartIds:new Set(),inspection:false,cleanSong:null,catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceSelection:null, practiceLayout:'solo', showOtherParts:true, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: latencyPreference.value, loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reasonKey:'app.compatibilityWaiting'}, instrumentOutOfRange: null, instrumentConflict: false, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, playPending: false, noticeTimer: null, audioLimitWarned: false};
 
-const assistanceStore=new AppAssistanceStore();
+const assistanceStore=new AppAssistanceStore(),progressionStore=new PracticeProgressionStore();
 let assistanceRefreshQueued=false,assistanceDisplayCache=null;
-function assistanceContext(where){const value=where==='preview'?preview?.value:state;return value?.compiled&&value.score?appAssistanceContext(value,currentProfile(),songMods.identity(value)):null;}
+function assistanceContext(where){const value=where==='preview'?preview?.value:state;if(!value?.compiled||!value.score)return null;return {...appAssistanceContext(value,currentProfile(),songMods.identity(value)),admissionKey:JSON.stringify(where==='stage'&&state.loop?[state.loop.start_ms,state.loop.end_ms,state.loop.target_note_ids]:null)};}
 function assistanceChanged(){
   if(assistanceRefreshQueued)return;assistanceRefreshQueued=true;
   queueMicrotask(()=>{assistanceRefreshQueued=false;if(!preview||!songModView)return;renderPreview();updateButtons();drawFrame();});
 }
-const previewAssistance=createPracticeAssistanceController({api,store:assistanceStore,getContext:()=>assistanceContext('preview'),onChange:assistanceChanged});
-const stageAssistance=createPracticeAssistanceController({api,store:assistanceStore,getContext:()=>assistanceContext('stage'),onChange:assistanceChanged});
+const previewAssistance=createPracticeAssistanceController({api,store:assistanceStore,progressionStore,getContext:()=>assistanceContext('preview'),onChange:assistanceChanged});
+const stageAssistance=createPracticeAssistanceController({api,store:assistanceStore,progressionStore,getContext:()=>assistanceContext('stage'),onChange:assistanceChanged});
 const stageAssistanceBinding=()=>currentAppAssistanceBinding(stageAssistance,assistanceContext('stage'));
 const previewAssistanceBinding=()=>currentAppAssistanceBinding(previewAssistance,assistanceContext('preview'));
 function getPracticeAssistanceDisplay(){
@@ -1145,7 +1146,7 @@ async function togglePlayback() {
 function assertCurrentPassAssignment(){
   const pass=state.recorder.active;if(!pass||pass.closedWall!==null||!pass.captureEnabled)return;
   const saved=passInterpretations.get(pass),checked=stageAssistance.current();
-  if(!saved||saved.practice_assistance?.plan.selection_digest!==(checked?.plan.selection_digest)||JSON.stringify(saved.practice_assistance?.receipt??null)!==JSON.stringify(checked?.receipt??null)||JSON.stringify(saved.source_revision)!==JSON.stringify(songMods.identity(state))||JSON.stringify(pass.timeline)!==JSON.stringify(state.targetTimeline))throw Object.assign(new Error('This take belongs to another note assignment. Reset the session before playing.'),{code:'assistance_take_reset_required'});
+  if(!saved||saved.practice_progression?.plan_digest!==progressionForAssistance(checked)?.plan.plan_digest||saved.practice_assistance?.plan.selection_digest!==(checked?.plan.selection_digest)||JSON.stringify(saved.practice_assistance?.receipt??null)!==JSON.stringify(checked?.receipt??null)||JSON.stringify(saved.source_revision)!==JSON.stringify(songMods.identity(state))||JSON.stringify(pass.timeline)!==JSON.stringify(state.targetTimeline))throw Object.assign(new Error('This take belongs to another note assignment. Reset the session before playing.'),{code:'assistance_take_reset_required'});
 }
 function beginPracticePass(now, captureEnabled = true) {
   assertCurrentPassAssignment();
@@ -1160,7 +1161,7 @@ function beginPracticePass(now, captureEnabled = true) {
     passInterpretations.get(pass).playback_segments.push({wall_start_ms:now,position_start_ms:transport.position,...structuredClone(canonicalSession.interpretation),...(canonicalSession.clockOrigin?{audio_wall_clock:structuredClone(canonicalSession.clockOrigin)}:{}),...(clock?{audio_clock:{player_epoch:clock.playerEpoch,generation:clock.generation,pass_index:clock.passIndex,cycle_start_frame:clock.cycleStartFrame,pass_start_frame:clock.passStartFrame,next_boundary_frame:clock.nextBoundaryFrame,initial_anchor_frame:clock.initialAnchorFrame}}:{})});
   }
   const interpretation=passInterpretations.get(pass)||{};
-  if(!Object.hasOwn(interpretation,'practice_assistance')){interpretation.practice_assistance=assistanceTakeIdentity(stageAssistance.current());if(!stageAssistance.current()&&stageAssistance.state().persistence.status==='off')interpretation.practice_assistance_disabled=true;interpretation.song_mod=state.songMod?structuredClone(state.songMod):null;interpretation.source_revision=structuredClone(songMods.identity(state));passInterpretations.set(pass,interpretation);}
+  if(!Object.hasOwn(interpretation,'practice_assistance')){interpretation.practice_assistance=assistanceTakeIdentity(stageAssistance.current());interpretation.practice_progression=progressionForAssistance(stageAssistance.current())?.plan??null;if(!stageAssistance.current()&&stageAssistance.state().persistence.status==='off')interpretation.practice_assistance_disabled=true;interpretation.song_mod=state.songMod?structuredClone(state.songMod):null;interpretation.source_revision=structuredClone(songMods.identity(state));passInterpretations.set(pass,interpretation);}
   state.inputs=pass.inputs;refreshPassHistory();displayChosenPass();return pass;
 }
 
@@ -1272,7 +1273,7 @@ async function assess() {
 }
 $('feedback-pass').addEventListener('change',displayChosenPass);
 $('retry-assessments').addEventListener('click',()=>{state.recorder.retryFailed();drainAssessments()});
-$('export-takes').addEventListener('click',async()=>{const recorder=state.recorder;if(canonicalSession.pendingPause){try{await canonicalSession.pendingPause;await Promise.resolve();}catch{return;}if(recorder!==state.recorder)return;}const routing=midiController?.exportRoutingData(),exported=state.recorder.exportData();exported.passes=exported.passes.map((pass,index)=>({...pass,...(passInterpretations.has(state.recorder.passes[index])?{interpretation:passInterpretations.get(state.recorder.passes[index])}:{})}));const data={...exported,score_id:state.score?.id,practice_part:state.practicePart,practice_selection:structuredClone(state.practiceSelection),song_mod:state.songMod?structuredClone(state.songMod):null,view_configuration:{practice_layout:state.practiceLayout,show_other_parts:state.showOtherParts,falling_note_labels:fallingNoteLabels?.enabled()===true},target_plan:state.practicePlan,practice_assistance:assistanceTakeIdentity(stageAssistance.current()),...(!stageAssistance.current()&&stageAssistance.state().persistence.status==='off'?{practice_assistance_disabled:true}:{}),...(routing?{midi_routing:routing}:{}),keyboard_input_configuration:keyboardInput.exportConfigurationData()};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='worldmusichub-practice-session.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
+$('export-takes').addEventListener('click',async()=>{const recorder=state.recorder;if(canonicalSession.pendingPause){try{await canonicalSession.pendingPause;await Promise.resolve();}catch{return;}if(recorder!==state.recorder)return;}const routing=midiController?.exportRoutingData(),exported=state.recorder.exportData();exported.passes=exported.passes.map((pass,index)=>({...pass,...(passInterpretations.has(state.recorder.passes[index])?{interpretation:passInterpretations.get(state.recorder.passes[index])}:{})}));const data={...exported,score_id:state.score?.id,practice_part:state.practicePart,practice_selection:structuredClone(state.practiceSelection),song_mod:state.songMod?structuredClone(state.songMod):null,view_configuration:{practice_layout:state.practiceLayout,show_other_parts:state.showOtherParts,falling_note_labels:fallingNoteLabels?.enabled()===true},target_plan:state.practicePlan,practice_assistance:assistanceTakeIdentity(stageAssistance.current()),practice_progression:progressionForAssistance(stageAssistance.current())?.plan??null,...(!stageAssistance.current()&&stageAssistance.state().persistence.status==='off'?{practice_assistance_disabled:true}:{}),...(routing?{midi_routing:routing}:{}),keyboard_input_configuration:keyboardInput.exportConfigurationData()};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='worldmusichub-practice-session.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
 function advanceLoopClock(now) {
   if(!state.loop||!transport.running)return;
   const clock=!state.cleanSong?canonicalSession.sourceClock(now):null;

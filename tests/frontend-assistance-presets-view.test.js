@@ -30,7 +30,7 @@ function assertUnchecked(f){
   assert.doesNotMatch(f.$('song-mod-assistance-status').textContent,/\d+ human targets/);
 }
 
-test('the native preset select exposes exact numeric configurations and leaves Original defaults untouched',()=>{
+test('the native preset select uses concise names with exact labeled numeric limits and leaves Original defaults untouched',()=>{
   const f=fixture(),select=f.$('song-mod-assistance-preset');
   assert.equal(f.$('song-mod-assistance-mode').value,'original');assert.equal(f.view.changed(),false);
   assert.equal(f.$('song-mod-assistance-preset-label').hidden,true);assert.equal(f.$('song-mod-assistance-limits').hidden,true);
@@ -40,11 +40,7 @@ test('the native preset select exposes exact numeric configurations and leaves O
   assert.match(f.$(select.getAttribute('aria-describedby')).textContent,/replace or reduce human targets/);
   assert.match(f.$(select.getAttribute('aria-describedby')).textContent,/Single can still make large pitch jumps/);
   f.automatic();assert.equal(f.$('song-mod-assistance-preset-label').hidden,false);assert.equal(f.$('song-mod-assistance-limits').hidden,false);
-  for(const [index,{settings}] of assistancePresets().entries()){
-    const text=select.options[index].textContent;
-    assert.match(text,new RegExp(`max ${settings.max_targets_per_onset}/onset`));assert.match(text,new RegExp(`min ${settings.min_onset_interval_ms} ms`));
-    assert.match(text,new RegExp(`max ${settings.max_simultaneous_keys} held keys`));assert.match(text,new RegExp(`${settings.max_held_span_semitones} semitone span`));
-  }
+  assert.deepEqual([...select.options].map(option=>option.textContent),['Single','Balanced','Dense','Custom']);
   for(const field of fields){const input=f.$('song-mod-assistance-'+field);assert.equal(input.type,'number');assert.equal(input.disabled,false);assert.equal(input.value,String(defaultAssistanceSettings()[field]));assert.ok(input.closest('label').querySelector('span').textContent);}
   assert.equal(f.calls.length,0);assert.equal(f.storage.values.size,0);assertUnchecked(f);
 });
@@ -115,7 +111,8 @@ test('stage preset changes require fresh reset acknowledgement and never reset o
 test('new controls retain focus and native keyboard semantics across renders and locale changes',()=>{
   const f=fixture();f.automatic();const select=f.$('song-mod-assistance-preset');select.focus();f.preset('dense');assert.equal(f.document.activeElement,select);assert.equal(f.$('song-mod-assistance-preset'),select);
   assert.equal(select.hasAttribute('tabindex'),false);assert.equal(select.hasAttribute('role'),false);
-  f.i18n.locale='zh-CN';f.view.render();assert.equal(f.document.activeElement,select);assert.equal(select.value,'dense');assert.equal(f.$(select.getAttribute('aria-labelledby')).textContent,'键盘配置');assert.match(select.options[2].textContent,/密集.*4.*125.*6.*12/);assert.match(f.$('song-mod-assistance-model').textContent,/不一定互相包含/);assert.match(f.$('song-mod-assistance-model').textContent,/单音配置仍可能连续大跳/);
+  f.i18n.locale='zh-CN';f.view.render();assert.equal(f.document.activeElement,select);assert.equal(select.value,'dense');assert.equal(f.$(select.getAttribute('aria-labelledby')).textContent,'键盘配置');assert.deepEqual([...select.options].map(option=>option.textContent),['单音','均衡','密集','自定义']);assert.match(f.$('song-mod-assistance-model').textContent,/不一定互相包含/);assert.match(f.$('song-mod-assistance-model').textContent,/单音配置仍可能连续大跳/);
+  for(const field of fields){const input=f.$('song-mod-assistance-'+field);assert.equal(input.value,String(assistancePresetSettings('dense')[field]));assert.ok(input.closest('label').querySelector('span').textContent);}
   assert.equal(f.$('song-mod-assistance-preview-title').textContent,'分配预览 · 完整歌曲');assert.match(f.$('song-mod-assistance-legend').textContent,/● 真人.*◆ 机器/);
   const input=f.$('song-mod-assistance-min_onset_interval_ms');f.edit('min_onset_interval_ms',126);f.view.render();assert.equal(f.document.activeElement,input);assert.equal(f.$('song-mod-assistance-preset').value,'custom');assert.match(select.options[3].textContent,/自定义/);
   assert.equal(f.$('song-mod-assistance-status').getAttribute('role'),'status');assert.equal(f.$('song-mod-assistance-status').getAttribute('aria-live'),'polite');assert.equal(f.$('song-mod-assistance-status').getAttribute('aria-atomic'),'true');

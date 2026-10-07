@@ -225,5 +225,8 @@
   "tests/practice-assistance-presets.test.js",
   "tests/frontend-assistance-presets-view.test.js",
   "tests/frontend-assistance-presets-app.test.js",
-  "tests/guitar-phrase-preview.test.js"
+  "tests/guitar-phrase-preview.test.js",
+  "tests/practice-progression.test.js",
+  "tests/practice-progression-view.test.js",
+  "tests/frontend-practice-progression.test.js"
 ]

@@ -134,11 +134,11 @@ test('named preview evidence retains actual Rust outputs without assuming nested
     const mutated = structuredClone(presetEvidence()); mutate(mutated); assert.throws(() => validateAssistancePresetEvidence(mutated));
   }
 });
-test('Mod layout oracle rejects clipped controls, overflow, missing labels and shortened native options', () => {
+test('Mod layout oracle rejects clipped controls, overflow, missing labels and mismatched native options', () => {
   for (const layout of presetEvidence().presetLayouts) {
     validateAssistanceModLayout(layout);
     for (const mutate of [v => v.documentWidth += 2, v => v.content.scrollWidth += 2, v => v.label = '', v => v.description = '', v => v.keyboard.event.trusted = false, v => v.keyboard.focused = 'other',
-      v => v.options[0].text = 'Single', v => v.options[3].disabled = false, v => v.controls.pop(),
+      v => v.options[0].text = 'Singl', v => v.options[3].disabled = false, v => v.controls.pop(),
       v => v.controls[0].hit = false, v => v.controls[1].rect.x = -2, v => v.controls[2].rect.y = v.viewport.height]) {
       const mutated = structuredClone(layout); mutate(mutated);
       assert.throws(() => validateAssistanceModLayout(mutated));

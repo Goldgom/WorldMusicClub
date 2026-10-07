@@ -282,7 +282,30 @@ with whole selection remaining the default. Dedicated Node and Rust regressions
 cover large full scores with small ranges, exact adjacent fractions, entry holds,
 chord boundaries, complete tails, tempo changes, tied and outside locks, inventory
 mismatch and stale replies. DOM tests exercise apply, invalid draft, revert,
-locale changes and repeated-score explanations. Real GUI acceptance of the new
-phrase controls remains pending in an authorized browser environment. An independent
-small-phrase exhaustive quality oracle and richer right-hand technique guidance
-remain open; this change does not claim a global biomechanical optimum.
+locale changes and repeated-score explanations. An independent small-phrase
+exhaustive quality oracle and richer right-hand technique guidance remain open;
+this change does not claim a global biomechanical optimum.
+
+## Accepted phrase browser evidence
+
+The actual Rust/browser phrase-controls run
+[37597207533](https://github.com/Goldgom/WorldMusicClub/actions/runs/37597207533)
+passed on 2026-10-07 at public source
+[`f1e8d2367b9e16e8537bc57d9eb1ac5b567207f0`](https://github.com/Goldgom/WorldMusicClub/commit/f1e8d2367b9e16e8537bc57d9eb1ac5b567207f0).
+Its original fixture and retained source-bound report cover:
+
+- Whole selection to an explicit written phrase, invalid drafts and Revert
+- The A+B human-part union, a complete tied entry hold and full tails past B,
+  with selected locks applied and outside-phrase locks retained but inactive
+- All eight delayed-response races: Apply, Revert, source changes and part
+  changes during each of the inventory and final-plan request phases
+- Displayed current/next assignments and retained route pixels at 1440×1100
+- Unchanged source export, paused clock, playback loop and assessed take across
+  phrase and lock edits, invalid drafts and Revert
+
+The retained take has one input, zero hits and one extra. This is an assessment
+preservation check, not a successful performance demonstration. The browser proof
+does not verify physical fingering, physical MIDI, a global optimum or native
+guitar controls. The separate [full checkpoint evidence](ASSISTANCE_PRESETS.md#accepted-checkpoint-613-evidence)
+does not expand those guitar-specific claims, and later main CI must still be
+reported by its own exact run.

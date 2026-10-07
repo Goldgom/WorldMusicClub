@@ -1,5 +1,7 @@
 import {assistanceEqual,defaultAssistanceSettings,assistancePresets,assistancePresetId,assistancePresetSettings} from './practice-assistance-receipt.js';
 import {assistanceText} from './practice-assistance-locales.js';
+import {setupPracticeProgressionView} from './practice-progression-view.js';
+import {progressionText} from './practice-progression-locales.js';
 export function assistanceSummary(checked,locale='en'){
   return checked?assistanceText(locale,'summary',{human:checked.coverage.human_target_count,machine:checked.coverage.machine_occurrence_count}):'';
 }
@@ -8,7 +10,7 @@ export function setupPracticeAssistanceView({document,parent,i18n,onChange=()=>{
   const make=(tag,id,owner)=>{const node=document.createElement(tag);if(id)node.id=id;owner?.append(node);return node;};
   const root=make('section','song-mod-assistance',parent);root.className='song-mod-assistance';root.setAttribute('aria-labelledby','song-mod-assistance-title');root.hidden=true;
   const title=make('h3','song-mod-assistance-title',root),intro=make('p',null,root),modeLabel=make('label',null,root),modeText=make('span',null,modeLabel),mode=make('select','song-mod-assistance-mode',modeLabel);
-  for(const value of ['original','automatic']){const option=make('option',null,mode);option.value=value;}
+  for(const value of ['original','automatic','progression']){const option=make('option',null,mode);option.value=value;}
   const presetLabel=make('label','song-mod-assistance-preset-label',root),presetText=make('span','song-mod-assistance-preset-text',presetLabel),preset=make('select','song-mod-assistance-preset',presetLabel),presets=assistancePresets();
   preset.setAttribute('aria-labelledby',presetText.id);preset.setAttribute('aria-describedby','song-mod-assistance-model');
   for(const {id} of [...presets,{id:'custom'}]){const option=make('option',null,preset);option.value=id;option.disabled=id==='custom';}
@@ -24,6 +26,7 @@ export function setupPracticeAssistanceView({document,parent,i18n,onChange=()=>{
   let disableRequested=false;
   let controller=null,initial=null,origin='preview',hasTakes=false,externalBusy=false,modReset=false,localError=null,checking=false,generation=0,rendering=false,explicitOptIn=false;
   const t=(key,params)=>assistanceText(i18n.locale,key,params),machineParts=new WeakMap();
+  const progressionView=setupPracticeProgressionView({document,parent:root,i18n,onLayer:layer=>{if(!controller||externalBusy)return;generation++;checking=false;explicitOptIn=true;localError=null;reset.checked=false;controller.setDraft({mode:'progression',settings:null,layer});render();onChange();}});presetLabel.before(progressionView.root);
   function state(){return controller?.state()||null;}
   function changed(){
     const s=state();if(!s?.draft)return false;if(disableRequested)return true;
@@ -31,7 +34,7 @@ export function setupPracticeAssistanceView({document,parent,i18n,onChange=()=>{
     // path. Merely changing its union must not opt into stricter note atoms.
     const defaultOriginal=s.draft.mode==='original'&&!s.active&&!s.persistence.recipe&&['default','off'].includes(s.persistence.status);
     if(defaultOriginal)return explicitOptIn;
-    const pick=d=>({mode:d.mode,settings:d.settings,selection:d.selection});
+    const pick=d=>({mode:d.mode,settings:d.settings,selection:d.selection,layer:d.layer});
     return s.replaceInvalidRequired||s.persistence.status==='unavailable'||!assistanceEqual(pick(s.draft),pick(initial))||(!s.active&&Boolean(s.persistence.recipe));
   }
   function checked(){if(disableRequested||localError)return null;const s=state();if(!s?.draft||s.error)return null;return s.prepared||(!changed()?s.active:null)||null;}
@@ -40,16 +43,17 @@ export function setupPracticeAssistanceView({document,parent,i18n,onChange=()=>{
   function render(){
     if(rendering)return;rendering=true;
     try{
-      root.hidden=!controller;if(!controller)return;const s=state(),draft=s.draft;previewTitle.textContent=t('preview');if(!draft){status.textContent=t('stale');status.dataset.phase='stale';preview.dataset.state='unchecked';units.hidden=true;units.textContent='';check.disabled=mode.disabled=preset.disabled=off.disabled=true;for(const {input}of inputs.values())input.disabled=true;return;}
-      const automatic=draft.mode==='automatic',unsupported=draft.selection.profile.kind!=='piano',empty=!draft.selection.selected_part_ids.length,busy=externalBusy||checking||s.phase==='preparing',plan=busy?null:checked();
+      root.hidden=!controller;if(!controller)return;const s=state(),draft=s.draft;previewTitle.textContent=t('preview');if(!draft){progressionView.render({visible:false});status.textContent=t('stale');status.dataset.phase='stale';preview.dataset.state='unchecked';units.hidden=true;units.textContent='';check.disabled=mode.disabled=preset.disabled=off.disabled=true;for(const {input}of inputs.values())input.disabled=true;return;}
+      const automatic=draft.mode==='automatic',progressive=draft.mode==='progression',unsupported=draft.selection.profile.kind!=='piano',empty=!draft.selection.selected_part_ids.length,busy=externalBusy||checking||s.phase==='preparing',plan=busy?null:checked();
       off.textContent=t(disableRequested?'offUndo':'offAction');off.disabled=busy;off.setAttribute('aria-pressed',String(disableRequested));modeLabel.hidden=disableRequested;
-      title.textContent=t('title');intro.textContent=t(disableRequested?'offExplanation':'explanation');modeText.textContent=t('mode');for(const option of mode.options)option.textContent=t(option.value);mode.value=draft.mode;mode.options[1].disabled=unsupported||empty;mode.disabled=externalBusy;
+      title.textContent=t('title');intro.textContent=t(disableRequested?'offExplanation':'explanation');modeText.textContent=t('mode');for(const option of mode.options)option.textContent=option.value==='progression'?progressionText(i18n.locale,'mode'):t(option.value);mode.value=draft.mode;mode.options[1].disabled=unsupported||empty;mode.options[2].disabled=!s.supportsProgression||unsupported||empty;
+      progressionView.render({visible:!disableRequested&&progressive,layer:draft.layer,checked:plan?(s.preparedProgression||s.progression):null,disabled:externalBusy||unsupported||empty});mode.disabled=externalBusy;
       limits.hidden=disableRequested||!automatic;model.hidden=disableRequested||!automatic;model.textContent=t('model');const settings=draft.settings||defaultAssistanceSettings();
       presetLabel.hidden=disableRequested||!automatic;presetText.textContent=t('configuration');preset.disabled=externalBusy||unsupported||empty;
       for(const option of preset.options){const entry=presets.find(item=>item.id===option.value);option.textContent=entry?t('presetOption',{name:t('preset_'+entry.id),...entry.settings}):t('custom');}preset.value=assistancePresetId(settings);
       for(const [field,{input,text}] of inputs){text.textContent=t(field);if(document.activeElement!==input)input.value=String(settings[field]);input.disabled=externalBusy;}
       availability.hidden=disableRequested||!(unsupported||empty);availability.textContent=t(empty?'noHuman':'unsupported');
-      check.hidden=disableRequested;check.textContent=t(busy?'checking':'check');check.disabled=busy||automatic&&(unsupported||empty);
+      check.hidden=disableRequested;check.textContent=t(busy?'checking':'check');check.disabled=busy||(automatic||progressive)&&(unsupported||empty);
       status.textContent=disableRequested?t('offDraft'):localError?t('error')+' '+localError.message:s.error?t('error')+' '+s.error.message:busy?t('checking'):plan?t('counts',{human:plan.coverage.human_target_count,machine:plan.coverage.machine_occurrence_count})+(plan.scored_mode_allowed?'':' · '+t('noScore')):s.persistence.status==='off'&&!changed()?t('off'):t('unchecked');status.dataset.phase=disableRequested?'off-draft':s.phase;
       preview.dataset.state=disableRequested?'off-draft':busy?'checking':plan?'checked':'unchecked';
       units.hidden=!plan;units.textContent=plan?t('units',{human:plan.coverage.human_source_unit_count,machine:plan.coverage.machine_source_unit_count,total:plan.coverage.source_unit_count}):'';
@@ -59,7 +63,7 @@ export function setupPracticeAssistanceView({document,parent,i18n,onChange=()=>{
     }finally{rendering=false;}
   }
   function edit(){
-    if(!controller||externalBusy)return;disableRequested=false;if(mode.value==='automatic')explicitOptIn=true;generation++;checking=false;localError=null;reset.checked=false;
+    if(!controller||externalBusy)return;disableRequested=false;if(['automatic','progression'].includes(mode.value))explicitOptIn=true;generation++;checking=false;localError=null;reset.checked=false;
     const settings=mode.value==='automatic'?{...defaultAssistanceSettings(),...Object.fromEntries([...inputs].map(([field,{input}])=>[field,input.value.trim()===''?NaN:Number(input.value)]))}:null;
     try{controller.setDraft({mode:mode.value,settings});}catch(error){localError=error;}render();onChange();
   }
@@ -83,7 +87,7 @@ export function setupPracticeAssistanceView({document,parent,i18n,onChange=()=>{
     open(next,{where='preview',hasTakes:existingTakes=false}={}){generation++;disableRequested=false;explicitOptIn=false;controller=next||null;origin=where;hasTakes=Boolean(existingTakes);externalBusy=false;modReset=false;localError=null;checking=false;reset.checked=replace.checked=false;if(controller){const s=controller.beginDraft();initial=s?.draft||null;if(!initial)controller=null;}render();},
     update({selection,busy=false,requiresReset=false}={}){externalBusy=busy;modReset=requiresReset;if(controller&&selection){const s=state();if(s.draft&&!assistanceEqual(s.draft.selection,selection)){generation++;checking=false;reset.checked=false;localError=null;controller.setDraft({selection});}}render();},
     restoreOriginal(){if(controller){disableRequested=false;generation++;checking=false;localError=null;reset.checked=false;controller.setDraft({mode:'original',settings:null});render();onChange();}},
-    canApply(){const s=state();return !controller||Boolean(s?.draft&&!checking&&!localError&&(!resetRequired()||reset.checked)&&(!s.replaceInvalidRequired||replace.checked)&&!(!disableRequested&&s.draft.mode==='automatic'&&(s.draft.selection.profile.kind!=='piano'||!s.draft.selection.selected_part_ids.length)));},
+    canApply(){const s=state();return !controller||Boolean(s?.draft&&!checking&&!localError&&(!resetRequired()||reset.checked)&&(!s.replaceInvalidRequired||replace.checked)&&!(!disableRequested&&['automatic','progression'].includes(s.draft.mode)&&(s.draft.selection.profile.kind!=='piano'||!s.draft.selection.selected_part_ids.length)));},
     prepare,
     finishUnchanged(){controller?.cancelDraft();},
     resetConfirmed(){return !resetRequired()||reset.checked;},

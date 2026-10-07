@@ -33,12 +33,17 @@ rating. Held span applies across simultaneously held selected pitches, not the
 distance between successive non-overlapping notes. Rust still owns exact source
 interpretation, atomic ownership, note selection and receipt generation.
 
-Loosening these limits does **not** promise that the resulting human targets
-contain the targets from another preset. Retaining an additional earlier note
-can change which later notes meet spacing or held-key constraints. Ties, repeat
-occurrences and grouped source units also retain their existing atomic ownership
-rules. Each result must be prepared and checked independently for the actual
-source, selected parts and instrument profile.
+These v1 configurations are **not nested layers**. Loosening their limits can
+replace retained notes and can reduce the human target count; it does **not**
+promise that the resulting human targets contain the targets from another preset.
+Retaining an additional earlier note can change which later notes meet spacing
+or held-key constraints. Ties, repeat occurrences and grouped source units also
+retain their existing atomic ownership rules. Each result must be prepared and
+checked independently for the actual source, selected parts and instrument profile.
+
+A separate progressive family is under development. It is not part of this
+accepted v1 catalog or evidence, and must not silently relabel or migrate existing
+numeric recipes into a nested-layer contract.
 
 ## JavaScript API
 
@@ -95,4 +100,32 @@ exercise exact matching and invalid/custom input, preserve default Original,
 and restore prior numeric recipes without writes or weakening version fences.
 Synthetic receipt fixtures verify the JavaScript persistence contract; they do
 not certify musical selection. Actual selection remains a Rust planner concern.
-Browser and packaged native acceptance remain separate checkpoint requirements.
+Browser and packaged native acceptance are separate checkpoint requirements;
+the focused Node command alone does not establish either.
+
+### Accepted checkpoint 613 evidence
+
+The 2026-10-07 checkpoint is bound to public source
+[`f1e8d2367b9e16e8537bc57d9eb1ac5b567207f0`](https://github.com/Goldgom/WorldMusicClub/commit/f1e8d2367b9e16e8537bc57d9eb1ac5b567207f0).
+These exact runs passed:
+
+- [Preset browser acceptance, run 37597169936](https://github.com/Goldgom/WorldMusicClub/actions/runs/37597169936):
+  actual Rust-backed named configurations and browser controls
+- [Preset native acceptance, run 37597191566](https://github.com/Goldgom/WorldMusicClub/actions/runs/37597191566):
+  the focused native assistance scenario and retained evidence verification
+- [Full Verify, run 37598411376](https://github.com/Goldgom/WorldMusicClub/actions/runs/37598411376):
+  all five jobs, including Linux/Windows Rust checks and the frontend aggregate
+- [Full Windows/native acceptance, run 37598411465](https://github.com/Goldgom/WorldMusicClub/actions/runs/37598411465):
+  all five jobs, including native packaging, ordinary runtime startup and the
+  final native/browser acceptance summary
+
+The focused preset runs are not substitutes for the full checkpoint runs. Guitar
+phrase browser coverage and its limits are recorded separately in
+[Guitar fingering](GUITAR_FINGERING.md#accepted-phrase-browser-evidence).
+
+This records the accepted checkpoint, not a blanket claim that main is green.
+The later [main Verify run 37603284897](https://github.com/Goldgom/WorldMusicClub/actions/runs/37603284897)
+failed in `npm test` while removing a temporary Git fixture (`ENOTEMPTY` in
+`.git/objects/pack`), which also failed its frontend aggregate. That cleanup race
+is being repaired and revalidated separately; the earlier passing runs do not
+turn the failed run into a pass.
