@@ -466,3 +466,174 @@ fn many_parts_share_one_timeline_without_copying_controller_declarations() {
     );
     assert!(d.parts.iter().all(|p| p.channel_id == d.channels[0].id));
 }
+
+#[test]
+fn later_program_resolves_prior_program_order_without_inventing_bank_values() {
+    let score = canonical(&[
+        track(&[(0, &[0xc0, 1]), (1, &[0xc0, 3])]),
+        track(&[(0, &[0xc0, 2]), (2, &[0x90, 60, 80]), (1, &[0x80, 60, 0])]),
+    ]);
+    let d = describe_canonical_midi(&score).unwrap();
+    let summary = &d.parts[0].selection_summary;
+    assert_eq!(summary.status, SelectionStatus::Known);
+    assert_eq!(summary.attacks_with_ambiguous_selection, 0);
+    assert_eq!(
+        summary.observed_selections,
+        vec![NumericSelection {
+            program: 3,
+            bank_most_significant: None,
+            bank_least_significant: None,
+        }]
+    );
+    assert_eq!(d.channels[0].ambiguous_ticks, vec![0]);
+}
+
+#[test]
+fn foreign_pending_bank_at_an_attack_does_not_change_the_latched_program() {
+    let score = canonical(&[
+        track(&[(0, &[0xc0, 7]), (1, &[0x90, 60, 80]), (1, &[0x80, 60, 0])]),
+        track(&[(1, &[0xb0, 0, 4]), (0, &[0xb0, 32, 5])]),
+    ]);
+    let d = describe_canonical_midi(&score).unwrap();
+    assert_eq!(d.parts[0].selection_summary.status, SelectionStatus::Known);
+    assert_eq!(
+        d.parts[0].selection_summary.observed_selections,
+        vec![NumericSelection {
+            program: 7,
+            bank_most_significant: None,
+            bank_least_significant: None,
+        }]
+    );
+    assert!(d.channels[0].ambiguous_ticks.is_empty());
+}
+
+#[test]
+fn each_tracks_proven_same_tick_prefix_is_preserved_for_its_own_attack() {
+    let score = canonical(&[
+        track(&[(0, &[0xc0, 7]), (0, &[0x90, 60, 80]), (1, &[0x80, 60, 0])]),
+        track(&[(0, &[0x90, 64, 80]), (1, &[0x80, 64, 0])]),
+    ]);
+    let d = describe_canonical_midi(&score).unwrap();
+    assert_eq!(d.parts[0].selection_summary.status, SelectionStatus::Known);
+    assert_eq!(
+        d.parts[0].selection_summary.observed_selections[0].program,
+        7
+    );
+    assert_eq!(
+        d.parts[1].selection_summary.status,
+        SelectionStatus::Ambiguous
+    );
+    assert_eq!(
+        d.parts[1]
+            .selection_summary
+            .attacks_with_ambiguous_selection,
+        1
+    );
+}
+
+#[test]
+fn program_overwrite_does_not_clear_conflicting_pending_banks_but_bank_overwrite_does() {
+    let score = canonical(&[
+        track(&[
+            (0, &[0xb0, 0, 1]),
+            (1, &[0xc0, 3]),
+            (1, &[0x90, 60, 80]),
+            (1, &[0x80, 60, 0]),
+            (0, &[0xb0, 0, 9]),
+            (0, &[0xc0, 3]),
+            (1, &[0x90, 64, 80]),
+            (1, &[0x80, 64, 0]),
+        ]),
+        track(&[(0, &[0xb0, 0, 2])]),
+    ]);
+    let d = describe_canonical_midi(&score).unwrap();
+    let summary = &d.parts[0].selection_summary;
+    assert_eq!(summary.attacks_with_ambiguous_selection, 1);
+    assert_eq!(
+        summary.observed_selections,
+        vec![NumericSelection {
+            program: 3,
+            bank_most_significant: Some(9),
+            bank_least_significant: None,
+        }]
+    );
+}
+
+#[test]
+fn same_track_system_event_does_not_retroactively_taint_a_proven_prior_attack() {
+    for system in [
+        &[0xf0, 2, 0x7d, 0xf7][..],
+        &[0xf7, 1, 0x01][..],
+        &[255, 0x7f, 1, 0x01][..],
+    ] {
+        let score = basic(&[track(&[
+            (0, &[0xc0, 7]),
+            (1, &[0x90, 60, 80]),
+            (0, system),
+            (1, &[0x80, 60, 0]),
+            (1, &[0x90, 64, 80]),
+            (1, &[0x80, 64, 0]),
+        ])]);
+        let d = describe_basic(&score).unwrap();
+        let summary = &d.parts[0].selection_summary;
+        assert_eq!(summary.attacks_with_ambiguous_selection, 1);
+        assert_eq!(summary.observed_selections[0].program, 7);
+        assert_eq!(d.uninterpreted_sound_events[0].origin.event, 2);
+        assert_eq!(d.parts[0].first_attack.as_ref().unwrap().origin.event, 1);
+    }
+}
+
+#[test]
+fn same_tick_system_boundary_remains_uncertain_before_own_attack_or_on_other_tracks() {
+    let score = basic(&[track(&[
+        (0, &[0xc0, 7]),
+        (1, &[0xf0, 2, 0x7d, 0xf7]),
+        (0, &[0x90, 60, 80]),
+        (1, &[0x80, 60, 0]),
+    ])]);
+    assert_eq!(
+        describe_basic(&score).unwrap().parts[0]
+            .selection_summary
+            .status,
+        SelectionStatus::Ambiguous
+    );
+    let score = basic(&[
+        track(&[(0, &[0xc0, 7]), (1, &[0x90, 60, 80]), (1, &[0x80, 60, 0])]),
+        track(&[(1, &[0xf0, 2, 0x7d, 0xf7])]),
+    ]);
+    assert_eq!(
+        describe_basic(&score).unwrap().parts[0]
+            .selection_summary
+            .status,
+        SelectionStatus::Ambiguous
+    );
+}
+
+#[test]
+fn invalid_raw_channel_prefix_has_explicit_unknown_scope_and_is_never_clamped() {
+    let score = basic(&[track(&[
+        (0, &[255, 0x20, 1, 31]),
+        (0, &[255, 4, 1, b'X']),
+        (0, &[0x90, 60, 80]),
+        (0, &[255, 8, 1, b'Y']),
+        (1, &[0x80, 60, 0]),
+    ])]);
+    let d = describe_basic(&score).unwrap();
+    assert!(matches!(
+        d.tracks[0].routing_events[0].declaration,
+        RoutingDeclaration::InvalidChannelPrefix { byte: 31 }
+    ));
+    let names = &d.tracks[0].names;
+    assert_eq!(
+        names[0].channel_prefix_scope,
+        ChannelPrefixScope::InvalidDeclaration
+    );
+    assert_eq!(names[0].channel_prefix, None);
+    assert_eq!(
+        names[0].channel_prefix_declaration,
+        Some(Coordinate { track: 0, event: 0 })
+    );
+    assert_eq!(names[1].channel_prefix_scope, ChannelPrefixScope::Unscoped);
+    assert_eq!(names[1].channel_prefix_declaration, None);
+    assert_eq!(d.channels[0].channel, 0);
+}

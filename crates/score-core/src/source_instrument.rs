@@ -9,7 +9,7 @@ use crate::{basic_keys, clean_song::Coordinate, practice_source, Beat, Score};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 pub const DISCLOSURE_REVISION: u32 = 1;
 pub const MAX_DISCLOSURE_BYTES: usize = 32 * 1024 * 1024;
@@ -104,8 +104,11 @@ pub struct DeclaredName {
     /// Only exact UTF-8, never replacement characters or guessed legacy text.
     /// Treat as plain untrusted text at the presentation boundary.
     pub utf8: Option<String>,
-    /// None means track metadata, not permission to guess a channel from notes.
+    /// Only valid 0..15 associations. Inspect scope before treating None as
+    /// unscoped: an invalid raw prefix is not a channel and is never clamped.
     pub channel_prefix: Option<u8>,
+    pub channel_prefix_scope: ChannelPrefixScope,
+    pub channel_prefix_declaration: Option<Coordinate>,
     /// Route-table index when that declaration is used by any channel message.
     /// The exact preceding routing declarations also remain available when no
     /// channel ever uses this metadata-only route; no route bytes are duplicated.
@@ -120,6 +123,13 @@ pub enum NameRole {
     InstrumentName,
     ProgramName,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChannelPrefixScope {
+    Unscoped,
+    DeclaredChannel,
+    InvalidDeclaration,
+}
 
 #[derive(Debug, Serialize)]
 pub struct RoutingEvent {
@@ -132,6 +142,7 @@ pub enum RoutingDeclaration {
     Port { value: u8 },
     DeviceName { bytes: Vec<u8> },
     ChannelPrefix { channel: u8 },
+    InvalidChannelPrefix { byte: u8 },
 }
 #[derive(Debug, Serialize)]
 pub struct RouteDetails {
@@ -439,6 +450,8 @@ fn build(
         let mut port_declaration = None;
         let mut device_name_declaration = None;
         let mut prefix = None;
+        let mut prefix_scope = ChannelPrefixScope::Unscoped;
+        let mut prefix_declaration = None;
         let mut tick = 0;
         for (index, record) in track.events.iter().enumerate() {
             tick += u64::from(record.0);
@@ -455,15 +468,27 @@ fn build(
                     bytes: bytes.to_vec(),
                     utf8: std::str::from_utf8(bytes).ok().map(str::to_owned),
                     channel_prefix: prefix,
+                    channel_prefix_scope: prefix_scope,
+                    channel_prefix_declaration: prefix_declaration,
                     source_route_index: current_route_index,
                     port_declaration,
                     device_name_declaration,
                 }),
                 [255, 0x20, channel] => {
-                    prefix = Some(*channel);
+                    prefix = (*channel < 16).then_some(*channel);
+                    prefix_scope = if prefix.is_some() {
+                        ChannelPrefixScope::DeclaredChannel
+                    } else {
+                        ChannelPrefixScope::InvalidDeclaration
+                    };
+                    prefix_declaration = Some(at.origin);
                     details.routing_events.push(RoutingEvent {
                         at,
-                        declaration: RoutingDeclaration::ChannelPrefix { channel: *channel },
+                        declaration: if prefix.is_some() {
+                            RoutingDeclaration::ChannelPrefix { channel: *channel }
+                        } else {
+                            RoutingDeclaration::InvalidChannelPrefix { byte: *channel }
+                        },
                     });
                 }
                 [255, 0x21, value] => {
@@ -489,6 +514,8 @@ fn build(
                 [0xf0 | 0xf7, ..] | [255, 0x7f, ..] => uninterpreted_sound_events.push(at),
                 [status, rest @ ..] if (0x80..=0xef).contains(status) => {
                     prefix = None; // SMF channel prefix ends at the next channel message.
+                    prefix_scope = ChannelPrefixScope::Unscoped;
+                    prefix_declaration = None;
                     let channel = status & 15;
                     let route_index = current_route_index.ok_or_else(|| {
                         error(
@@ -540,7 +567,7 @@ fn build(
         tracks.push(details);
     }
     let mut channels = vec![];
-    let first_uninterpreted_tick = uninterpreted_sound_events.iter().map(|e| e.tick).min();
+    let system_boundary = SystemBoundary::new(&uninterpreted_sound_events);
     for ((route, channel), mut stream) in streams {
         stream.sort_by_key(|e| (e.at.tick, e.at.origin));
         let mut details = ChannelDetails {
@@ -550,7 +577,7 @@ fn build(
             selection_timeline: vec![],
             ambiguous_ticks: vec![],
         };
-        summarize(&stream, &mut details, &mut parts, first_uninterpreted_tick);
+        summarize(&stream, &mut details, &mut parts, system_boundary.as_ref());
         channels.push(details);
     }
     for part in &mut parts {
@@ -593,75 +620,252 @@ fn build(
     })
 }
 
+/// Abstract numeric evidence. Undeclared and ambiguous are distinct: a later
+/// program can replace program ambiguity, but cannot resolve a conflicting bank.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Value {
+    #[default]
+    Undeclared,
+    Known(u8),
+    Ambiguous,
+}
+impl Value {
+    fn join(self, other: Self) -> Self {
+        if self == other {
+            self
+        } else {
+            Self::Ambiguous
+        }
+    }
+    fn known(self) -> Option<u8> {
+        if let Self::Known(value) = self {
+            Some(value)
+        } else {
+            None
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, Default)]
+struct SelectionState {
+    program: Value,
+    banks: [Value; 2],
+}
+impl SelectionState {
+    fn join(self, other: Self) -> Self {
+        Self {
+            program: self.program.join(other.program),
+            banks: [
+                self.banks[0].join(other.banks[0]),
+                self.banks[1].join(other.banks[1]),
+            ],
+        }
+    }
+    fn ambiguous(self) -> bool {
+        self.program == Value::Ambiguous
+            || (self.program.known().is_some() && self.banks.contains(&Value::Ambiguous))
+    }
+    fn numeric(self) -> Option<NumericSelection> {
+        if self.ambiguous() {
+            return None;
+        }
+        Some(NumericSelection {
+            program: self.program.known()?,
+            bank_most_significant: self.banks[0].known(),
+            bank_least_significant: self.banks[1].known(),
+        })
+    }
+}
+#[derive(Default)]
+struct TickTrack {
+    all_banks: [Option<Value>; 2],
+    final_banks: [Option<Value>; 2],
+    all_programs: Option<SelectionState>,
+    final_program: Option<SelectionState>,
+}
+fn bank_change(declaration: SelectionDeclaration) -> Option<(usize, Value)> {
+    match declaration {
+        SelectionDeclaration::BankMostSignificant { value } => Some((0, Value::Known(value))),
+        SelectionDeclaration::BankLeastSignificant { value } => Some((1, Value::Known(value))),
+        _ => None,
+    }
+}
+
+/// The first uncertain system boundary retains every track's exact position at
+/// that tick. Same-track earlier attacks are proved earlier; cross-track ties
+/// remain unordered. Later system messages cannot move this boundary backward.
+struct SystemBoundary {
+    tick: u64,
+    tracks: BTreeMap<u16, u32>,
+}
+impl SystemBoundary {
+    fn new(events: &[EventPosition]) -> Option<Self> {
+        let tick = events.iter().map(|e| e.tick).min()?;
+        let mut tracks = BTreeMap::new();
+        for event in events.iter().filter(|e| e.tick == tick) {
+            tracks
+                .entry(event.origin.track)
+                .and_modify(|index: &mut u32| *index = (*index).min(event.origin.event))
+                .or_insert(event.origin.event);
+        }
+        Some(Self { tick, tracks })
+    }
+    fn affects(&self, at: &EventPosition) -> bool {
+        self.tick < at.tick
+            || (self.tick == at.tick
+                && (self.tracks.len() > 1
+                    || self.tracks.keys().next() != Some(&at.origin.track)
+                    || self
+                        .tracks
+                        .get(&at.origin.track)
+                        .is_some_and(|index| *index < at.origin.event)))
+    }
+}
+
 fn summarize(
     stream: &[StreamEvent],
     channel: &mut ChannelDetails,
     parts: &mut [PartDetails],
-    first_uninterpreted_tick: Option<u64>,
+    system_boundary: Option<&SystemBoundary>,
 ) {
-    let mut msb = None;
-    let mut lsb = None;
-    let mut selection = None;
-    let mut uncertain = false;
+    let mut pending = [Value::Undeclared; 2];
+    let mut incoming = SelectionState::default();
     let mut start = 0;
     while start < stream.len() {
         let tick = stream[start].at.tick;
         let end = start + stream[start..].partition_point(|e| e.at.tick == tick);
         let group = &stream[start..end];
-        let tracks: BTreeSet<_> = group.iter().map(|e| e.at.origin.track).collect();
-        if tracks.len() > 1 && group.iter().any(|e| matches!(e.action, Action::Select(_))) {
-            // Do not choose an effective bank/program by the display sort order.
-            // Conservatively retain uncertainty after this point; a later patch
-            // declaration is not a proof of all receiver/bank state.
-            uncertain = true;
-            channel.ambiguous_ticks.push(tick);
-        }
+        let mut tracks: BTreeMap<u16, TickTrack> = BTreeMap::new();
         for event in group {
-            match event.action {
-                Action::Select(declaration) => {
-                    channel.selection_timeline.push(SelectionEvent {
-                        at: event.at.clone(),
-                        declaration,
-                    });
-                    match declaration {
-                        SelectionDeclaration::Program { value } => {
-                            selection = Some(NumericSelection {
-                                program: value,
-                                bank_most_significant: msb,
-                                bank_least_significant: lsb,
-                            })
-                        }
-                        SelectionDeclaration::BankMostSignificant { value } => msb = Some(value),
-                        SelectionDeclaration::BankLeastSignificant { value } => lsb = Some(value),
-                        SelectionDeclaration::InvalidProgram { .. } => {
-                            selection = None;
-                            uncertain = true;
-                        }
-                    }
-                }
-                Action::Attack { part, key } => {
-                    let part = &mut parts[part];
-                    part.source_attack_count += 1;
-                    let range = part.key_range.get_or_insert(KeyRange {
-                        lowest: key,
-                        highest: key,
-                    });
-                    range.lowest = range.lowest.min(key);
-                    range.highest = range.highest.max(key);
-                    part.first_attack.get_or_insert_with(|| event.at.clone());
-                    part.last_attack = Some(event.at.clone());
-                    let summary = &mut part.selection_summary;
-                    if uncertain || first_uninterpreted_tick.is_some_and(|t| t <= tick) {
-                        summary.attacks_with_ambiguous_selection += 1;
-                    } else if let Some(selection) = selection {
-                        summary.observed_selections.push(selection);
-                    } else {
-                        summary.attacks_without_declared_program += 1;
-                    }
+            let track = tracks.entry(event.at.origin.track).or_default();
+            if let Action::Select(declaration) = event.action {
+                channel.selection_timeline.push(SelectionEvent {
+                    at: event.at.clone(),
+                    declaration,
+                });
+                if let Some((component, value)) = bank_change(declaration) {
+                    track.all_banks[component] =
+                        Some(track.all_banks[component].map_or(value, |old| old.join(value)));
+                    track.final_banks[component] = Some(value);
                 }
             }
         }
+        // Foreign events can interleave at this tick; each track's own source
+        // prefix remains ordered. Pending bank-only updates do not touch the
+        // already latched program. At most 128 tracks are visited per event.
+        let mut program_states = BTreeMap::new();
+        let track_ids: Vec<_> = tracks.keys().copied().collect();
+        for &id in &track_ids {
+            let mut foreign_banks = [None; 2];
+            for (&other, track) in &tracks {
+                if other == id {
+                    continue;
+                }
+                for (component, combined) in foreign_banks.iter_mut().enumerate() {
+                    if let Some(value) = track.all_banks[component] {
+                        *combined = Some(combined.map_or(value, |old: Value| old.join(value)));
+                    }
+                }
+            }
+            let mut local_pending = pending;
+            let own = tracks.get_mut(&id).expect("group track");
+            for event in group.iter().filter(|e| e.at.origin.track == id) {
+                if let Action::Select(declaration) = event.action {
+                    if let Some((component, value)) = bank_change(declaration) {
+                        local_pending[component] = value;
+                        continue;
+                    }
+                    let program = match declaration {
+                        SelectionDeclaration::Program { value } => Value::Known(value),
+                        SelectionDeclaration::InvalidProgram { .. } => Value::Ambiguous,
+                        _ => unreachable!("bank handled above"),
+                    };
+                    let mut banks = local_pending;
+                    for (component, bank) in banks.iter_mut().enumerate() {
+                        if let Some(foreign) = foreign_banks[component] {
+                            *bank = bank.join(foreign);
+                        }
+                    }
+                    let state = SelectionState { program, banks };
+                    program_states.insert(event.at.origin, state);
+                    own.all_programs = Some(own.all_programs.map_or(state, |old| old.join(state)));
+                    own.final_program = Some(state);
+                }
+            }
+        }
+        let mut ambiguous_tick = false;
+        for &id in &track_ids {
+            let foreign = tracks
+                .iter()
+                .filter(|(other, _)| **other != id)
+                .filter_map(|(_, t)| t.all_programs)
+                .reduce(SelectionState::join);
+            let mut local = incoming;
+            for event in group.iter().filter(|e| e.at.origin.track == id) {
+                if let Some(state) = program_states.get(&event.at.origin) {
+                    local = *state;
+                }
+                if let Action::Attack { part, key } = event.action {
+                    let state = foreign.map_or(local, |other| local.join(other));
+                    ambiguous_tick |= state.ambiguous();
+                    record_attack(
+                        &mut parts[part],
+                        key,
+                        &event.at,
+                        state,
+                        system_boundary.is_some_and(|boundary| boundary.affects(&event.at)),
+                    );
+                }
+            }
+        }
+        // Only each track's final write can survive the tick. Overwritten
+        // ambiguity does not contaminate future attacks or unrelated bank fields.
+        for (component, value) in pending.iter_mut().enumerate() {
+            if let Some(final_value) = tracks
+                .values()
+                .filter_map(|t| t.final_banks[component])
+                .reduce(Value::join)
+            {
+                *value = final_value;
+            }
+        }
+        if let Some(final_program) = tracks
+            .values()
+            .filter_map(|t| t.final_program)
+            .reduce(SelectionState::join)
+        {
+            incoming = final_program;
+        }
+        ambiguous_tick |= incoming.ambiguous() || pending.contains(&Value::Ambiguous);
+        if ambiguous_tick {
+            channel.ambiguous_ticks.push(tick);
+        }
         start = end;
+    }
+}
+
+fn record_attack(
+    part: &mut PartDetails,
+    key: u8,
+    at: &EventPosition,
+    state: SelectionState,
+    system_uncertain: bool,
+) {
+    part.source_attack_count += 1;
+    let range = part.key_range.get_or_insert(KeyRange {
+        lowest: key,
+        highest: key,
+    });
+    range.lowest = range.lowest.min(key);
+    range.highest = range.highest.max(key);
+    part.first_attack.get_or_insert_with(|| at.clone());
+    part.last_attack = Some(at.clone());
+    let summary = &mut part.selection_summary;
+    if state.ambiguous() || system_uncertain {
+        summary.attacks_with_ambiguous_selection += 1;
+    } else if let Some(selection) = state.numeric() {
+        summary.observed_selections.push(selection);
+    } else {
+        summary.attacks_without_declared_program += 1;
     }
 }
 
