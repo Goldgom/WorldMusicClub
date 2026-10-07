@@ -48,6 +48,7 @@ import {prepareAudioAdmissionDiagnostics, installAudioAdmissionDiagnostics, read
 import {validatePerformanceRecord} from '../web/performance-library.js';
 import {assertAddedLibraryCopies} from './library-copy-assertions.js';
 import {settlePianoViewportBudget} from './browser-piano-budget.js';
+import {browserMarkerVisibility} from './browser-marker-visibility.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const binary = resolve(root, process.env.WMH_SERVER_BINARY || join('target', 'debug', `practice-server${process.platform === 'win32' ? '.exe' : ''}`));
@@ -2441,22 +2442,9 @@ test('real piano hands preserve merged ties and repeat targets through editable 
   await writeFile(join(artifactDirectory,'worldmusichub-live-piano-two-hands.json'),JSON.stringify({initial,leftPlan,conflict,restored,withNotice,geometry,notice_dismissed_by_user:true,paused_take_unchanged:true,canonical_score_unchanged:true},null,2));
 });
 
-/** Actual rendered clipping, including each overflow ancestor; no mocked boxes. */
+/** Actual rendered clipping, including each generated overflow box. */
 async function actualMarkerVisibility(selector) {
-  return page.locator(selector).evaluateAll(nodes=>nodes.map(node=>{
-    const r=node.getBoundingClientRect(),clip={left:Math.max(0,r.left),top:Math.max(0,r.top),right:Math.min(innerWidth,r.right),bottom:Math.min(innerHeight,r.bottom)};
-    let painted=true;
-    for(let parent=node;parent;parent=parent.parentElement){
-      const style=getComputedStyle(parent);if(style.display==='none'||style.visibility!=='visible'||Number(style.opacity)===0)painted=false;
-      if(parent instanceof SVGElement&&!(parent instanceof SVGSVGElement))continue;
-      const box=parent.getBoundingClientRect(),html=parent instanceof HTMLElement;
-      const left=box.left+(html?parent.clientLeft:0),top=box.top+(html?parent.clientTop:0);
-      if(/^(auto|scroll|hidden|clip|overlay)$/.test(style.overflowX)){clip.left=Math.max(clip.left,left);clip.right=Math.min(clip.right,html?left+parent.clientWidth:box.right)}
-      if(/^(auto|scroll|hidden|clip|overlay)$/.test(style.overflowY)){clip.top=Math.max(clip.top,top);clip.bottom=Math.min(clip.bottom,html?top+parent.clientHeight:box.bottom)}
-    }
-    const fraction=r.width*r.height>0?Math.max(0,clip.right-clip.left)*Math.max(0,clip.bottom-clip.top)/(r.width*r.height):0;
-    return{id:node.dataset.noteId,occurrences:node.dataset.occurrenceIds?JSON.parse(node.dataset.occurrenceIds):[],string:node.dataset.string,text:node.textContent,painted,fraction,width:r.width,height:r.height};
-  }));
+  return page.locator(selector).evaluateAll(browserMarkerVisibility);
 }
 
 test('dense real Jianpu separates every chord and voice without shrinking glyphs or losing scroll access', {timeout:60_000}, async()=>{

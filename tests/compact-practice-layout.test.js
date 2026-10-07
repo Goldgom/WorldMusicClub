@@ -11,6 +11,7 @@ import {createKeyboardInput} from '../web/keyboard-input.js';
 import {createI18n} from '../web/i18n.js';
 import {setupSongModView} from '../web/song-mod-view.js';
 import {defaultSongMod} from '../web/song-mod.js';
+import {browserMarkerVisibility} from './browser-marker-visibility.js';
 
 test('long Mod diagnostics scroll with preview details while source identity, admission and Start stay anchored',()=>{
   const {document}=parseHTML('<body><section class="song-preview"><div class="preview-identity"><h2 id="preview-title">Retained source</h2><p id="preview-meta">Composer and source</p></div><div class="preview-copy"><p id="preview-status">Full source notices</p></div><div class="preview-footer"><p id="preview-gate">Blocked instrument range</p><div class="preview-actions"><button id="open-score" hidden>Inspect</button></div></div></section><main id="workspace"><div class="stage-hud"></div></main></body>');
@@ -201,4 +202,37 @@ test('selected guitar ownership shares the full stage width before the two compa
   const recovered=2*19.1875+24-12*Number(scope['line-height']);
   const oldVisibleNext=28*0.09654017857142858;
   assert.ok(recovered>28-oldVisibleNext+3,'Recovered footer space exceeds the observed missing Next marker height plus the added grid gap');
+});
+
+
+test('marker visibility skips only boxless contents wrappers and still enforces every real clip',()=>{
+  const prior=new Map(['innerWidth','innerHeight','HTMLElement','SVGElement','SVGSVGElement','getComputedStyle'].map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)]));
+  class HtmlBox {
+    constructor(id,rect,style={},parentElement=null){Object.assign(this,{id,tagName:'DIV',dataset:{},textContent:id,parentElement,rect,style:{display:'block',visibility:'visible',opacity:'1',overflowX:'visible',overflowY:'visible',...style},clientLeft:0,clientTop:0,clientWidth:rect.width,clientHeight:rect.height});}
+    getBoundingClientRect(){return this.rect;}
+  }
+  class SvgBox{}class SvgRoot extends SvgBox{}
+  const rectangle=(left,top,width,height)=>({left,top,width,height,right:left+width,bottom:top+height});
+  for(const [name,value]of Object.entries({innerWidth:844,innerHeight:390,HTMLElement:HtmlBox,SVGElement:SvgBox,SVGSVGElement:SvgRoot,getComputedStyle:node=>node.style}))Object.defineProperty(globalThis,name,{configurable:true,value});
+  try{
+    const stage=new HtmlBox('stage',rectangle(10,130,824,207),{overflowX:'hidden',overflowY:'auto'});
+    const wrapper=new HtmlBox('guitar-planning',rectangle(0,0,0,0),{display:'contents',overflowX:'auto',overflowY:'auto'},stage);
+    // The retained hosted report supplies width=802 and height=16.796875. The
+    // coordinates here are a synthetic unit fixture, not new browser evidence.
+    const label=new HtmlBox('guitar-selected-parts',rectangle(21,296,802,16.796875),{overflowX:'auto',overflowY:'auto'},wrapper);
+    const measure=()=>browserMarkerVisibility([label])[0];
+    let result=measure();assert.equal(result.fraction,1);assert.equal(result.painted,true);
+    const transferred=Function(`return (${browserMarkerVisibility.toString()});`)();assert.deepEqual(transferred([label])[0],result,'The browser-evaluated function is self-contained after serialization');
+    assert.deepEqual(result.boxlessAncestors,[{element:'#guitar-planning',display:'contents',overflowX:'auto',overflowY:'auto'}]);
+    assert.deepEqual(result.clippingAncestors.map(item=>item.element),['#guitar-selected-parts','#stage']);
+    assert.deepEqual(result.visibleRect,result.rect);
+    // A real zero-height scroller is genuinely clipped; skipping every empty
+    // ancestor rectangle would conceal the exact product failure we must catch.
+    wrapper.style.display='block';result=measure();assert.equal(result.fraction,0);assert.ok(result.clippingAncestors.some(item=>item.element==='#guitar-planning'));
+    wrapper.style.display='contents';stage.clientHeight=174.3984375;result=measure();assert.equal(result.fraction,.5);assert.ok(result.fraction<.98,'Real partial scope clipping still fails the unchanged browser criterion');
+    stage.clientHeight=207;stage.clientWidth=412;result=measure();assert.ok(result.fraction<.51,'Real horizontal clipping outside a boxless wrapper remains authoritative');
+    stage.clientWidth=824;
+    for(const [property,value]of [['opacity','0'],['visibility','hidden'],['display','none']]){const saved=wrapper.style[property];wrapper.style[property]=value;assert.equal(measure().painted,false);wrapper.style[property]=saved;}
+    label.rect=rectangle(21,380,802,16.796875);result=measure();assert.equal(result.fraction,0,'The real stage and viewport still clip an offscreen marker');
+  }finally{for(const[name,descriptor]of prior)if(descriptor)Object.defineProperty(globalThis,name,descriptor);else delete globalThis[name];}
 });
