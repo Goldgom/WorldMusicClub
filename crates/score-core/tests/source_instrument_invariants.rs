@@ -131,36 +131,69 @@ fn basic_reload_and_pitch_do_not_rewrite_source_programs_or_binding() {
 
 #[test]
 fn unknown_or_uninterpreted_instrument_evidence_never_rewrites_practice_or_playback() {
-    for events in [
-        vec![(0, &[0x90, 60, 90][..]), (24, &[0x80, 60, 0][..])],
-        vec![
-            (0, &[0xf0, 5, 0x7e, 0x7f, 0x09, 0x01, 0xf7][..]),
-            (0, &[0xc0, 40][..]),
-            (0, &[0x90, 60, 90][..]),
-            (24, &[0x80, 60, 0][..]),
-        ],
-    ] {
-        let (score, _) = import_midi(&midi(&events)).unwrap();
-        let before_score = wire(&score);
-        let before_timeline = wire(&compile(score.clone()).unwrap().timeline);
-        let before_practice = PracticeSource::from_canonical(&score).unwrap();
-        let details = describe_canonical_midi(&score).unwrap();
-        assert_eq!(
-            serde_json::to_value(details.instrument_namespace).unwrap(),
-            "unknown"
-        );
-        let after_practice = PracticeSource::from_canonical(&score).unwrap();
-        assert_eq!(before_practice.receipt(), after_practice.receipt());
-        assert_eq!(
-            wire(&before_practice.source_units()),
-            wire(&after_practice.source_units())
-        );
-        assert_eq!(
-            wire(&compile(score.clone()).unwrap().timeline),
-            before_timeline
-        );
-        assert_eq!(wire(&score), before_score);
-    }
+    // Missing program evidence is supported by the existing strict importer.
+    let (score, _) = import_midi(&midi(&[(0, &[0x90, 60, 90]), (24, &[0x80, 60, 0])])).unwrap();
+    let before_score = wire(&score);
+    let before_timeline = wire(&compile(score.clone()).unwrap().timeline);
+    let before_practice = PracticeSource::from_canonical(&score).unwrap();
+    let details = describe_canonical_midi(&score).unwrap();
+    assert_eq!(
+        serde_json::to_value(details.instrument_namespace).unwrap(),
+        "unknown"
+    );
+    assert_eq!(
+        details.parts[0].selection_summary.status,
+        SelectionStatus::Unknown
+    );
+    let after_practice = PracticeSource::from_canonical(&score).unwrap();
+    assert_eq!(before_practice.receipt(), after_practice.receipt());
+    assert_eq!(
+        wire(&before_practice.source_units()),
+        wire(&after_practice.source_units())
+    );
+    assert_eq!(
+        wire(&compile(score.clone()).unwrap().timeline),
+        before_timeline
+    );
+    assert_eq!(wire(&score), before_score);
+
+    // SysEx is retained by complete Basic, but is deliberately rejected by the
+    // strict canonical MIDI importer. Disclosure must not turn it into an
+    // accepted strict source or silently strip the unsupported event.
+    let bytes = midi(&[
+        (0, &[0xf0, 5, 0x7e, 0x7f, 0x09, 0x01, 0xf7]),
+        (0, &[0xc0, 40]),
+        (0, &[0x90, 60, 90]),
+        (24, &[0x80, 60, 0]),
+    ]);
+    let rejection = import_midi(&bytes).unwrap_err();
+    assert!(rejection.contains("MIDI SysEx/escape events are unsupported"));
+    let basic = basic_keys::convert_midi(&bytes, "Mechanical SysEx evidence").unwrap();
+    let before = basic_keys::encode_json(&basic).unwrap();
+    let before_basic_practice = PracticeSource::from_basic(&basic).unwrap();
+    let details = describe_basic(&basic).unwrap();
+    assert_eq!(details.uninterpreted_sound_events.len(), 1);
+    assert_eq!(details.uninterpreted_sound_events[0].origin.track, 0);
+    assert_eq!(details.uninterpreted_sound_events[0].origin.event, 0);
+    assert_eq!(
+        details.parts[0].selection_summary.status,
+        SelectionStatus::Ambiguous
+    );
+    assert_eq!(
+        serde_json::to_value(details.instrument_namespace).unwrap(),
+        "unknown"
+    );
+    assert_eq!(basic_keys::encode_json(&basic).unwrap(), before);
+    assert_eq!(import_midi(&bytes).unwrap_err(), rejection);
+    let after_basic_practice = PracticeSource::from_basic(&basic).unwrap();
+    assert_eq!(
+        before_basic_practice.receipt(),
+        after_basic_practice.receipt()
+    );
+    assert_eq!(
+        wire(&before_basic_practice.timeline()),
+        wire(&after_basic_practice.timeline())
+    );
 }
 
 #[test]
@@ -173,8 +206,33 @@ fn display_labels_can_change_but_cannot_be_used_to_reuse_stale_evidence() {
     let details = describe_canonical_midi(&renamed).unwrap();
     assert_ne!(details.source_binding, original.source_binding);
     assert_eq!(details.original_midi_sha256, original.original_midi_sha256);
-    assert_eq!(wire(&details.channels), wire(&original.channels));
+    assert_eq!(details.channels.len(), original.channels.len());
+    for (before, after) in original.channels.iter().zip(&details.channels) {
+        // Disclosure node IDs bind to the whole source, including labels.
+        // Raw MIDI event IDs/coordinates and declarations bind to retained MIDI.
+        assert_ne!(before.id, after.id);
+        assert_ne!(before.route_id, after.route_id);
+        assert!(before.id.contains(&original.source_binding.digest));
+        assert!(after.id.contains(&details.source_binding.digest));
+        assert_eq!(before.channel, after.channel);
+        assert_eq!(
+            wire(&before.selection_timeline),
+            wire(&after.selection_timeline)
+        );
+        assert_eq!(before.ambiguous_ticks, after.ambiguous_ticks);
+    }
+    assert_eq!(details.routes.len(), original.routes.len());
+    for (before, after) in original.routes.iter().zip(&details.routes) {
+        assert_ne!(before.id, after.id);
+        assert_eq!(before.source_route_index, after.source_route_index);
+        assert_eq!(wire(&before.declaration), wire(&after.declaration));
+    }
     for (before, after) in original.parts.iter().zip(&details.parts) {
+        assert_ne!(before.id, after.id);
+        assert_ne!(before.track_id, after.track_id);
+        assert_ne!(before.route_id, after.route_id);
+        assert_ne!(before.channel_id, after.channel_id);
+        assert_eq!(before.part_id, after.part_id);
         assert_eq!(
             wire(&before.selection_summary),
             wire(&after.selection_summary)
