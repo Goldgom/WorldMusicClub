@@ -237,5 +237,6 @@
   "tests/pitch-mod-preview.test.js",
   "tests/native-pitch-mod-evidence.test.js",
   "tests/native-pitch-sources-proof.test.js",
-  "tests/native-pitch-sources-evidence.test.js"
+  "tests/native-pitch-sources-evidence.test.js",
+  "tests/pitch-mod-errors.test.js"
 ]

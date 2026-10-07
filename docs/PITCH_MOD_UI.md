@@ -18,7 +18,7 @@ Selecting a wider on-screen range does not add keys to a physical instrument.
   pairing policy and source diagnostics.
 - VSQ packages use the base-note instrumental choice. This is not vocal synthesis.
 - The older complete-performance renderer is not projected by this feature. Its
-  original playback remains available and its nonzero pitch control is disabled.
+  original playback remains available; nonzero pitch shifting is not offered.
 
 Explicit source percussion classification keeps percussion unchanged. Track
 names and selected synthesis sounds do not determine percussion status. A
@@ -41,8 +41,10 @@ Configuration is a closed object with `format: "wmc-pitch-mod"`, `version: 1` an
 an integer `semitones`. Nonzero results carry a digest bound to the source receipt,
 version, shift and written interval. Assistance, progressive assistance, audio and
 fingering must use the matching effective receipt. A receipt from the original
-pitch or another shift cannot be reused. The zero API path preserves the existing
-response shapes and bytes.
+pitch or another shift cannot be reused. Omitting the configuration or requesting
+zero preserves the previous response shapes and bytes on the existing endpoints.
+The dedicated pitch projection endpoint uses its new envelope even for zero,
+with an unshifted view and null projection identity.
 
 If any melodic pitch leaves MIDI 0–127, or a projection cannot meet its spelling
 or resource constraints, the entire projection fails. Notes are not clipped or

@@ -43,7 +43,7 @@
     "test:assistance-browser": "node --test tests/assistance-app-browser.test.js",
     "test:progression": "node --test tests/practice-progression.test.js tests/practice-progression-view.test.js tests/frontend-practice-progression.test.js tests/progression-preview.test.js tests/native-progression-evidence.test.js",
     "test:progression-browser": "node --test tests/progression-app-browser.test.js",
-    "test:pitch-mod": "node --test tests/frontend-pitch-mod.test.js tests/pitch-mod-receipts.test.js tests/pitch-mod-preview.test.js tests/native-pitch-mod-evidence.test.js tests/native-pitch-sources-proof.test.js tests/native-pitch-sources-evidence.test.js",
+    "test:pitch-mod": "node --test tests/frontend-pitch-mod.test.js tests/pitch-mod-receipts.test.js tests/pitch-mod-preview.test.js tests/native-pitch-mod-evidence.test.js tests/native-pitch-sources-proof.test.js tests/native-pitch-sources-evidence.test.js tests/pitch-mod-errors.test.js",
     "test:pitch-mod-browser": "node --test tests/pitch-mod-app-browser.test.js"
   },
   "devDependencies": {
