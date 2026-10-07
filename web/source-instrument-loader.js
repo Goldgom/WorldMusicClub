@@ -19,6 +19,10 @@ export class SourceInstrumentDetailsLoader {
     // Replacing the original score/package invalidates this WeakMap entry.
     // Do not reserialize potentially large sources on every UI redraw.
     const cached=this.entries.get(token);if(cached)return cached.value;
+    // Native disclosure currently supports only complete Basic packages.
+    // Optional metadata must not issue known-unsupported requests for VSQ or
+    // other clean profiles; their runtime and practice admission are separate.
+    if(song&&song.profile!=='wmh-basic-keys-midi1-v1'){const value=fields(token,'unsupported');this.entries.set(token,{value});return value;}
     const source=song?pitchModSource(original):null;
     let path,body;
     if(song){path='/api/library/source-instrument-details';body={source};}

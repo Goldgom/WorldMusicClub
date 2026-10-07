@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {nativeScoreServer,nativeStorageApp,nativeResponse,authoredScore} from './native-storage-app-fixtures.js';
+import {vsqAcceptanceFixture} from '../scripts/prepare-vsq-song-fixtures.mjs';
+import {getAppI18n} from '../web/app-locale.js';
 import {SourceInstrumentDetailsLoader} from '../web/source-instrument-loader.js';
 
 const hash='a'.repeat(64);
@@ -101,4 +103,37 @@ test('production app defers optional metadata until Mod opens and keeps late sou
   held.resolve(nativeResponse(details(a)));await app.tick();assert.ok(app.document.querySelector('.song-mod-source-details dl').textContent.includes(b.title));assert.ok(!app.document.querySelector('.song-mod-source-details dl').textContent.includes(a.title));
   await app.click('song-mod-cancel');await app.click('configure-song-mod');await app.tick();assert.equal(requests.length,2);
  }finally{held.resolve(nativeResponse(details(a)));await app.close();}
+});
+
+
+test('unsupported clean profiles are cached without requesting or inspecting a source descriptor',async()=>{
+ let calls=0;const loader=new SourceInstrumentDetailsLoader({api:async()=>{calls++;throw Error('Unsupported metadata must not be requested');}});
+ for(const profile of ['wmh-vsq-clean-v1','wmh-clean-song-v2','future-unsupported-profile']){
+  const song={profile,get libraryKey(){throw Error('Unsupported metadata must not inspect source identity');}},context={score:score(),cleanSong:song};
+  for(const load of [false,true,true,false]){
+   const value=loader.read(context,{load});assert.equal(value.sourceInstrumentDetailsStatus,'unsupported');assert.equal(value.sourceInstrumentDetailsToken,song);assert.equal(value.sourceInstrumentDetails,null);
+  }
+  assert.equal(loader.read({score:score('shifted'),pitchView:{sourceView:context}}).sourceInstrumentDetailsStatus,'unsupported');
+ }
+ await flush();assert.equal(calls,0);
+});
+
+test('production VSQ Mod edits and starts with honest unsupported disclosure and no metadata request',async()=>{
+ const fixture=vsqAcceptanceFixture(),server=await nativeScoreServer(),opened=structuredClone(fixture.opened),key=fixture.key,before=opened.clean_package.score_json,requests=[];
+ opened.entry={key,revision:1,title:fixture.metadata.title,composer:"",score_id:fixture.metadata.id,label:fixture.metadata.title,score_bytes:Buffer.byteLength(before),saved_at_unix_ms:1700000000000,clean_package:fixture.summary};server.records.set(key,opened);
+ server.setRoute(({path})=>{
+  if(path.includes('source-instrument-details')){requests.push(path);return nativeResponse({code:'unsupported_source_profile',error:'VSQ has no instrument disclosure'},422);}
+  if(path==='/api/library/runtime')return nativeResponse(fixture.runtime);
+ });
+ const app=await nativeStorageApp(server);
+ try{
+  getAppI18n(app.document).setLocale('en');await app.until(()=>app.savedButton(key));await app.click('home-single-player');app.savedButton(key).click();
+  await app.until(()=>app.$('song-lobby').dataset.previewStatus==='choice');await app.click('vsq-choose-base-notes');await app.until(()=>!app.$('configure-song-mod').disabled);
+  await app.click('configure-song-mod');const details=app.document.querySelector('.song-mod-source-details');details.open=true;app.emit(details,'toggle');await app.tick();
+  assert.match(details.textContent,/This source format does not provide instrument details/);assert.match(details.textContent,/does not determine practice support/);assert.deepEqual(requests,[]);
+  await app.click('song-mod-all-machine');await app.click('song-mod-apply');await app.until(()=>!app.$('song-mod-dialog').open);assert.equal(app.$('start-performance').disabled,false);
+  app.$('count-in').checked=false;await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(app.$('session-mode').value,'listen');
+  await app.click('edit-song-mod');await app.click('song-mod-all-human');await app.click('song-mod-apply');await app.until(()=>!app.$('song-mod-dialog').open);assert.equal(app.$('session-mode').value,'practice');assert.equal(app.$('play-button').disabled,false);
+  await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.deepEqual(requests,[]);assert.equal(server.records.get(key).clean_package.score_json,before);
+ }finally{await app.close();}
 });
