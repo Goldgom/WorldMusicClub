@@ -98,6 +98,26 @@ try {
   Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $assistancePhases[1] } 'assistance restart rejects missing predecessor proof'
   Assert-True ([IO.File]::ReadAllText($assistanceMarker) -ceq 'original source-bound recipe') 'assistance validation preserves existing cache bytes'
   foreach($phase in @('assistance','assistance-controls','ASSISTANCE-SEED',"assistance-seed`n")){Assert-Rejected { Get-AcceptanceProfile $profileRoot $phase } 'only the four exact assistance phases are supported'}
+  $pitchModPhases=@('pitch-mod-seed','pitch-mod-restart')
+  Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $pitchModPhases[1] } 'pitch restart requires its original profile'
+  $pitchModSeed=Assert-AcceptanceProfileLaunch $profileRoot $pitchModPhases[0]
+  Assert-True ($pitchModSeed.fresh_required -and -not $pitchModSeed.existing_required) 'pitch seed reserves a fresh profile'
+  New-Item -ItemType Directory $pitchModSeed.profile_directory | Out-Null
+  Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $pitchModPhases[0] } 'pitch seed cannot reuse the cache'
+  Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $pitchModPhases[1] } 'pitch restart requires predecessor evidence'
+  $pitchModProof=[ordered]@{version=1;phase=$pitchModPhases[0];process_id=42;profile_directory=$pitchModSeed.profile_directory;library_directory=$pitchModSeed.library_directory;fresh_required=$true;created_new=$true}
+  $pitchModPath=Join-Path $profileRoot 'profile-pitch-mod-seed.json'
+  $pitchModProof | ConvertTo-Json | Set-Content -LiteralPath $pitchModPath -Encoding utf8
+  $pitchModRestart=Assert-AcceptanceProfileLaunch $profileRoot $pitchModPhases[1]
+  Assert-True ($pitchModRestart.profile_directory -ceq $pitchModSeed.profile_directory -and $pitchModRestart.existing_required -and -not $pitchModRestart.fresh_required) 'pitch restart retains the saved Mod profile'
+  foreach($case in @(@{field='phase';value='assistance-seed'},@{field='process_id';value=0},@{field='profile_directory';value=(Join-Path $profileRoot 'other-profile')},@{field='library_directory';value=(Join-Path $profileRoot 'other-Scores')},@{field='fresh_required';value=$false},@{field='created_new';value=$false})) {
+    $old=$pitchModProof[$case.field];$pitchModProof[$case.field]=$case.value
+    $pitchModProof | ConvertTo-Json | Set-Content -LiteralPath $pitchModPath -Encoding utf8
+    Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $pitchModPhases[1] } "pitch predecessor must match exact $($case.field)"
+    $pitchModProof[$case.field]=$old
+  }
+  Remove-Item -LiteralPath $pitchModPath
+  Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $pitchModPhases[1] } 'pitch restart rejects removed predecessor evidence'
   $completePhases=@('complete-practice-seed','complete-practice-restart')
   Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $completePhases[1] } 'complete restart needs its seed profile'
   $completeSeed=Assert-AcceptanceProfileLaunch $profileRoot $completePhases[0]

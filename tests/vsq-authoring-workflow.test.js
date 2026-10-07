@@ -195,7 +195,7 @@ test('new phases agree across Rust, native orchestration and every fresh-profile
  const rustPhases=Object.fromEntries([...rust.matchAll(/pub const (\w*PHASES): \[&str; \d+\] =\s*\[([\s\S]*?)\];/g)]
   .map(([,key,value])=>[key,quoted(value,/"([^"]+)"/g)]));
  assert.deepEqual(rustPhases.VSQ_AUTHORING_PHASES,phases);
- const fresh=Object.entries(rustPhases).filter(([key])=>!['PHASES','CATALOG_PHASES','COMPLETE_PRACTICE_PHASES','CANONICAL_PRACTICE_PHASES','SKIN_PHASES','HUMAN_MOD_TIMBRE_PHASES','ASSISTANCE_PHASES'].includes(key)).flatMap(([,values])=>values);
+ const fresh=Object.entries(rustPhases).filter(([key])=>!['PHASES','CATALOG_PHASES','COMPLETE_PRACTICE_PHASES','CANONICAL_PRACTICE_PHASES','SKIN_PHASES','HUMAN_MOD_TIMBRE_PHASES','ASSISTANCE_PHASES','PITCH_MOD_PHASES'].includes(key)).flatMap(([,values])=>values);
  const freshProfile=quoted(profile.match(/\$fresh=@\(([^\n]+)\)/)[1],/'([^']+)'/g);assert.equal(new Set(freshProfile).size,freshProfile.length);assert.equal(new Set(fresh).size,fresh.length);assert.deepEqual([...freshProfile].sort(),[...fresh].sort());
  assert.deepEqual(quoted(profile.match(/\$catalog=@\(([^\n]+)\)/)[1],/'([^']+)'/g),rustPhases.CATALOG_PHASES);
  const freshContract=quoted(contract.match(/\$freshPhases=@\(([^\n]+)\)/)[1],/'([^']+)'/g);assert.equal(new Set(freshContract).size,freshContract.length);assert.deepEqual([...freshContract].sort(),[...fresh].sort());
@@ -210,6 +210,11 @@ test('new phases agree across Rust, native orchestration and every fresh-profile
  for(const phase of rustPhases.ASSISTANCE_PHASES){assert.ok(!freshProfile.includes(phase));assert.ok(!freshContract.includes(phase));}
  assert.match(profile,/Assert-CatalogProfilePredecessor \$Directory \$selection 'assistance-seed' \$true/);
 
+ assert.deepEqual(rustPhases.PITCH_MOD_PHASES,['pitch-mod-seed','pitch-mod-restart']);
+ assert.deepEqual(quoted(profile.match(/\$pitchMod=@\(([^\n]+)\)/)[1],/'([^']+)'/g),rustPhases.PITCH_MOD_PHASES);
+ assert.deepEqual(quoted(contract.match(/\$pitchModPhases=@\(([^\n]+)\)/)[1],/'([^']+)'/g),rustPhases.PITCH_MOD_PHASES);
+ for(const phase of rustPhases.PITCH_MOD_PHASES){assert.ok(!freshProfile.includes(phase));assert.ok(!freshContract.includes(phase));}
+ assert.match(profile,/Assert-CatalogProfilePredecessor \$Directory \$selection 'pitch-mod-seed' \$true/);
  assert.ok(contract.includes("windows-skin-profile-contract.ps1"));
  assert.deepEqual(quoted(profile.match(/\$complete=@\(([^\n]+)\)/)[1],/'([^']+)'/g),rustPhases.COMPLETE_PRACTICE_PHASES);
  assert.deepEqual(quoted(contract.match(/\$completePhases=@\(([^\n]+)\)/)[1],/'([^']+)'/g),rustPhases.COMPLETE_PRACTICE_PHASES);
