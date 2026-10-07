@@ -59,7 +59,10 @@ export async function runHostedMidiDirectImportCheck(){
   await owned.page.goto(origin);await owned.page.evaluate(async()=>{globalThis.__directMidiAudio=await __directMidiObserveAudio(document);});await owned.page.locator('#home-single-player').click();return owned;
  }
  async function chooseRaw(raw){
-  const {page}=session;await page.locator('#import-tools-button').click();const chooser=page.waitForEvent('filechooser');await page.locator('#import-button').click();await(await chooser).setFiles({name:raw.filename,mimeType:'audio/midi',buffer:raw.bytes});
+  const {page}=session;
+  // Source rejection leaves the import dialog open; reuse it on repeated picks.
+  if(!await page.locator('#import-tools-dialog').evaluate(dialog=>dialog.open))await page.locator('#import-tools-button').click();
+  const chooser=page.waitForEvent('filechooser');await page.locator('#import-button').click();await(await chooser).setFiles({name:raw.filename,mimeType:'audio/midi',buffer:raw.bytes});
  }
  async function downloadTake(label){
   const {page}=session;await page.locator('#results-button').click();const promise=page.waitForEvent('download');await page.locator('#export-takes').click();const download=await promise,path=`${label}-take.json`;await download.saveAs(join(output,'downloads',path));await page.locator('#results-dialog [data-close-panel]').click();const value=JSON.parse(await readFile(join(output,'downloads',path)));validateDirectMidiTake(value,fixture);return{path:`downloads/${path}`,sha256:directMidiDigest(JSON.stringify(value)),value};

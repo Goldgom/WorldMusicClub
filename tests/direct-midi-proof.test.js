@@ -32,3 +32,10 @@ test('hosted companion is guarded, preserves the raw picker path and never subst
  const direct=source.slice(source.indexOf('async function directStart('),source.indexOf('\n try{\n  report.asset_server'));
  assert.match(direct,/#start-performance'\)\.click\(\)/);assert.doesNotMatch(direct,/configureSongMod|startSongModPerformance|song-mod-all-human/);assert.match(source,/native_window:false/);assert.match(source,/physical_audio:false/);
 });
+
+test('hosted repeated raw picker reuses the still-open import dialog after a rejected source',async()=>{
+ const {readFile}=await import('node:fs/promises'),source=await readFile(new URL('../scripts/hosted-midi-direct-import-check.mjs',import.meta.url),'utf8');
+ const picker=source.slice(source.indexOf('async function chooseRaw('),source.indexOf('async function downloadTake('));
+ assert.match(picker,/if\(!await page\.locator\('#import-tools-dialog'\)\.evaluate\(dialog=>dialog\.open\)\)await page\.locator\('#import-tools-button'\)\.click\(\)/);
+ assert.match(picker,/await page\.locator\('#import-button'\)\.click\(\)/);
+});
