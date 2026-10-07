@@ -231,5 +231,7 @@
   "tests/frontend-practice-progression.test.js",
   "tests/browser-response-capture.test.js",
   "tests/progression-preview.test.js",
-  "tests/native-progression-evidence.test.js"
+  "tests/native-progression-evidence.test.js",
+  "tests/frontend-pitch-mod.test.js",
+  "tests/pitch-mod-receipts.test.js"
 ]

@@ -259,6 +259,37 @@ pub fn vectors() -> Value {
             name.into(),
             json!({"original":original,"zero":zero,"plus2":plus2,"assistance":assistance,"progression":progression,"fingering":fingering}),
         );
+        if source["profile"] == score_core::basic_keys::PROFILE {
+            let page_source = json!({"key":source["key"],"content_sha256":source["content_sha256"],"profile":source["profile"]});
+            let mut pages = serde_json::Map::new();
+            for part in plus2["runtime"]["parts"].as_array().unwrap() {
+                let settings = json!({"part_id":part["id"],"rendition_policy_id":score_core::basic_keys::RENDITION_POLICY,"display_meter":{"numerator":4,"denominator":4}});
+                let request = json!({"source":page_source,"settings":settings});
+                let original = post(&library, "/api/library/basic-keys/notation", &request);
+                let zero = post(
+                    &library,
+                    "/api/library/basic-keys/notation",
+                    &json!({"source":page_source,"settings":settings,"pitch_mod":configuration(0)}),
+                );
+                let plus2 = post(
+                    &library,
+                    "/api/library/basic-keys/notation",
+                    &json!({"source":page_source,"settings":settings,"pitch_mod":configuration(2)}),
+                );
+                let role = if part["percussion"] == true {
+                    "percussion"
+                } else {
+                    "melodic"
+                };
+                assert!(pages
+                    .insert(
+                        role.into(),
+                        json!({"request":request,"original":original,"zero":zero,"plus2":plus2})
+                    )
+                    .is_none());
+            }
+            vectors.get_mut(name).unwrap()["notation"] = Value::Object(pages);
+        }
     }
     let original = canonical();
     let zero = api(
@@ -282,5 +313,31 @@ pub fn vectors() -> Value {
         &json!({"score":original,"configuration":configuration(2),"settings":{"part_id":original.parts[0].id,"profile":{"kind":"piano","key_count":88,"lowest_midi":21}}}),
     );
     vectors.insert("canonical_api".into(),json!({"original":{"score":original},"zero":zero,"plus2":plus2,"assistance":assistance,"progression":progression,"fingering":fingering}));
+    // Tempo is a requested edit to the ORIGINAL canonical source. The effective
+    // D4 score must never become the next projection's source, which would
+    // compound the shift and hide an invalidated runtime proof.
+    let mut tempo_original = canonical();
+    tempo_original.tempo[0].bpm = 120.0;
+    let zero = api(
+        "/api/pitch-mod/project",
+        &json!({"score":tempo_original,"configuration":configuration(0)}),
+    );
+    let plus2 = api(
+        "/api/pitch-mod/project",
+        &json!({"score":tempo_original,"configuration":configuration(2)}),
+    );
+    let assistance = api(
+        "/api/practice-assistance/original",
+        &json!({"score":tempo_original,"pitch_mod":configuration(2),"selection":selection(&plus2)}),
+    );
+    let progression = api(
+        "/api/practice-progression/generate",
+        &json!({"score":tempo_original,"pitch_mod":configuration(2),"selection":selection(&plus2),"layer":"single"}),
+    );
+    let fingering = api(
+        "/api/pitch-mod/fingering/piano",
+        &json!({"score":tempo_original,"configuration":configuration(2),"settings":{"part_id":tempo_original.parts[0].id,"profile":{"kind":"piano","key_count":88,"lowest_midi":21}}}),
+    );
+    vectors.get_mut("canonical_api").unwrap()["tempo120"] = json!({"original":{"score":tempo_original},"zero":zero,"plus2":plus2,"assistance":assistance,"progression":progression,"fingering":fingering});
     json!({"generator":"crates/desktop-shell/examples/generate_pitch_mod_fixtures.rs","vectors":vectors})
 }

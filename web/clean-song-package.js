@@ -47,6 +47,30 @@ export function isCleanSong(value) { return prepared.has(value); }
 export function isVsqSong(value) { return isCleanSong(value)&&value.profile===VSQ_PROFILE; }
 function admitted(value) {const result=freeze(value);prepared.add(result);return result;}
 
+/** Admit a native pitch projection without editing the portable source. The
+ * original package already passed its full validator; derived keys are joined
+ * to the Rust source-pitch map while every native timing/evidence field stays. */
+export function preparePitchModSong(song,response){
+  if(!isCleanSong(song)||!song.compilation||!response?.compilation||!response.identity||!Array.isArray(response.source_pitches))fail('A native pitch view requires its original admitted complete song.');
+  const compilation=response.compilation,runtime=structuredClone(response.runtime),pitches=new Map(response.source_pitches.map(item=>[item.source_id,item]));
+  if(!runtime||runtime.profile!==song.runtime.profile||runtime.source_sha256!==song.runtime.source_sha256)fail('The shifted runtime belongs to another native source.');
+  if(isBasicKeysSong(song)){
+    const previous={...song.runtime},next={...runtime};delete previous.compilation;delete next.compilation;
+    // Range is descriptive, source evidence and coverage must remain exact.
+    previous.parts=previous.parts.map(({range,...part})=>part);next.parts=next.parts.map(({range,...part})=>part);
+    if(stable(previous)!==stable(next))fail('A pitch view changed the Basic FIFO interpretation or source evidence.');
+    runtime.compilation=compilation;
+  }else if(isVsqSong(song)){
+    if(!Array.isArray(runtime.notes)||runtime.notes.length!==song.runtime.notes.length)fail('A pitch view changed VSQ authored note coverage.');
+    for(let index=0;index<runtime.notes.length;index++){const before=song.runtime.notes[index],after=runtime.notes[index],pitch=pitches.get(before.note_id);if(!pitch||pitch.original_midi!==before.key||pitch.effective_midi!==after.key||stable({...before,key:after.key})!==stable(after))fail('A pitch view changed VSQ timing, authored identity or voice state.');}
+    const before={...song.runtime},after={...runtime};delete before.notes;delete after.notes;
+    if(stable(before)!==stable(after))fail('A pitch view changed VSQ clock or source policy.');
+  }else fail('This native renderer does not admit a whole-song pitch view.');
+  // score, score_json, metadata_json and identity intentionally keep the exact
+  // original package. Notation and runtime are separate effective views.
+  return admitted({...song,originalSong:song,notation:compilation.score,compilation,runtime,pitch_mod:structuredClone(response.configuration),pitch_mod_identity:structuredClone(response.identity)});
+}
+
 export function prepareCleanSong(libraryKey, descriptor, normalizedScore) {
   if (!descriptor || descriptor.version!==2 || !hash.test(descriptor.content_sha256) || libraryKey!==`native:song-${descriptor.content_sha256}`) fail('The clean song does not match the selected saved package.');
   let metadata, score;

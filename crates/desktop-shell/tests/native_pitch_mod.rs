@@ -142,7 +142,9 @@ fn native_projection_reloads_originals_keeps_fifo_drums_and_disk_bytes() {
 
 #[test]
 fn source_identity_configuration_and_transport_are_strict() {
-    assert!(worldmusichub_desktop::song_pack::is_large_operation(PROJECT));
+    assert!(worldmusichub_desktop::song_pack::is_large_operation(
+        PROJECT
+    ));
     let sandbox = Sandbox::new();
     let library = sandbox.library();
     let source = save_canonical(&library);
@@ -224,6 +226,41 @@ fn source_identity_configuration_and_transport_are_strict() {
 #[test]
 fn public_actual_handler_vectors_are_reproducible() {
     let actual = vectors();
+    let canonical = &actual["vectors"]["canonical_api"];
+    let tempo = &canonical["tempo120"];
+    assert_eq!(tempo["original"]["score"]["tempo"][0]["bpm"], 120.0);
+    for note in tempo["original"]["score"]["parts"][0]["notes"]
+        .as_array()
+        .unwrap()
+    {
+        assert_eq!(note["pitch"]["step"], "C");
+    }
+    assert_ne!(tempo["plus2"]["receipt"], canonical["plus2"]["receipt"]);
+    assert_eq!(
+        tempo["plus2"]["compilation"]["timeline"]["notes"][0]["midi"],
+        62
+    );
+    assert_eq!(
+        tempo["plus2"]["compilation"]["timeline"]["notes"][1]["start_ms"],
+        500.0
+    );
+    assert_eq!(
+        tempo["plus2"]["audio_profile"]["occurrences"][1]["start_ms"],
+        500.0
+    );
+    assert_eq!(
+        tempo["assistance"]["checked"]["receipt"],
+        tempo["plus2"]["receipt"]
+    );
+    assert_eq!(tempo["fingering"]["receipt"], tempo["plus2"]["receipt"]);
+    let basic = &actual["vectors"]["basic"];
+    for (role, key) in [("melodic", 62), ("percussion", 35)] {
+        let page = &basic["notation"][role];
+        assert_eq!(page["original"], page["zero"]);
+        assert_eq!(page["plus2"]["receipt"], basic["plus2"]["receipt"]);
+        assert_eq!(page["plus2"]["pitch_mod"], basic["plus2"]["identity"]);
+        assert_eq!(page["plus2"]["page"]["interpreted_notes"][0]["key"], key);
+    }
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../tests/fixtures/pitch-mod-handler-vectors.json");
     if std::env::var_os("WMH_UPDATE_PITCH_MOD_FIXTURES").is_some() {

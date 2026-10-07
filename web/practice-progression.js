@@ -26,7 +26,7 @@ export class PracticeProgressionStore {
   read(context){
     let raw=null;
     try{const storage=this.target();if(typeof storage?.getItem!=='function')throw Error('Storage is unavailable');raw=storage.getItem(this.key(context));if(raw===null)return{status:this.known.has(this.key(context))?'unavailable':'default',recipe:null,raw};this.known.add(this.key(context));if(typeof raw!=='string'||raw.length>128*1024)throw Error('Saved progression exceeds the preference budget');return{status:'saved',recipe:copy(validateProgressionPreference(JSON.parse(raw),context)),raw};}
-    catch(error){return{status:raw===null?'unavailable':'invalid',recipe:null,raw,error};}
+    catch(error){if(error?.code==='pitch_mod_storage')this.known.add(this.key(context));return{status:raw===null?'unavailable':'invalid',recipe:null,raw,error};}
   }
   save(context,recipe,{expectedRaw,replaceInvalid=false}={}){
     validateProgressionPreference(recipe,context);const current=this.read(context);

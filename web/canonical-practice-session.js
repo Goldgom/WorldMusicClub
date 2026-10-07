@@ -23,7 +23,7 @@ export class CanonicalPracticeSession {
     this.api=api;this.onError=onError;this.onEnded=onEnded;this.epoch=0;
     this.player=playerFactory({onError:error=>{this.phase='stopped';this.errorClock=this.player.lastStopClock;this.onError(error);},onPass:receipt=>{this.passReceipts?.push(receipt);onPass(receipt);},onEnded:result=>{this.phase='ended';this.completion=result;this.onEnded(result);}});
   }
-  select(compilation) {this.stop();this.compilation=compilation;this.profile=null;this.interpretation=null;}
+  select(compilation,profile=null) {this.stop();this.compilation=compilation;this.profile=profile;this.interpretation=null;}
   stop() {this.epoch++;this.controller?.abort();this.controller=null;this.player.stop();this.completion=null;this.preparing=false;this.phase='stopped';this.errorClock=null;this.silentPlan=null;this.clockOrigin=null;}
   get running(){return this.player.running;}
   get plan(){return this.player.plan||this.silentPlan;}

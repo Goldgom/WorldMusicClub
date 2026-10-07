@@ -15,12 +15,15 @@ export function basicKeyNotationRequest(song,{partId,from,count,displayMeter=nul
   if(displayMeter!==null&&(!Number.isInteger(displayMeter.numerator)||displayMeter.numerator<1
     ||!Number.isInteger(displayMeter.denominator)||displayMeter.denominator<1))invalid();
   if(positionMs!==null&&(!Number.isFinite(positionMs)||positionMs<0))invalid();
-  return{source:{key:song.libraryKey.slice(7),content_sha256:song.identity,profile:song.profile},
+  return{...(song.pitch_mod&&!sourceOnly?{pitch_mod:song.pitch_mod}:{}),source:{key:song.libraryKey.slice(7),content_sha256:song.identity,profile:song.profile},
     settings:{part_id:partId,first_measure:from-1,measure_count:count,display_meter:displayMeter,...(positionMs===null?{}:{position_ms:positionMs}),...(hasBasicKeyRendition(song)&&!sourceOnly?{rendition_policy_id:song.runtime.rendition.policy_id}:{})}};
 }
 
 export function basicKeyNotationPage(response,request,song){
+  const requestedSong=song;
   if(!response||!equivalentJson(response.source,request.source)||!response.page)invalid();
+  if(request.pitch_mod&&!equivalentJson(response.pitch_mod,song.pitch_mod_identity))invalid();
+  if(!request.pitch_mod&&song.originalSong)song=song.originalSong;
   const page=response.page;
   if(request.settings.rendition_policy_id){validateRenditionNotationPage(page,request,song,invalid);freeze(page);admittedPages.set(page,song);return page;}
   if(page.profile!==song.profile||page.view_version!==1||page.source_sha256!==song.score.source.sha256
@@ -68,7 +71,7 @@ export function basicKeyNotationPage(response,request,song){
   }
   if(sourceClock&&(end!==page.source_end_ms||page.source_duration_ms!==sourceDuration
     ||request.settings.position_ms!==undefined&&(page.resolved_position_ms!==Math.min(request.settings.position_ms,page.source_duration_ms)||page.resolved_position_ms<page.source_start_ms||page.resolved_position_ms>page.source_end_ms||page.resolved_position_ms===page.source_end_ms&&page.source_end_ms!==page.source_duration_ms)))invalid();
-  freeze(page);admittedPages.set(page,song);
+  freeze(page);admittedPages.set(page,requestedSong);
   return page;
 }
 
@@ -90,6 +93,7 @@ export function basicKeyWrittenAt(song,page,position,timedNotes){
     const views=page.map(item=>{const value=basicKeyWrittenAt(song,item,position,timedNotes);return value?{...value,entries:value.entries.filter(entry=>entry.partId===item.part_id)}:null;}).filter(Boolean);
     if(!views.length)return null;const entries=views.flatMap(view=>view.entries),occurrence={...views[0].occurrence};occurrence.written_note_ids=entries.filter(entry=>entry.startMs>=occurrence.start_ms).map(entry=>entry.sourceNoteId);occurrence.continuing_note_ids=entries.filter(entry=>entry.startMs<occurrence.start_ms).map(entry=>entry.sourceNoteId);return{occurrence,entries};
   }
+  if(page?.view_version===1&&song.originalSong)song=song.originalSong;
   if(hasBasicKeyRendition(song)&&page?.view_version===2){
     if(!['ready','rendering_unavailable','percussion_selectors','onset_page','empty_page'].includes(page.status))return null;
     const measure=page.measures.find(item=>position>=item.start_ms&&position<item.follow_end_ms);if(!measure)return null;

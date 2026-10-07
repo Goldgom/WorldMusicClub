@@ -31,6 +31,9 @@ export class AppAssistanceStore extends PracticeAssistanceStore {
   constructor(options){super(options);this.session=new Map();this.known=new Set();this.storageSeen=false;}
   read(context){
     const stored=super.read(context),key=this.key(context),session=this.session.get(key);
+    // The pitch facade knows that these bytes previously belonged to a saved
+    // bundle. Losing them is never first-use storage denial or a tab overlay.
+    if(stored.error?.code==='pitch_mod_storage'){this.known.add(key);this.session.delete(key);return stored;}
     if(stored.status!=='unavailable')this.storageSeen=true;
     if(stored.raw!==null)this.known.add(key);
     if(session&&stored.status!=='invalid'&&stored.raw===session.raw)return session;

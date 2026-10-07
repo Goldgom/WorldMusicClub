@@ -21,10 +21,15 @@ export function assertAssistanceAudioCurrent(assistance, assistanceContext, sour
 /** Join checked ownership to already interpreted gates. Never filter source
  * events, regenerate targets, or synthesize from deduplicated physical groups. */
 export function assistanceAudioMask(assistance, assistanceContext, {sourceToken, runtimeToken, sourceProfile, runtimePolicy, choice = null, savedPackageSha256, partIds, notes}) {
-  const checked = assertAssistanceAudioCurrent(assistance, assistanceContext, sourceToken, runtimeToken);
+  if(assistance==null)return null;
+  const binding=typeof assistanceContext==='function'?assistanceContext():assistanceContext;
+  const checked = assertAssistanceAudioCurrent(assistance, binding, sourceToken, runtimeToken);
   if (!checked) return null;
   const {plan, receipt} = checked;
-  if (receipt.source_profile !== sourceProfile || receipt.runtime_policy !== runtimePolicy || receipt.choice !== choice || savedPackageSha256 !== undefined && receipt.saved_package_sha256 !== savedPackageSha256) fail('Assistance uses another native source profile, package, choice or interpretation policy.');
+  // The branded pitch context has already proved its effective receipt above.
+  // The renderer still uses the original synthesis and interpretation policy.
+  const sourceReceipt=binding.pitchMod?.identity.original_receipt||receipt;
+  if (sourceReceipt.source_profile !== sourceProfile || sourceReceipt.runtime_policy !== runtimePolicy || sourceReceipt.choice !== choice || savedPackageSha256 !== undefined && sourceReceipt.saved_package_sha256 !== savedPackageSha256) fail('Assistance uses another native source profile, package, choice or interpretation policy.');
   const selected = new Set(partIds);
   if (selected.size !== plan.selection.selected_part_ids.length || plan.selection.selected_part_ids.some(id => !selected.has(id))) fail('Assistance no longer matches the selected human part union.');
   const cached = masks.get(checked);

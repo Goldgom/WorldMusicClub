@@ -25,7 +25,7 @@ export function mappedPartIds(exported, canonicalId) {
   return [map[canonicalId]];
 }
 /** Optional presentation surface. All score conversion and timing stay in Rust. */
-export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticePart,getPracticeSelection=()=>null,getPracticeDisplay=()=>null,getPracticeAssistanceDisplay=()=>null,getMode=()=>null, onVisibility, onFallback, onRenderComplete=()=>{}, notice, onManualNavigation=()=>{},onBasicPage=()=>{},isVisible=()=>true,loadAdapter=()=>import('./engraving.js'),document=globalThis.document,i18n=getAppI18n(document)}) {
+export function setupEngravedView({getScore,getExportScore=getScore, getCleanSong=()=>null, getPracticePart,getPracticeSelection=()=>null,getPracticeDisplay=()=>null,getPracticeAssistanceDisplay=()=>null,getMode=()=>null, onVisibility, onFallback, onRenderComplete=()=>{}, notice, onManualNavigation=()=>{},onBasicPage=()=>{},isVisible=()=>true,loadAdapter=()=>import('./engraving.js'),document=globalThis.document,i18n=getAppI18n(document)}) {
   const $ = id => document.getElementById(id);
   const visualAdmission=notationAudioAdmission(document.defaultView ?? globalThis);
   const loadAdmittedAdapter = signal => visualAdmission.prepareVisual(loadAdapter, signal);
@@ -191,7 +191,7 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
   }
   async function exportScore(target, signal, positionMs=null,{requestFrom=from,measureCount=pageSize,prefetching=false}={}) {
     signal?.throwIfAborted();
-    const song=basicSong(),resolved=resolvedScope(),key=song?JSON.stringify([song.identity,song.runtime?.profile,song.runtime?.rendition?.policy_id,resolved.partIds,firstPart,requestFrom,measureCount,displayMeter(),positionMs,sourceInspection()]):null;
+    const song=basicSong(),resolved=resolvedScope(),key=song?JSON.stringify([song.identity,song.pitch_mod_identity?.digest||null,song.runtime?.profile,song.runtime?.rendition?.policy_id,resolved.partIds,firstPart,requestFrom,measureCount,displayMeter(),positionMs,sourceInspection()]):null;
     if(cached?.score===target&&cached.key===key)return cached.result;
     if(!prefetching&&song){if(nextPage.peek()?.key===key){const prefetched=await nextPage.take(key);signal?.throwIfAborted();if(prefetched){cached={score:target,key,result:prefetched};return prefetched;}}nextPage.clear();}
     const requestJson=async(path,body)=>{const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal});let result;try{result=await response.json();}catch{throw presentationError('exportUnreadable');}if(!response.ok){if(typeof result?.error==='string'&&result.error)throw new Error(result.error);throw presentationError('exportHttp',{status:response.status});}return result;};
@@ -211,7 +211,7 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
   }
   function prefetchNext(){
     const song=basicSong();if(!hasBasicKeyRendition(song)||sourceInspection()||!sourcePage||sourcePage.next_measure===null||!['ready','partial'].includes(sourceBatch?.status))return;
-    const requestFrom=sourcePage.next_measure+1,measureCount=sourceBatch.measureCount,target=score,resolved=resolvedScope(),key=JSON.stringify([song.identity,song.runtime?.profile,song.runtime?.rendition?.policy_id,resolved.partIds,firstPart,requestFrom,measureCount,displayMeter(),null,sourceInspection()]);
+    const requestFrom=sourcePage.next_measure+1,measureCount=sourceBatch.measureCount,target=score,resolved=resolvedScope(),key=JSON.stringify([song.identity,song.pitch_mod_identity?.digest||null,song.runtime?.profile,song.runtime?.rendition?.policy_id,resolved.partIds,firstPart,requestFrom,measureCount,displayMeter(),null,sourceInspection()]);
     const pending=nextPage.prime(key,{requestFrom,measureCount},signal=>exportScore(target,signal,null,{requestFrom,measureCount,prefetching:true}));publishScope();void pending.then(()=>{if(score===target&&isVisible()&&nextPage.peek()?.key===key){publishScope();prepareNextRender();}});
   }
   function playbackRunning(){try{return readPlaybackClock(document).running;}catch{return false;}}
@@ -369,14 +369,14 @@ export function setupEngravedView({getScore, getCleanSong=()=>null, getPracticeP
   $('engraving-prev').addEventListener('click',()=>{if(basicSong()){turnBasicPage(-1);return;}onManualNavigation();from=Math.max(1,from-pageSize);render();});
   $('engraving-next').addEventListener('click',()=>{if(basicSong()){turnBasicPage(1);return;}onManualNavigation();if(from+pageSize<=totalMeasures()){from+=pageSize;render();}});
   $('export-musicxml').addEventListener('click', async () => {
-    const target=getScore(); if(!target||basicSong())return;
+    const target=getExportScore(); if(!target||basicSong())return;
     const button=$('export-musicxml'); button.disabled=true;
     try {
       const exported=await exportScore(target);
-      if(target!==getScore())return;
+      if(target!==getExportScore())return;
       const url=URL.createObjectURL(new Blob([exported.xml],{type:'application/vnd.recordare.musicxml+xml'}));const link=document.createElement('a');link.href=url;link.download=`${target.id.replace(/[^\w.-]/g,'_')}.musicxml`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
       notice(()=>t('exported'));
-    }catch(error){if(target===getScore())notice(()=>t('exportFailed',{reason:errorText(error)}),true)}finally{button.disabled=!getScore()||Boolean(basicSong())}
+    }catch(error){if(target===getExportScore())notice(()=>t('exportFailed',{reason:errorText(error)}),true)}finally{button.disabled=!getExportScore()||Boolean(basicSong())}
   });
   $('engraving-basic-meter')?.addEventListener('change',()=>{onManualNavigation();cancel();from=1;sourcePage=null;sourcePages=[];sourceBatch=null;cached=null;followFailure=null;redrawLocale();if(active)render();});
   $('engraving-basic-view-mode')?.addEventListener('change',()=>{onManualNavigation();cancel();from=1;sourcePage=null;sourcePages=[];sourceBatch=null;cached=null;followFailure=null;redrawLocale();void render(null,!active);onBasicPage(null);});

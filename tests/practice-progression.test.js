@@ -85,3 +85,16 @@ test('the default legacy store shares the same baseline guard when no store is i
     const controller=createProgressiveAssistanceController({getContext:()=>context,api:async(_path,body)=>response(context,body.layer)});await controller.restore();controller.beginDraft();controller.setDraft({mode:'progression'});await controller.prepareDraft();storage.values.set(new PracticeAssistanceStore().key(context),'competing v1 choice');assert.throws(()=>controller.commitDraft({resetConfirmed:true}),/previous saved assignment changed/);assert.equal(controller.current(),null);assert.equal([...storage.values.keys()].some(key=>key.startsWith(PROGRESSION_STORAGE_PREFIX)),false);
   }finally{if(previous)Object.defineProperty(globalThis,'localStorage',previous);else delete globalThis.localStorage;}
 });
+
+test('typed pitch-bundle failure stays blocked instead of falling through to legacy defaults',async()=>{
+ for(const typed of [false,true]){
+  let lost=true,writes=0;const storage={getItem:key=>{if(lost&&key.startsWith(PROGRESSION_STORAGE_PREFIX))throw Object.assign(Error('Storage unavailable'),typed?{code:'pitch_mod_storage'}:{});return null;},setItem:()=>writes++},f=fixture({storage});
+  await f.controller.restore();assert.equal(f.controller.state().phase,typed?'blocked':'default');assert.equal(f.calls.length,0);
+  if(typed){
+   assert.equal(f.progressionStore.known.has(f.progressionStore.key(f.context)),true);
+   f.controller.beginDraft();f.controller.cancelDraft();assert.equal(f.controller.state().phase,'blocked');
+   lost=false;f.controller.reset();await f.controller.restore();assert.equal(f.controller.state().phase,'blocked','Regaining access cannot default known missing progression bytes');assert.equal(f.calls.length,0);
+  }
+  assert.equal(writes,0);
+ }
+});

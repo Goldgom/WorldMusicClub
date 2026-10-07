@@ -16,7 +16,8 @@ const hash=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
 const sameRevision=(a,b)=>a?.kind===b?.kind&&a?.value===b?.value;
 
 /** A sidecar only: never edit score notes, raw sources, or renderer profiles. */
-export function songModIdentity({score,cleanSong=null}) {
+export function songModIdentity(context) {
+  const {score,cleanSong=null}=context.pitchView?.sourceView||context;
   if(!score?.id||!Array.isArray(score.parts)||!score.parts.length)fail('A score with stable source part IDs is required.');
   return {songId:score.id,sourceRevision:cleanSong?{kind:'clean-package-sha256',value:cleanSong.identity}:{kind:'canonical-score-v1',value:canonicalFingerprint('wmh-canonical-score-v1',score)}};
 }
@@ -98,7 +99,8 @@ export function assertSongModSupported(mod,capabilities,{assistance=null}={}) {
 /** Storage errors keep the usable session Mod and never erase an older copy. */
 export class SongModStore {
   constructor({storage}={}){this.storage=storage;this.entries=new Map();this.identities=new WeakMap();}
-  identity(context){let identity=this.identities.get(context.score);if(!identity){identity=songModIdentity(context);this.identities.set(context.score,identity);}return identity;}
+  identity(context){const score=context.pitchView?.sourceView.score||context.score;let identity=this.identities.get(score);if(!identity){identity=songModIdentity(context);this.identities.set(score,identity);}return identity;}
+  commitSaved(context,mod){const identity=this.identity(context);validateSongMod(mod,{identity,parts:context.score.parts});const next={...this.read(context),mod:structuredClone(mod),status:'saved',explicit:true};this.entries.set(this.key(identity),next);return next;}
   key(identity,prefix=SONG_MOD_STORAGE_PREFIX){return prefix+encodeURIComponent(identity.songId)+'.'+identity.sourceRevision.kind+'.'+identity.sourceRevision.value;}
   target(){return this.storage===undefined?globalThis.localStorage:this.storage;}
   read(context){

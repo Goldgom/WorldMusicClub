@@ -43,6 +43,12 @@
 @media (max-width:700px) {.song-mod-part {grid-template-columns:1fr 1fr}.song-mod-part h3 {grid-column:1/-1}.song-mod-dialog {width:calc(100vw - 1rem)}}
 
 .song-mod-assistance {margin:1rem 0;padding:1rem;border:1px solid var(--border-color,#65708055);border-radius:.6rem}
+.song-mod-pitch {margin:1rem 0;padding:1rem;border:1px solid var(--border-color,#65708055);border-radius:.6rem;overflow-wrap:anywhere}
+.song-mod-pitch h3 {margin:0 0 .5rem}
+.song-mod-pitch label {display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;line-height:1.5}
+.song-mod-pitch input[type=number] {width:6rem;max-width:100%}
+.song-mod-pitch button {margin:.5rem .5rem .25rem 0;max-width:100%;white-space:normal}
+#song-mod-pitch-reset-label[hidden] {display:none}
 .song-mod-assistance[hidden],.song-mod-assistance [hidden] {display:none}
 .song-mod-assistance h3 {margin:0 0 .5rem}
 .song-mod-assistance label {display:flex;align-items:center;gap:.5rem;line-height:1.5}

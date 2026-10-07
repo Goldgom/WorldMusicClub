@@ -4,7 +4,7 @@ import {referencePreviewBudget,BASIC_KEY_MAX_VOICES} from './basic-key-rendition
 import {assistancePracticeGate} from './app-assistance.js';
 /** A browsing candidate never owns, pauses, or replaces the active performance. */
 export class ScorePreview {
-  constructor({compile,check,resolveOptions=()=>null,onChange=()=>{},assistanceController=null,assistanceContext=null}) { this.assistanceController=assistanceController;this.assistanceContext=assistanceContext;this.resolveOptions=resolveOptions;this.compile=compile;this.check=check;this.onChange=onChange;this.version=0;this.controller=null;this.value={status:'empty',score:null,compiled:null,identity:null,part:null,compatibility:{status:'pending',reason:'Choose a score.'}}; }
+  constructor({compile,check,resolveOptions=()=>null,prepareView=async value=>value,onChange=()=>{},assistanceController=null,assistanceContext=null}) { this.prepareView=prepareView;this.assistanceController=assistanceController;this.assistanceContext=assistanceContext;this.resolveOptions=resolveOptions;this.compile=compile;this.check=check;this.onChange=onChange;this.version=0;this.controller=null;this.value={status:'empty',score:null,compiled:null,identity:null,part:null,compatibility:{status:'pending',reason:'Choose a score.'}}; }
   publish(value) { this.value=value;this.onChange(value); }
   cancel({preserveAssistance=false}={}) { this.version++;this.controller?.abort();this.controller=null;if(!preserveAssistance)this.assistanceController?.reset(); }
   async select(identity,load,{part=null,practiceSelection,practiceLayout='solo',showOthers=true}={}) {
@@ -13,7 +13,7 @@ export class ScorePreview {
     this.publish({status:'loading',identity,part,score:null,compiled:null,compatibility:{status:'pending',reason:'Preparing this preview…'}});
     try {
       const loaded=await load(controller.signal);if(!valid())return false;
-      const cleanSong=isCleanSong(loaded?.cleanSong)?loaded.cleanSong:null,score=cleanSong?loaded.score:loaded;
+      let cleanSong=isCleanSong(loaded?.cleanSong)?loaded.cleanSong:null;const score=cleanSong?loaded.score:loaded;
       if(isPerformanceSong(cleanSong)){
         this.publish({status:'performance',identity,part:null,cleanSong,score:null,compiled:null,compatibility:{status:'blocked',reason:'Notation and practice targets are unavailable for independent performance events.'}});
         return valid();
@@ -21,11 +21,13 @@ export class ScorePreview {
       if(cleanSong&&part===null)part=(isBasicKeysSong(cleanSong)?basicKeysParts(cleanSong).find(part=>part.practice_available&&!part.percussion)?.id:cleanSong.notation.parts[0]?.id)||cleanSong.notation.parts[0]?.id||null;
       if(isBasicKeysSong(cleanSong)&&!cleanSong.compilation){this.publish({status:'inspection',identity,part,cleanSong,score,compiled:null,compatibility:{status:'blocked',reason:'The complete source is retained, but an unambiguous practice clock is unavailable.'}});return valid();}
       if(cleanSong&&!cleanSong.compilation){this.publish({status:'choice',identity,part,cleanSong,score,compiled:null,compatibility:{status:'pending',reason:'Choose base-note instrumental practice.'}});return valid();}
-      const compiled=cleanSong?cleanSong.compilation:await this.compile(score,controller.signal);if(!valid())return false;
+      let compiled=cleanSong?cleanSong.compilation:await this.compile(score,controller.signal);if(!valid())return false;
+      const prepared=await this.prepareView({score:compiled.score,compiled,cleanSong,identity,part,practiceSelection,practiceLayout,showOthers},controller.signal);if(!valid())return false;
+      compiled=prepared.compiled;cleanSong=prepared.cleanSong;
       practiceSelection=resolvePracticeSelection(compiled.score.parts,practiceSelection??(part===null?{kind:'all'}:{kind:'parts',part_ids:[part]}));
-      const overrides=this.resolveOptions({score:compiled.score,compiled,cleanSong,identity,part,practiceSelection,practiceLayout,showOthers});
+      const overrides=this.resolveOptions({...prepared,score:compiled.score,compiled,cleanSong,identity,part,practiceSelection,practiceLayout,showOthers});
       if(overrides){part=overrides.part;practiceSelection=resolvePracticeSelection(compiled.score.parts,overrides.practiceSelection);practiceLayout=overrides.practiceLayout;showOthers=overrides.showOthers;}
-      const candidate={status:'ready',identity,part,practiceSelection,practiceLayout,showOthers,...(overrides?.songMod?{songMod:overrides.songMod}:{}),cleanSong,score:compiled.score,compiled,compatibility:{status:'pending',reason:'Checking selected pitches with your instrument…'}};
+      const candidate={status:'ready',identity,part,practiceSelection,practiceLayout,showOthers,...(prepared.pitchView?{pitchView:prepared.pitchView}:{}),...(overrides?.songMod?{songMod:overrides.songMod}:{}),cleanSong,score:compiled.score,compiled,compatibility:{status:'pending',reason:'Checking selected pitches with your instrument…'}};
       if(isBasicKeysSong(cleanSong)&&!hasBasicKeyRendition(cleanSong)&&practiceSelection.part_ids.some(id=>!basicKeysParts(cleanSong).some(item=>item.id===id&&item.practice_available))){this.publish({...candidate,compatibility:{status:'blocked',reason:'This retained part has no supported positive-duration melodic MIDI-key targets.'}});return valid();}
       this.publish(candidate);
       // Same-version view and playback-mix edits may update the candidate while
@@ -51,9 +53,9 @@ export class ScorePreview {
       return false;
     } finally {if(this.controller===controller)this.controller=null;}
   }
-  adopt(compiled,compatibility,part=null,identity=compiled.score.id,cleanSong=null,{practiceSelection,practiceLayout='solo',showOthers=true,songMod=null}={}) {
+  adopt(compiled,compatibility,part=null,identity=compiled.score.id,cleanSong=null,{practiceSelection,practiceLayout='solo',showOthers=true,songMod=null,pitchView=null}={}) {
     this.cancel();const version=this.version;
-    this.publish({status:'ready',identity,part,practiceSelection:resolvePracticeSelection(compiled.score.parts,practiceSelection??(part===null?{kind:'all'}:{kind:'parts',part_ids:[part]})),practiceLayout,showOthers,songMod,score:compiled.score,compiled,compatibility:this.assistanceController?{status:'pending',reason:'Validating the saved note assignment…'}:compatibility,cleanSong});
+    this.publish({status:'ready',identity,part,practiceSelection:resolvePracticeSelection(compiled.score.parts,practiceSelection??(part===null?{kind:'all'}:{kind:'parts',part_ids:[part]})),practiceLayout,showOthers,songMod,pitchView,score:compiled.score,compiled,compatibility:this.assistanceController?{status:'pending',reason:'Validating the saved note assignment…'}:compatibility,cleanSong});
     if(this.assistanceController)void this.assistanceController.restore().then(assistance=>{if(version===this.version)this.publish({...this.value,assistance,compatibility:assistancePracticeGate(this.assistanceController)||compatibility});});
   }
   canStart(mode) {

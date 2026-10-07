@@ -34,6 +34,7 @@ export function setupPracticeAssistanceView({document,parent,i18n,onChange=()=>{
     // path. Merely changing its union must not opt into stricter note atoms.
     const defaultOriginal=s.draft.mode==='original'&&!s.active&&!s.persistence.recipe&&['default','off'].includes(s.persistence.status);
     if(defaultOriginal)return explicitOptIn;
+    if(initial===null)return true;
     const pick=d=>({mode:d.mode,settings:d.settings,selection:d.selection,layer:d.layer});
     return s.replaceInvalidRequired||s.persistence.status==='unavailable'||!assistanceEqual(pick(s.draft),pick(initial))||(!s.active&&Boolean(s.persistence.recipe));
   }
@@ -84,7 +85,7 @@ export function setupPracticeAssistanceView({document,parent,i18n,onChange=()=>{
   off.addEventListener('click',()=>{if(!controller||externalBusy||checking)return;generation++;disableRequested=!disableRequested;localError=null;reset.checked=false;render();onChange();});
   check.addEventListener('click',()=>{if(!controller||externalBusy||checking)return;disableRequested=false;if(!explicitOptIn)reset.checked=false;explicitOptIn=true;prepare().catch(()=>{});});
   return{root,render,changed,checked,hasMachine,disabled:()=>disableRequested,explicitOptIn:()=>explicitOptIn,
-    open(next,{where='preview',hasTakes:existingTakes=false}={}){generation++;disableRequested=false;explicitOptIn=false;controller=next||null;origin=where;hasTakes=Boolean(existingTakes);externalBusy=false;modReset=false;localError=null;checking=false;reset.checked=replace.checked=false;if(controller){const s=controller.beginDraft();initial=s?.draft||null;if(!initial)controller=null;}render();},
+    open(next,{where='preview',hasTakes:existingTakes=false,initialDraft=null,requireCheck=false}={}){generation++;disableRequested=false;explicitOptIn=false;controller=next||null;origin=where;hasTakes=Boolean(existingTakes);externalBusy=false;modReset=false;localError=null;checking=false;reset.checked=replace.checked=false;if(controller){const s=controller.beginDraft();initial=s?.draft||null;if(!initial)controller=null;else if(initialDraft){controller.setDraft(initialDraft);if(requireCheck){initial=null;explicitOptIn=true;}}}render();},
     update({selection,busy=false,requiresReset=false}={}){externalBusy=busy;modReset=requiresReset;if(controller&&selection){const s=state();if(s.draft&&!assistanceEqual(s.draft.selection,selection)){generation++;checking=false;reset.checked=false;localError=null;controller.setDraft({selection});}}render();},
     restoreOriginal(){if(controller){disableRequested=false;generation++;checking=false;localError=null;reset.checked=false;controller.setDraft({mode:'original',settings:null});render();onChange();}},
     canApply(){const s=state();return !controller||Boolean(s?.draft&&!checking&&!localError&&(!resetRequired()||reset.checked)&&(!s.replaceInvalidRequired||replace.checked)&&!(!disableRequested&&['automatic','progression'].includes(s.draft.mode)&&(s.draft.selection.profile.kind!=='piano'||!s.draft.selection.selected_part_ids.length)));},

@@ -96,3 +96,14 @@ test('storage recovery and changed bytes cannot revive an unsaved recipe or defa
  const blocked=make();await blocked.restore();assert.equal(blocked.state().persistence.status,'invalid');assert.equal(blocked.current(),null);assert.equal(calls,1);assert.equal(preview.current(),active);
  storage.values.delete(store.key(ctx));blocked.reset();await blocked.restore();assert.equal(blocked.state().persistence.status,'unavailable');assert.equal(blocked.current(),null);assert.equal(assistancePracticeGate(blocked).status,'blocked');assert.equal(calls,1);
 });
+
+test('known pitch-bundle read failures never become first-use defaults or revive tab-only recipes',async()=>{
+ const ctx=context(),typed=()=>{throw Object.assign(Error('The saved pitch assignment is missing or unreadable.'),{code:'pitch_mod_storage'});};
+ for(const overlay of [false,true]){
+  let lost=false;const store=new AppAssistanceStore({storage:{getItem:()=>lost?typed():null,setItem:()=>{throw Error('quota');}}});
+  if(overlay){const draft=createPracticeAssistanceController({getContext:()=>ctx,store,api:async()=>f.automatic});draft.beginDraft();draft.setDraft({mode:'automatic',settings:f.automatic.checked.plan.settings});await draft.prepareDraft();draft.commitDraft({resetConfirmed:true});assert.equal(store.read(ctx).status,'unsaved');}
+  lost=true;let calls=0;const controller=createPracticeAssistanceController({getContext:()=>ctx,store,api:async()=>{calls++;return f.automatic;}});
+  await controller.restore();assert.equal(controller.state().phase,'blocked');assert.equal(store.read(ctx).status,'unavailable');assert.equal(store.read(ctx).error.code,'pitch_mod_storage');assert.equal(store.session.has(store.key(ctx)),false);assert.equal(calls,0);
+  lost=false;assert.equal(store.read(ctx).status,'unavailable','Known missing bytes cannot become defaults after storage access recovers');
+ }
+});

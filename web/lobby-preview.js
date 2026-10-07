@@ -33,7 +33,7 @@ export function createLobbyPreview({audio = new Synth(), now = () => performance
       const valid=timeline.notes.every(note=>Number.isFinite(note.start_ms)&&note.start_ms>=0&&Number.isFinite(note.duration_ms)&&note.duration_ms>0&&Number.isInteger(note.midi)&&note.midi>=0&&note.midi<=127);
       if(valid&&timeline.notes.length){const sorted=[...timeline.notes].sort((a,b)=>a.start_ms-b.start_ms);start=sorted[0].start_ms;end=Math.min(timeline.duration_ms,start+LOBBY_PREVIEW_MS);if(end>start)notes=sorted.filter(note=>note.start_ms<end);}
     }
-    position=start;session.select(compiled);status=value?.status==='loading'?'loading':next?(notes.length?'ready':'noNotes'):'empty';emit();
+    position=start;session.select(compiled,value?.pitchView?.audioProfile||null);status=value?.status==='loading'?'loading':next?(notes.length?'ready':'noNotes'):'empty';emit();
   }
   async function play(){
     if(disposed||!allowed()||!notes.length||!sound||volume===0||['playing','loadingAudio'].includes(status))return false;
