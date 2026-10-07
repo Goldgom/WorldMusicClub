@@ -1,11 +1,12 @@
 import {isCleanSong,isPerformanceSong,isBasicKeysSong,isVsqSong,basicKeysParts,hasBasicKeyRendition} from './clean-song-package.js';
 import {resolvePracticeSelection,humanPracticePartIds} from './practice-selection.js';
 import {referencePreviewBudget,BASIC_KEY_MAX_VOICES} from './basic-key-rendition.js';
+import {assistancePracticeGate} from './app-assistance.js';
 /** A browsing candidate never owns, pauses, or replaces the active performance. */
 export class ScorePreview {
-  constructor({compile,check,resolveOptions=()=>null,onChange=()=>{}}) { this.resolveOptions=resolveOptions;this.compile=compile;this.check=check;this.onChange=onChange;this.version=0;this.controller=null;this.value={status:'empty',score:null,compiled:null,identity:null,part:null,compatibility:{status:'pending',reason:'Choose a score.'}}; }
+  constructor({compile,check,resolveOptions=()=>null,onChange=()=>{},assistanceController=null,assistanceContext=null}) { this.assistanceController=assistanceController;this.assistanceContext=assistanceContext;this.resolveOptions=resolveOptions;this.compile=compile;this.check=check;this.onChange=onChange;this.version=0;this.controller=null;this.value={status:'empty',score:null,compiled:null,identity:null,part:null,compatibility:{status:'pending',reason:'Choose a score.'}}; }
   publish(value) { this.value=value;this.onChange(value); }
-  cancel() { this.version++;this.controller?.abort();this.controller=null; }
+  cancel({preserveAssistance=false}={}) { this.version++;this.controller?.abort();this.controller=null;if(!preserveAssistance)this.assistanceController?.reset(); }
   async select(identity,load,{part=null,practiceSelection,practiceLayout='solo',showOthers=true}={}) {
     this.cancel();const version=this.version,controller=new AbortController();this.controller=controller;
     const valid=()=>version===this.version&&!controller.signal.aborted;
@@ -29,7 +30,7 @@ export class ScorePreview {
       this.publish(candidate);
       // Same-version view and playback-mix edits may update the candidate while
       // its target check runs. Ownership changes cancel this version instead.
-      try {const compatibility=await this.check(compiled,practiceSelection,controller.signal);if(valid())this.publish({...this.value,compatibility});}
+      try {const assistance=await this.assistanceController?.restore();if(!valid())return false;const gate=this.assistanceController?assistancePracticeGate(this.assistanceController):null;this.value={...this.value,assistance:assistance||null};const compatibility=gate||await this.check(compiled,practiceSelection,controller.signal,{assistance});if(valid())this.publish({...this.value,compatibility});}
       catch(error){if(valid())this.publish({...this.value,compatibility:{status:'error',reason:`Practice compatibility could not be verified: ${error.message}`}});}
       return valid();
     } catch(error) {
@@ -50,10 +51,22 @@ export class ScorePreview {
       return false;
     } finally {if(this.controller===controller)this.controller=null;}
   }
-  adopt(compiled,compatibility,part=null,identity=compiled.score.id,cleanSong=null,{practiceSelection,practiceLayout='solo',showOthers=true}={}) {
-    this.cancel();this.publish({status:'ready',identity,part,practiceSelection:resolvePracticeSelection(compiled.score.parts,practiceSelection??(part===null?{kind:'all'}:{kind:'parts',part_ids:[part]})),practiceLayout,showOthers,score:compiled.score,compiled,compatibility,cleanSong});
+  adopt(compiled,compatibility,part=null,identity=compiled.score.id,cleanSong=null,{practiceSelection,practiceLayout='solo',showOthers=true,songMod=null}={}) {
+    this.cancel();const version=this.version;
+    this.publish({status:'ready',identity,part,practiceSelection:resolvePracticeSelection(compiled.score.parts,practiceSelection??(part===null?{kind:'all'}:{kind:'parts',part_ids:[part]})),practiceLayout,showOthers,songMod,score:compiled.score,compiled,compatibility:this.assistanceController?{status:'pending',reason:'Validating the saved note assignment…'}:compatibility,cleanSong});
+    if(this.assistanceController)void this.assistanceController.restore().then(assistance=>{if(version===this.version)this.publish({...this.value,assistance,compatibility:assistancePracticeGate(this.assistanceController)||compatibility});});
   }
-  canStart(mode) {const value=this.value,muted=value.songMod?.config.parts.filter(part=>part.muted).map(part=>part.partId)||[],human=mode==='practice'?(value.practiceSelection?.part_ids||(value.part?[value.part]:[])):[],excluded=[...new Set([...human,...muted])],budgetSelection=muted.length?(excluded.length?{kind:'parts',part_ids:excluded}:null):mode==='practice'?(value.practiceSelection??value.part):null;if(value.compiled&&(hasBasicKeyRendition(value.cleanSong)||isVsqSong(value.cleanSong))&&referencePreviewBudget(value.compiled.timeline.notes,budgetSelection,value.cleanSong.runtime.rendition)>BASIC_KEY_MAX_VOICES)return false;return value.status==='ready'&&(!isBasicKeysSong(value.cleanSong)||mode==='listen'&&hasBasicKeyRendition(value.cleanSong)||mode==='practice'&&[...humanPracticePartIds(value.score.parts,{practiceSelection:value.practiceSelection,targetPart:value.part})].some(id=>basicKeysParts(value.cleanSong).some(part=>part.id===id&&part.practice_available)))&&(mode==='listen'||value.compatibility.status==='ready');}
+  canStart(mode) {
+    const value=this.value;let assistance=null;
+    try{
+      if(this.assistanceController){const gate=assistancePracticeGate(this.assistanceController);if(mode==='practice'&&gate)return false;assistance=this.assistanceController.current();}
+      const muted=value.songMod?.config.parts.filter(part=>part.muted).map(part=>part.partId)||[],human=mode==='practice'?(value.practiceSelection?.part_ids||(value.part?[value.part]:[])):[],excluded=[...new Set([...human,...muted])];
+      const selection=assistance?{kind:'parts',part_ids:assistance.plan.selection.selected_part_ids}:muted.length?(excluded.length?{kind:'parts',part_ids:excluded}:null):mode==='practice'?(value.practiceSelection??value.part):null;
+      if(value.compiled&&(hasBasicKeyRendition(value.cleanSong)||isVsqSong(value.cleanSong))&&referencePreviewBudget(value.compiled.timeline.notes,selection,value.cleanSong.runtime.rendition,assistance?{assistance,assistanceContext:this.assistanceContext,sourceToken:value.cleanSong,mutedParts:muted}:undefined)>BASIC_KEY_MAX_VOICES)return false;
+      if(mode==='practice'&&assistance&&!assistance.scored_mode_allowed)return false;
+      return value.status==='ready'&&(!isBasicKeysSong(value.cleanSong)||mode==='listen'&&hasBasicKeyRendition(value.cleanSong)||mode==='practice'&&[...humanPracticePartIds(value.score.parts,{practiceSelection:value.practiceSelection,targetPart:value.part})].some(id=>basicKeysParts(value.cleanSong).some(part=>part.id===id&&part.practice_available)))&&(mode==='listen'||value.compatibility.status==='ready');
+    }catch{return false;}
+  }
 }
 
 export function filterCatalog(items,query='',origin='all') {

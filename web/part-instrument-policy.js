@@ -12,7 +12,7 @@ const invalid = (message, code = 'invalid_part_instrument_policy') => {throw Obj
  * AudioWorklet recipe changes. No note, pitch, or device selects a part owner. */
 export function createPartInstrumentPolicy(mod, binding = {}) {
   validateSongMod(mod, binding);
-  const options = songModOptions(mod), performanceInstrument = binding.performanceInstrument ?? 'piano', mode = binding.mode ?? options.mode;
+  const options = songModOptions(mod,{assistance:binding.assistance}), performanceInstrument = binding.performanceInstrument ?? 'piano', mode = binding.mode ?? options.mode;
   if (!['piano', 'guitar'].includes(performanceInstrument) || !['practice', 'listen'].includes(mode)) invalid('Unsupported live performance context.');
   const parts = mod.config.parts.map(part => ({
     partId: part.partId,
@@ -42,6 +42,7 @@ export function createPartInstrumentPolicy(mod, binding = {}) {
     },
     parts,
     machineInstrumentOverrides: options.instrumentOverrides,
+    ...(binding.assistance?{assistanceSelectionDigest:binding.assistance.plan.selection_digest}:{}),
   });
   admitted.add(policy);
   return policy;

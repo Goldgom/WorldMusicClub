@@ -284,7 +284,7 @@ test('both app fingering contexts route the active complete song through its nat
   if(!['/api/library/fingering/piano','/api/library/fingering/guitar'].includes(path))return;
   const request=body.settings,timeline=descriptor.runtime.compilation.timeline;
   // This transport fixture exercises routing/admission, without impersonating a Rust solver.
-  const plan=path.endsWith('/piano')?unavailablePianoResult({score,...request},timeline):{version:1,algorithm:'deterministic_guitar_beam_v1',score_id:score.id,part_id:request.part_id,profile:request.profile,status:'unavailable',complete:false,changed_source_notes:false,source_occurrence_count:timeline.notes.filter(note=>request.part_id===null||note.part_id===request.part_id).length,max_fret_span:request.max_fret_span,beam_width:64,explored_choices:0,beam_pruned:false,objective_cost:null,requested_locks:request.locks,assignments:[],diagnostics:[{code:'frontend_fixture_no_guitar_solver',severity:'warning',message:'No Rust solver in this frontend transport fixture.',note_id:null}]};
+  const plan=path.endsWith('/piano')?unavailablePianoResult({score,...request},timeline):{version:1,algorithm:'deterministic_guitar_beam_v1',score_id:score.id,part_id:request.part_id,...(request.selected_part_ids?{selected_part_ids:request.selected_part_ids}:{}),profile:request.profile,status:'unavailable',complete:false,changed_source_notes:false,source_occurrence_count:timeline.notes.filter(note=>request.selected_part_ids?request.selected_part_ids.includes(note.part_id):request.part_id===null||note.part_id===request.part_id).length,max_fret_span:request.max_fret_span,beam_width:64,explored_choices:0,beam_pruned:false,objective_cost:null,requested_locks:request.locks,assignments:[],diagnostics:[{code:'frontend_fixture_no_guitar_solver',severity:'warning',message:'No Rust solver in this frontend transport fixture.',note_id:null}]};
   return nativeResponse({source:body.source,plan});
  });
  try{
@@ -295,7 +295,7 @@ test('both app fingering contexts route the active complete song through its nat
   await app.until(()=>app.$('guitar-planning').dataset.status==='unavailable');
   for(const request of app.requests.filter(request=>request.path.startsWith('/api/library/fingering/'))){
    assert.deepEqual(request.body.source,{key,content_sha256:descriptor.content_sha256,profile:'wmh-semantic-midi1-v1',choice:null});
-   assert.equal(request.body.settings.part_id,score.parts[0].id);assert.equal('score' in request.body.settings,false);
+   if(request.path.endsWith('/guitar')){assert.equal(request.body.settings.part_id,null);assert.deepEqual(request.body.settings.selected_part_ids,[score.parts[0].id]);}else assert.equal(request.body.settings.part_id,score.parts[0].id);assert.equal('score' in request.body.settings,false);
   }
   assert.equal(app.requests.filter(request=>['/api/fingering/piano','/api/fingering/guitar'].includes(request.path)&&request.body.score?.id===score.id).length,0);
  }finally{await app.close();}

@@ -23,10 +23,16 @@ import {resolvePracticeSelection,humanPracticePartIds} from './practice-selectio
 import {SongModStore,createSongMod,songModChanges,songModOptions,songModCapabilities,assertSongModSupported,validateSongMod} from './song-mod.js';
 import {createPartInstrumentPolicy,assertPartInstrumentPolicyCurrent,assertPartInstrumentPolicyReady,resolvePartInstrumentInput,partInstrumentPolicyIssue} from './part-instrument-policy.js';
 import {setupSongModView} from './song-mod-view.js';
+import {createPracticeAssistanceController} from './practice-assistance.js';
+import {assertPracticeAssistanceCurrent} from './practice-assistance-receipt.js';
+import {appAssistanceContext,currentAppAssistanceBinding,AppAssistanceStore,assistancePracticeGate,scopedAssistanceTargets,assistanceTakeIdentity} from './app-assistance.js';
 import {setupCompletePracticeView} from './complete-practice-view.js';
 import {CanonicalPracticeSession,canonicalPracticeOptions,canonicalDisplayNotes} from './canonical-practice-session.js';
+import {buildCanonicalAudioPlan,CANONICAL_AUDIO_POLICY} from './canonical-audio-plan.js';
+import {buildBasicKeyAudioPlan} from './basic-key-audio-plan.js';
+import {buildVsqAudioPlan} from './vsq-audio-plan.js';
 import {canonicalAudioPolicyText,canonicalAudioErrorText,canonicalLoopBudgetText} from './canonical-practice-text.js';
-import {practiceStageNotes,markPracticeNotation,createPracticeDisplayCache} from './practice-stage-display.js';
+import {practiceStageNotes,markPracticeNotation,createPracticeDisplayCache,createPracticeAssistanceDisplayIndex} from './practice-stage-display.js';
 import {setupFallingNoteLabels} from './falling-note-labels.js';
 import {ScorePreview,filterCatalog} from './score-preview.js';
 import {openScoreStorage} from './native-score-storage.js';
@@ -128,6 +134,9 @@ function appError(key, params={}) {const error=new Error(t(key,params));error.ap
 function originLabel(score) {return t(({original_exercise:'app.originOriginal',public_domain_practice_arrangement:'app.originExcerpt',curated_cc0_edition:'app.originCC0'})[score.provenance.kind]||'app.originSource');}
 function passLabel(pass) {const label=passDisplayLabels.get(pass);return label?t(label.kind==='loop'?'app.loopLabel':'app.takeLabel',{number:label.number}):pass.label;}
 function compatibilityText(result) {
+  if(result.assistanceReason==='infeasible')return i18n.locale==='en'?'This Original assignment is infeasible under the checked model. Change the assignment in Mod or choose Listen.':'当前原始分配在已验证模型下不可行。请在 Mod 中更改分配，或选择聆听。';
+  if(result.assistanceReason==='noHuman')return i18n.locale==='en'?'No human targets remain in this scope. Choose a scope with human targets or intentional Listen.':'当前范围没有真人目标。请选择包含真人目标的范围，或明确选择聆听。';
+  if(result.assistance&&result.reason)return result.reason;
   if(result.reasonKey)return t(result.reasonKey,result.reasonParams);
   const reasonKey=({instrument_report_incomplete:'app.instrumentReportIncomplete',instrument_report_coverage:'app.instrumentReportCoverage',instrument_no_targets:'app.instrumentNoTargets'})[result.reasonCode];
   if(reasonKey)return t(reasonKey);
@@ -176,6 +185,26 @@ const latencyPreference=readLatencyPreference();
 let catalogIndexController=null,catalogIndexRequest=0,catalogIndexFailed=false;
 const state = {songMod:null,hiddenPartIds:new Set(),inspection:false,cleanSong:null,catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceSelection:null, practiceLayout:'solo', showOtherParts:true, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: latencyPreference.value, loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reasonKey:'app.compatibilityWaiting'}, instrumentOutOfRange: null, instrumentConflict: false, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, playPending: false, noticeTimer: null, audioLimitWarned: false};
 
+const assistanceStore=new AppAssistanceStore();
+let assistanceRefreshQueued=false,assistanceDisplayCache=null;
+function assistanceContext(where){const value=where==='preview'?preview?.value:state;return value?.compiled&&value.score?appAssistanceContext(value,currentProfile(),songMods.identity(value)):null;}
+function assistanceChanged(){
+  if(assistanceRefreshQueued)return;assistanceRefreshQueued=true;
+  queueMicrotask(()=>{assistanceRefreshQueued=false;if(!preview||!songModView)return;renderPreview();updateButtons();drawFrame();});
+}
+const previewAssistance=createPracticeAssistanceController({api,store:assistanceStore,getContext:()=>assistanceContext('preview'),onChange:assistanceChanged});
+const stageAssistance=createPracticeAssistanceController({api,store:assistanceStore,getContext:()=>assistanceContext('stage'),onChange:assistanceChanged});
+const stageAssistanceBinding=()=>currentAppAssistanceBinding(stageAssistance,assistanceContext('stage'));
+const previewAssistanceBinding=()=>currentAppAssistanceBinding(previewAssistance,assistanceContext('preview'));
+function getPracticeAssistanceDisplay(){
+  const assistance=stageAssistance.current();if(!assistance)return {};
+  if(assistanceDisplayCache?.assistance!==assistance||assistanceDisplayCache.timeline!==state.compiled.timeline)assistanceDisplayCache={assistance,timeline:state.compiled.timeline,ownershipIndex:createPracticeAssistanceDisplayIndex({assistance,sourceNotes:state.compiled.timeline.notes})};
+  return assistanceDisplayCache;
+}
+function isHumanWritten(entry){const display=getPracticeAssistanceDisplay();return display.assistance?display.ownershipIndex.isHumanSource(entry.sourceNoteId,entry.partId):humanPartIds().has(entry.partId);}
+function fingeringAssistanceContext(){const assistance=stageAssistance.current(),gate=state.compiled?assistancePracticeGate(stageAssistance):null;return{assistance,assistanceUnavailable:Boolean(gate||assistance&&!assistance.all_selected_human)};}
+function assistancePlaybackOptions(){const assistance=stageAssistance.current();return assistance?{assistance,assistanceContext:stageAssistanceBinding,...(!assistance.plan.selection.selected_part_ids.length?{practiceSelection:{kind:'parts',part_ids:[]}}:{})}:{};}
+
 function createRecorder() {
   return new PracticeRecorder({latencyMs:state.latency,onEvidenceLimit:()=>{
     $('take-evidence-limit').hidden=false;
@@ -185,7 +214,14 @@ function createRecorder() {
 state.recorder = createRecorder();routedScoreRecorder=state.recorder;
 inputRoutes.push({kind:'score',recorder:state.recorder,start:0,end:null});
 function refreshFreeTone(){bindText($('free-live-tone'),()=>`${i18n.t('ui.instrument')}: ${i18n.t(`free.timbre.${state.instrument}`)}`);}
+// Default has no receipt, saved recipe, request or draft to revoke. Preserve
+// this no-op state so ordinary navigation does not invalidate fingering caches.
+function resetAssistanceOnNavigation(controller){if(controller.state().phase!=='default')controller.reset();}
 function changeScreen(screen){
+  if(screen!=='stage')resetAssistanceOnNavigation(stageAssistance);
+  else if(state.compiled&&stageAssistance.state().phase==='idle'){void stageAssistance.restore();if(stageAssistance.state().phase!=='default')void checkInstrument();}
+  if(screen!=='library')resetAssistanceOnNavigation(previewAssistance);
+  else if(preview?.value.compiled&&previewAssistance.state().phase==='idle')restorePreviewAssistance();
   state.audioAdmissionController?.abort();
   state.playTicket++;state.playPending=false;
   songAuthoringView?.screenChanged(screen);
@@ -207,7 +243,7 @@ shell=setupGameShell({i18n,pausePlayback,onPanel:name=>{scoreSaveNavigation++;re
   onNotation:()=>{engravedView.surfaceChanged();requestAnimationFrame(()=>{renderNotationPage();drawFrame()})}});
 const noticeView=setupNoticeView({document,i18n,getScope:()=>state.score?.title});
 lobbyPreview=setupLobbyPreview({document,i18n,api,allowed:()=>shell.screen()==='library'&&!startingPreview&&!document.hidden&&!document.querySelector('dialog[open]')});
-preview=new ScorePreview({resolveOptions:context=>{if(context.score.parts.length>128)return null;const entry=songMods.read(context);return entry.explicit?{...songModOptions(entry.mod),songMod:entry.mod}:null;},compile:(score,signal)=>api('/api/compile',score,signal),check:checkPreview,onChange:()=>{renderPreview();renderCatalog()}});
+preview=new ScorePreview({assistanceController:previewAssistance,assistanceContext:previewAssistanceBinding,resolveOptions:context=>{if(context.score.parts.length>128)return null;const entry=songMods.read(context);return entry.explicit?{...songModOptions(entry.mod),songMod:entry.mod}:null;},compile:(score,signal)=>api('/api/compile',score,signal),check:checkPreview,onChange:()=>{renderPreview();renderCatalog()}});
 
 function notice(message, error = false) {
   noticeRevision++;
@@ -229,7 +265,7 @@ function updateButtons() {
   state.finishing = state.recorder.pending || state.assessmentBusy;
   const activePass = state.recorder.active;
   const checkingCurrent = Boolean(activePass && (activePass.manualDeadline !== null || activePass.inFlight || (activePass.closedWall !== null && activePass.assessedRevision < activePass.revision && !activePass.error)));
-  const allowed = (!isBasicKeysSong(state.cleanSong)||hasBasicKeyRendition(state.cleanSong)||state.mode==='practice')&&(state.mode !== 'practice' || state.compatibility.status === 'ready');
+  const allowed = (!isBasicKeysSong(state.cleanSong)||hasBasicKeyRendition(state.cleanSong)||state.mode==='practice')&&(state.mode !== 'practice' || state.compatibility.status === 'ready'&&!assistancePracticeGate(stageAssistance));
   const liveSoundIssue=state.songMod?partInstrumentPolicyIssue(modInputPolicy(state.songMod,state,state.mode),state.score.parts,i18n.locale):'';
   const audioUnavailable=(!state.cleanSong||hasAudioThreadRendition(state.cleanSong)||modNeedsLiveAudio(state.songMod,state.mode))&&!synth.muted&&liveAudioUnavailable();
   $('play-button').disabled = !ready || canonicalSession.pausePending || (!transport.running && (!allowed || checkingCurrent || audioUnavailable || Boolean(liveSoundIssue)));
@@ -246,8 +282,8 @@ function updateButtons() {
   if(!transport.running&&!state.playPending){cleanPlayer.stop();if(!canonicalSession.held)canonicalSession.stop();activeMedia?.pause();}
   renderCleanActive();
   $('assess-button').disabled = !ready || state.mode !== 'practice' || checkingCurrent || !allowed;
-  $('practice-gate').hidden = state.mode !== 'practice' || state.compatibility.status === 'ready';
-  bindText($('practice-gate-reason'), () => compatibilityText(state.compatibility));
+  $('practice-gate').hidden = state.mode !== 'practice' || state.compatibility.status === 'ready'&&!assistancePracticeGate(stageAssistance);
+  bindText($('practice-gate-reason'), () => compatibilityText(assistancePracticeGate(stageAssistance)||state.compatibility));
   $('practice-gate-retry').disabled = !ready || state.compatibility.status === 'pending';
   bindText($('play-button'), () => transport.running ? t('app.pause') : transport.completed ? t('app.playAgain') : t('app.play'));
   $('workspace').dataset.scoreState=state.inspection?'inspection':'session';
@@ -356,6 +392,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
   if (expectedIntent === null) {state.loadIntent++;cancelCatalogSelection();}
   if (new TextEncoder().encode(JSON.stringify(score)).byteLength > (isBasicKeysSong(cleanSong)?16:8) * 1024 * 1024) { notice(() => t('app.scoreTooLarge'), true); return false; }
   pausePlayback();
+  stageAssistance.reset();
   state.compileController?.abort();
   const controller = new AbortController();
   state.compileController = controller;
@@ -375,12 +412,13 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     writtenCursor?.reset();
     const previousPart = requestedPracticePart !== undefined ? requestedPracticePart : preserveTempo ? state.practicePart : null;
     state.cleanSong=cleanSong;libraryManagement?.catalog.sessionChanged();if(!cleanSong){previewMedia?.clear();previewMediaKey=null;}cleanMutedParts.clear();cleanSoloParts.clear();cleanPlayer.select(cleanSong);activeMedia?.clear();activeMediaKey=null;
-    state.score = compiled?.score||score;state.songMod=practiceOptions?.songMod||(preserveTempo?state.songMod:null);if(state.songMod){const context={score:state.score,cleanSong,practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts},identity=songMods.identity(context),changed=state.songMod.songId!==identity.songId||state.songMod.sourceRevision.kind!==identity.sourceRevision.kind||state.songMod.sourceRevision.value!==identity.sourceRevision.value;state.songMod=createSongMod(identity,state.songMod.config);if(changed)songMods.save(context,state.songMod);}state.hiddenPartIds=new Set(state.songMod?songModOptions(state.songMod).hiddenPartIds:[]);if(state.songMod)for(const id of songModOptions(state.songMod).mutedPartIds)cleanMutedParts.add(id);state.inspection=inspection;canonicalSession.select(cleanSong?null:compiled);
+    state.score = compiled?.score||score;state.songMod=practiceOptions?.songMod||(preserveTempo?state.songMod:null);if(state.songMod){const context={score:state.score,cleanSong,practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts},identity=songMods.identity(context),changed=state.songMod.songId!==identity.songId||state.songMod.sourceRevision.kind!==identity.sourceRevision.kind||state.songMod.sourceRevision.value!==identity.sourceRevision.value;state.songMod=createSongMod(identity,state.songMod.config);if(changed)songMods.save(context,state.songMod);}state.hiddenPartIds=new Set(state.songMod?songModOptions(state.songMod).hiddenPartIds:[]);if(state.songMod)for(const id of songModOptions(state.songMod).mutedPartIds)cleanMutedParts.add(id);state.inspection=inspection;
     if(requestedMode!==undefined){state.mode=requestedMode;$('session-mode').value=requestedMode;}
     state.importDiagnostics = importDiagnostics;
     const diagnostics = [...new Map([...(compiled?.diagnostics||[]), ...importDiagnostics].map(item => [`${item.code}:${item.note_id || ''}:${item.message}`, item])).values()];
     // Complete songs keep the exact admitted runtime identity for navigation.
-    state.compiled = compiled?{...compiled, diagnostics, timeline: cleanSong ? compiled.timeline : {...compiled.timeline, notes: [...compiled.timeline.notes].sort((a, b) => a.start_ms - b.start_ms || a.midi - b.midi)}}:null;
+    state.compiled = compiled?{...compiled, diagnostics}:null;
+    canonicalSession.select(cleanSong?null:state.compiled);
     state.instrumentOutOfRange = null; state.instrumentConflict = false;
     state.timelineIndex = state.compiled?new TimelineIndex(state.compiled.timeline.notes):null;
     state.practiceTimeline=null;state.sourceTargetTimeline=null;state.targetTimeline=null;state.practicePlan=null;state.targetGroups=new Map();state.physicalIndex=null;state.practiceIndex=null;
@@ -388,7 +426,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     metronome?.cancelForScore();
     state.sourceNotes = new Map(state.score.parts.flatMap(part => part.notes.map(note => [note.id, {note, partId: part.id}])));
     state.practiceLayout=practiceOptions?.practiceLayout||(preserveTempo?state.practiceLayout:'solo');state.showOtherParts=practiceOptions?.showOthers??(preserveTempo?state.showOtherParts:true);
-    state.loop = null; state.loopRequest++; state.practicePart = previousPart !== null && state.score.parts.some(part => part.id === previousPart) ? previousPart : cleanSong?state.score.parts[0]?.id:null; state.practiceSelection=resolvePracticeSelection(state.score.parts,practiceOptions?.practiceSelection??(preserveTempo?state.practiceSelection:null)??(state.practicePart===null?{kind:'all'}:{kind:'parts',part_ids:[state.practicePart]}));rebuildPracticeScope(); $('loop-enabled').checked = false; bindText($('loop-status'), () => t('app.loopCleared'));
+    state.loop = null; state.loopRequest++; state.practicePart = previousPart !== null && state.score.parts.some(part => part.id === previousPart) ? previousPart : cleanSong?state.score.parts[0]?.id:null; state.practiceSelection=resolvePracticeSelection(state.score.parts,practiceOptions?.practiceSelection??(preserveTempo?state.practiceSelection:null)??(state.practicePart===null?{kind:'all'}:{kind:'parts',part_ids:[state.practicePart]}));void stageAssistance.restore();rebuildPracticeScope(); $('loop-enabled').checked = false; bindText($('loop-status'), () => t('app.loopCleared'));
     state.notationPage = 0; state.notationPart = hasBasicKeyRendition(cleanSong)?state.practicePart:cleanSong ? null : state.practicePart || state.score.parts[0].id;
     if (!preserveTempo) $('tempo').value = String(displayOpeningTempo(state.score,cleanSong));
     clearNotice();
@@ -398,7 +436,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     bindText($('catalog-status'), () => t('app.currentSession', {title:state.score.title}));
     const clockScore=state.score;await checkInstrument();
     const current=()=>state.compileController===controller&&!controller.signal.aborted&&state.score===clockScore&&(expectedIntent===null||expectedIntent===state.loadIntent);
-    if(current()){if(!state.cleanSong)metronome?.setScore();if(state.compiled&&preview.version===previewVersion)preview.adopt(state.compiled,previewCompatibility(state.compatibility),state.practicePart,requestedIdentity,state.cleanSong,{practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts});syncCleanMedia();}
+    if(current()){if(!state.cleanSong)metronome?.setScore();if(state.compiled&&preview.version===previewVersion)preview.adopt(state.compiled,previewCompatibility(state.compatibility),state.practicePart,requestedIdentity,state.cleanSong,{practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts,songMod:state.songMod});syncCleanMedia();}
     return current();
   } catch (error) {
     if (error.name === 'AbortError') return;
@@ -512,66 +550,84 @@ function modNeedsLiveAudio(mod,mode=mod?songModOptions(mod).mode:'listen'){retur
 function liveAudioUnavailable(){return Boolean(synth.liveError)||typeof globalThis.AudioWorkletNode!=='function'||Boolean(synth.context&&!synth.context.audioWorklet);}
 function liveAudioUnavailableReason(){return synth.liveError?liveAudioErrorText(synth.liveError):cleanErrorText(i18n.locale,{code:'clean_audio_worklet_unavailable'});}
 function assertModLiveAudioSupported(mod,mode){if(!synth.muted&&modNeedsLiveAudio(mod,mode)&&liveAudioUnavailable())throw synth.liveError||Object.assign(new Error(liveAudioUnavailableReason()),{code:'clean_audio_worklet_unavailable'});}
-function modInputBinding(mod,context,mode=songModOptions(mod).mode){return {mod,identity:songMods.identity(context),parts:context.score.parts,performanceInstrument:state.instrument,mode};}
+function modInputBinding(mod,context,mode=songModOptions(mod).mode){return {mod,identity:songMods.identity(context),parts:context.score.parts,performanceInstrument:state.instrument,mode,assistance:context.assistance??(context===state?stageAssistance.current():null)};}
 function modInputPolicy(mod,context,mode){return createPartInstrumentPolicy(mod,modInputBinding(mod,context,mode));}
 function modContext(origin) {
   const value=origin==='preview'?preview.value:{score:state.score,compiled:state.compiled,cleanSong:state.cleanSong,mode:state.mode,practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts};
   if(!value?.score||!value.compiled||value.score.parts.length>128)return null;
-  const entry=songMods.read(value);
-  return {...value,...entry,performanceInstrument:state.instrument,mod:origin==='stage'&&state.songMod?state.songMod:entry.mod,capabilities:{...songModCapabilities(value),liveAudio:synth.muted||!liveAudioUnavailable(),liveAudioReason:synth.liveError?liveAudioErrorText(synth.liveError):''},previewVersion:preview.version,navigation:scoreSaveNavigation,generation:state.generation,hasTakes:origin==='stage'&&(transport.hasStarted||state.recorder.passes.length>0)};
+  const entry=songMods.read(value),assistanceController=origin==='stage'?stageAssistance:previewAssistance,assistance=assistanceController.current();
+  return {...value,...entry,assistanceController,assistance,assistanceStatus:assistanceController.state().persistence.status,performanceInstrument:state.instrument,mod:origin==='stage'&&state.songMod?state.songMod:entry.mod,capabilities:{...songModCapabilities(value),liveAudio:synth.muted||!liveAudioUnavailable(),liveAudioReason:synth.liveError?liveAudioErrorText(synth.liveError):''},previewVersion:preview.version,navigation:scoreSaveNavigation,generation:state.generation,hasTakes:origin==='stage'&&(transport.hasStarted||state.recorder.passes.length>0)};
 }
 function scoreAdmissionPending(){return Boolean(state.compileController&&!state.compileController.signal.aborted);}
 function refreshSongModView(){
   if(!songModView)return;
   const candidate=modContext('preview'),active=modContext('stage');let reason='',canStart=false;
-  if(candidate){try{assertSongModSupported(candidate.mod,candidate.capabilities);assertPartInstrumentPolicyReady(modInputPolicy(candidate.mod,candidate),candidate.score.parts,i18n.locale);const options=songModOptions(candidate.mod);canStart=!startingPreview&&preview.canStart(options.mode);if(!canStart)reason=compatibilityText(preview.value.compatibility);if((candidate.capabilities.audioThread||modNeedsLiveAudio(candidate.mod))&&!synth.muted&&liveAudioUnavailable()){canStart=false;reason=liveAudioUnavailableReason();}}catch(error){reason=i18n.locale==='en'?error.message:'当前 Mod 无法播放：'+error.message;}}
+  if(candidate){try{assertSongModSupported(candidate.mod,candidate.capabilities,{assistance:candidate.assistance});assertPartInstrumentPolicyReady(modInputPolicy(candidate.mod,candidate),candidate.score.parts,i18n.locale);const options=songModOptions(candidate.mod);canStart=!startingPreview&&preview.canStart(options.mode);if(!canStart)reason=compatibilityText(preview.value.compatibility);if((candidate.capabilities.audioThread||modNeedsLiveAudio(candidate.mod))&&!synth.muted&&liveAudioUnavailable()){canStart=false;reason=liveAudioUnavailableReason();}}catch(error){reason=i18n.locale==='en'?error.message:'当前 Mod 无法播放：'+error.message;}}
   if(preview.value.score?.parts.length>128)reason=i18n.locale==='en'?'This source exceeds the 128-part Mod budget. Inspect the complete source below.':'此来源超出 Mod 的 128 声部预算；可在下方查看完整来源。';if(!candidate&&preview.value.status==='choice')reason=i18n.locale==='en'?'Choose the basic instrumental renderer below to configure this source.':'请先在下方选择基础器乐渲染器，再配置此来源。';songModView.update({preview:candidate,stage:active,stageReason:active?partInstrumentPolicyIssue(modInputPolicy(active.mod,active,state.mode),active.score.parts,i18n.locale):'',canStart:canStart&&!scoreAdmissionPending(),admitting:scoreAdmissionPending(),reason:scoreAdmissionPending()?t('app.preparingScore'):reason,inspectionOnly:(preview.value.status==='inspection'||preview.value.score?.parts.length>128)&&Boolean(preview.value.score)});
 }
-async function applySongMod({origin,context,mod,isCurrent=()=>true,commit=()=>true}) {
-  validateSongMod(mod,{identity:songMods.identity(context),parts:context.score.parts});assertSongModSupported(mod,songModCapabilities(context));assertModLiveAudioSupported(mod);
-  const livePolicy=assertPartInstrumentPolicyReady(modInputPolicy(mod,context),context.score.parts,i18n.locale);
-  const options=songModOptions(mod),changes=songModChanges(context.mod,mod),current=()=>isCurrent()&&!scoreAdmissionPending()&&context.generation===state.generation&&!document.hidden&&context.navigation===scoreSaveNavigation&&(origin==='stage'?context.mode===state.mode&&context.score===state.score&&shell.screen()==='stage':context.score===preview.value.score&&context.identity===preview.value.identity&&context.previewVersion===preview.version&&shell.screen()==='library');
-  if(!current())return;
-  const compatibility=options.mode==='practice'&&(origin==='preview'||changes.requiresReset)?await checkPreview(context.compiled,options.practiceSelection):origin==='preview'?{status:'ready'}:state.compatibility;
+async function applySongMod({origin,context,mod,assistance=null,assistanceChanged=false,resetConfirmed=false,commitAssistance=()=>assistance,isCurrent=()=>true,commit=()=>true}) {
+  validateSongMod(mod,{identity:songMods.identity(context),parts:context.score.parts});assertSongModSupported(mod,songModCapabilities(context),{assistance});assertModLiveAudioSupported(mod);
+  const prospective={...context,songMod:mod,mod,assistance},livePolicy=assertPartInstrumentPolicyReady(modInputPolicy(mod,prospective),context.score.parts,i18n.locale);
+  const options=songModOptions(mod,{assistance}),changes=songModChanges(context.mod,mod),requiresReset=changes.requiresReset||assistanceChanged;
+  if(origin==='stage'&&requiresReset&&(context.hasTakes||context.assistance||context.assistanceController?.state().persistence.recipe)&&!resetConfirmed)throw new Error('Confirm that changing this assignment restarts the session and clears its takes.');
+  const profileSnapshot=JSON.stringify(currentProfile());
+  const current=()=>isCurrent()&&profileSnapshot===JSON.stringify(currentProfile())&&!scoreAdmissionPending()&&context.generation===state.generation&&!document.hidden&&context.navigation===scoreSaveNavigation&&(origin==='stage'?context.mode===state.mode&&context.score===state.score&&shell.screen()==='stage':context.score===preview.value.score&&context.identity===preview.value.identity&&context.previewVersion===preview.version&&shell.screen()==='library');
+  function assertCandidate(){
+    if(!assistance)return;
+    const live=appAssistanceContext({...((origin==='stage')?state:preview.value),songMod:mod},currentProfile(),songMods.identity(context));
+    const binding={...live,mode:assistance.plan.mode,settings:assistance.plan.settings,revision:assistance.plan.revision,expected_selection_digest:assistance.plan.selection_digest};assertPracticeAssistanceCurrent(assistance,binding);return binding;
+  }
+  if(!current())return;assertCandidate();
+  const admission=options.mode==='practice'&&(origin==='preview'||requiresReset)?await preparePracticeAdmission(context.compiled,options.practiceSelection,currentProfile(),assistance,null):null;
+  const compatibility=admission?.compatibility||(origin==='preview'?{status:'ready'}:state.compatibility);
+  if(assistance){
+    const audioOptions={sampleRate:synth.context?.sampleRate||48000,mode:options.mode,practiceSelection:assistance.plan.selection.selected_part_ids.length?options.practiceSelection:{kind:'parts',part_ids:[]},instrumentOverrides:options.instrumentOverrides,mutedPartIds:options.mutedPartIds,mutedParts:options.mutedPartIds,instrument:state.instrument,assistance,assistanceContext:assertCandidate};
+    if(!context.cleanSong){const audioProfile=await api('/api/canonical-audio-profile',context.compiled.score);if(!current())return;buildCanonicalAudioPlan(context.compiled,audioProfile,{...audioOptions,acceptedPolicyId:CANONICAL_AUDIO_POLICY});}
+    else if(hasBasicKeyRendition(context.cleanSong))buildBasicKeyAudioPlan(context.cleanSong,audioOptions);
+    else if(isVsqSong(context.cleanSong))buildVsqAudioPlan(context.cleanSong,audioOptions);
+  }
   if(origin==='stage'&&changes.mix&&canonicalSession.pendingPause){await canonicalSession.pendingPause;await Promise.resolve();}
-  if(!current())return;
-  assertPartInstrumentPolicyCurrent(livePolicy,modInputBinding(mod,context));assertModLiveAudioSupported(mod);
-  if(!commit())return;
-  songMods.save(context,mod);
+  if(!current())return;assertCandidate();
+  assertPartInstrumentPolicyCurrent(livePolicy,modInputBinding(mod,prospective));assertModLiveAudioSupported(mod);
+  // No callbacks, DOM publication or await may split checked ownership from
+  // its matching Mod/selection. All fallible preparation precedes this boundary.
+  commitAssistance();
   if(origin==='preview'){
-    preview.cancel();preview.publish({...preview.value,...options,songMod:mod,compatibility});
+    preview.value={...preview.value,...options,songMod:mod,assistance,compatibility};
   }else{
-    state.songMod=mod;state.hiddenPartIds=new Set(options.hiddenPartIds);cleanMutedParts.clear();cleanSoloParts.clear();for(const id of options.mutedPartIds)cleanMutedParts.add(id);
-    // A stage edit also owns the same source's library choices. Keep its full
-    // preview check, rather than a possibly loop-limited stage check, and leave
-    // another browsed song or source revision alone.
+    state.songMod=mod;state.mode=options.mode;state.practiceSelection=resolvePracticeSelection(state.score.parts,options.practiceSelection);
+    state.practicePart=state.practiceSelection.kind==='all'&&!state.cleanSong?null:state.practiceSelection.part_ids[0]||null;
+    state.practiceLayout=options.practiceLayout;state.showOtherParts=options.showOthers;state.hiddenPartIds=new Set(options.hiddenPartIds);
+    if(requiresReset){state.loop=null;state.loopRequest++;rebuildPracticeScope({publish:false});if(admission)installPracticeAdmission(admission,{publish:false});else{state.compatibility={status:'ready'};state.targetTimeline=null;state.practicePlan=null;}}
+  }
+  songMods.save(context,mod);
+  if(!commit())throw new Error('The Mod dialog changed during the synchronous commit.');
+  void (origin==='preview'?previewAssistance:stageAssistance).restore();
+  if(origin==='preview'){
+    preview.cancel({preserveAssistance:true});preview.publish(preview.value);
+  }else{
+    cleanMutedParts.clear();cleanSoloParts.clear();for(const id of options.mutedPartIds)cleanMutedParts.add(id);
+    $('session-mode').value=state.mode;$('practice-part').value=state.practicePart||'';
+    if(requiresReset){
+      $('loop-enabled').checked=false;updatePracticeScopeLabel();renderTargetMappings();resetPlayback();
+      engravedView.practicePartChanged();state.notationPart=engravedView.scopeInfo().partId;$('notation-part').value=state.notationPart||'';
+    }else if(changes.mix)canonicalSession.stop();
+    renderNotationPage();drawFrame(true);updateRangeWarning();updateButtons();
     const candidate=preview.value,identity=candidate.status==='ready'&&candidate.compiled&&candidate.score?songMods.identity(candidate):null;
-    if(identity&&identity.songId===mod.songId&&identity.sourceRevision.kind===mod.sourceRevision.kind&&identity.sourceRevision.value===mod.sourceRevision.value){
-      if(changes.requiresReset||candidate.compatibility.status!=='pending')preview.cancel();
-      preview.publish({...candidate,...options,songMod:mod,compatibility:changes.requiresReset?compatibility:candidate.compatibility});
-    }
-    if(changes.requiresReset){state.mode=options.mode;$('session-mode').value=options.mode;await applyHumanSelection(options.practiceSelection,{layout:options.practiceLayout,showOthers:options.showOthers});}
-    else{
-      // The paused recorder and source position survive output/display edits.
-      // A canonical mute change needs a fresh plan instead of resuming the held mix.
-      if(changes.mix)canonicalSession.stop();
-      state.practiceLayout=options.practiceLayout;state.showOtherParts=options.showOthers;
-      if(changes.display){engravedView.practicePartChanged();renderNotationPage();drawFrame(true);}
-      updateButtons();
-    }
+    if(identity&&identity.songId===mod.songId&&identity.sourceRevision.kind===mod.sourceRevision.kind&&identity.sourceRevision.value===mod.sourceRevision.value){if(!requiresReset&&candidate.compatibility.status==='pending')preview.publish({...candidate,...options,songMod:mod});else preview.adopt(candidate.compiled,requiresReset?compatibility:candidate.compatibility,options.part,candidate.identity,candidate.cleanSong,{practiceSelection:options.practiceSelection,practiceLayout:options.practiceLayout,showOthers:options.showOthers,songMod:mod});}
   }
   refreshSongModView();
 }
 async function startUnifiedPerformance(){
   if(startingPreview||scoreAdmissionPending())return;const context=modContext('preview');if(!context)return;
-  try{assertSongModSupported(context.mod,context.capabilities);assertModLiveAudioSupported(context.mod);assertPartInstrumentPolicyReady(modInputPolicy(context.mod,context),context.score.parts,i18n.locale);const options=songModOptions(context.mod);preview.publish({...preview.value,...options,songMod:context.mod});await startPreview(options.mode);}
+  try{assertSongModSupported(context.mod,context.capabilities,{assistance:context.assistance});assertModLiveAudioSupported(context.mod);assertPartInstrumentPolicyReady(modInputPolicy(context.mod,context),context.score.parts,i18n.locale);const options=songModOptions(context.mod,{assistance:context.assistance});preview.publish({...preview.value,...options,songMod:context.mod});await startPreview(options.mode);}
   catch(error){notice(()=>error.message,true);}
 }
-function markNotationRoles(){markPracticeNotation($('workspace'),{sourceNotes:state.sourceNotes,humanPartIds:humanPartIds(),mode:state.mode});}
+function markNotationRoles(){markPracticeNotation($('workspace'),{...getPracticeAssistanceDisplay(),sourceNotes:state.sourceNotes,humanPartIds:humanPartIds(),mode:state.mode,layout:state.practiceLayout,showOthers:state.showOtherParts});}
 async function applyHumanSelection(selection,{layout='complete',showOthers=state.showOtherParts}={}){
   // Canonical scores use null for the legacy All parts option. Clean songs
   // retain a concrete solo choice; their complete human set lives in selection.
-  if(!state.score)return;pausePlayback();state.practiceSelection=resolvePracticeSelection(state.score.parts,selection);state.practicePart=state.practiceSelection.kind==='all'&&!state.cleanSong?null:state.practiceSelection.part_ids[0]||null;state.practiceLayout=layout;state.showOtherParts=showOthers;$('practice-part').value=state.practicePart||'';rebuildPracticeScope();resetPlayback();engravedView.practicePartChanged();state.notationPart=engravedView.scopeInfo().partId;$('notation-part').value=state.notationPart||'';renderNotationPage();updateRangeWarning();refreshPracticeView();await checkInstrument();
+  if(!state.score)return;pausePlayback();state.practiceSelection=resolvePracticeSelection(state.score.parts,selection);state.practicePart=state.practiceSelection.kind==='all'&&!state.cleanSong?null:state.practiceSelection.part_ids[0]||null;state.practiceLayout=layout;state.showOtherParts=showOthers;void stageAssistance.restore();$('practice-part').value=state.practicePart||'';rebuildPracticeScope();resetPlayback();engravedView.practicePartChanged();state.notationPart=engravedView.scopeInfo().partId;$('notation-part').value=state.notationPart||'';renderNotationPage();updateRangeWarning();refreshPracticeView();await checkInstrument();
 }
 async function applyCompletePracticeChoice({origin,context,selection,showOthers}) {
   if(origin==='stage'){
@@ -592,7 +648,7 @@ async function applyCompletePracticeChoice({origin,context,selection,showOthers}
   if(!chosen||preview.version!==selectedVersion||navigation!==scoreSaveNavigation||shell.screen()!=='library'||document.hidden)return;
   if(preview.canStart('practice'))await startPreview('practice');
 }
-function rebuildPracticeScope() {
+function rebuildPracticeScope({publish=true}={}) {
   if (!state.compiled) return;
   const scope = practiceScope(state.compiled.timeline, state.practiceSelection??state.practicePart, state.loop);
   state.practiceTimeline = scope.selected; state.sourceTargetTimeline = scope.targets; state.targetTimeline = null; state.practicePlan = null; state.targetGroups = new Map(); state.physicalIndex = null;
@@ -600,8 +656,8 @@ function rebuildPracticeScope() {
   state.sourceDisplayIndex=new TimelineIndex(canonicalDisplayNotes(state.compiled.timeline,state.loop));
   state.instrumentOutOfRange = null; state.instrumentConflict = false;
   state.compatibility = {status:'pending',reasonKey:'app.compatibilityChecking'};
-  if (state.loop) { state.loop.notes = scope.playbackNotes; state.loop.index = new TimelineIndex(scope.playbackNotes); state.loop.targetIds = scope.targetIds; updateLoopStatus(); }
-  updatePracticeScopeLabel();
+  if (state.loop) { state.loop.notes = scope.playbackNotes; state.loop.index = new TimelineIndex(scope.playbackNotes); state.loop.targetIds = scope.targetIds; if(publish)updateLoopStatus(); }
+  if(publish)updatePracticeScopeLabel();
 }
 function updatePracticeScopeLabel() {
   if (!state.score) return;
@@ -706,13 +762,15 @@ async function checkInstrument(profile = currentProfile(), apply = false) {
   if(isBasicKeysSong(state.cleanSong)&&!hasBasicKeyRendition(state.cleanSong)&&state.practiceSelection.part_ids.some(id=>!basicKeysParts(state.cleanSong).some(part=>part.id===id&&part.practice_available))){state.compatibility={status:'blocked',reasonKey:'app.compatibilityPlanBlocked'};state.targetTimeline=null;state.practicePlan=null;updateButtons();return;}
   state.practicePlan=null;state.targetGroups=new Map();state.targetTimeline=null;state.physicalIndex=null;updatePracticeScopeLabel();renderTargetMappings();
   state.compatibility = {status:'pending',reasonKey:'app.compatibilityPreparing'}; updateButtons();
-  const request = ++state.instrumentRequest; const compiled = state.compiled; const selection = state.practiceVersion; const sourceTargets=state.sourceTargetTimeline||compiled.timeline;
+  if(apply){state.profileDirty=false;if(profile.kind==='piano'){state.keys=profile.key_count;state.lowestMidi=profile.lowest_midi;}else state.guitar={tuning:profile.tuning,frets:profile.frets,capo:profile.capo};}
+  const request = ++state.instrumentRequest; const compiled = state.compiled; const selection = state.practiceVersion;
   state.instrumentOutOfRange = null; state.instrumentConflict = false;
   bindText($('instrument-report'), () => t('app.checkingRange'));
   try {
-    const plan = validateTargetPlan(await api('/api/practice-targets',{timeline:sourceTargets,profile}),sourceTargets);
+    const assistance=await stageAssistance.restore();
     if(request!==state.instrumentRequest||compiled!==state.compiled||selection!==state.practiceVersion)return;
-    const report = await api('/api/instrument-check', {timeline:sourceTargets, profile});
+    const gate=assistancePracticeGate(stageAssistance);if(gate){state.compatibility=gate;return;}
+    const admission=await preparePracticeAdmission(compiled,state.practiceSelection,profile,assistance,state.loop),{plan,report,sourceTargets}=admission;
     if (request !== state.instrumentRequest || compiled !== state.compiled || selection !== state.practiceVersion) return;
     if (apply) {
       state.profileDirty = false;
@@ -722,10 +780,8 @@ async function checkInstrument(profile = currentProfile(), apply = false) {
       updateRangeWarning();
       refreshPreview();
     }
-    state.practicePlan=plan;state.targetTimeline=plan.timeline;state.targetGroups=new Map(plan.groups.map(group=>[group.target_id,group]));
-    state.physicalIndex=new TimelineIndex(state.loop?windowNotes(plan.timeline.notes,state.loop.start_ms,state.loop.end_ms):plan.timeline.notes);
-    state.compatibility = compatibilityStatus(report, sourceTargets.notes);
-    if(!plan.playable&&state.compatibility.status==='ready')state.compatibility={status:'blocked',reasonKey:'app.compatibilityPlanBlocked'};
+    if(assistance)stageAssistanceBinding();
+    installPracticeAdmission(admission);
     updatePracticeScopeLabel();renderTargetMappings();
     const outside = report.note_options.filter(note => !note.playable).length;
     state.instrumentOutOfRange = outside; state.instrumentConflict = report.diagnostics.some(d => d.code === 'guitar_string_conflict'); updateRangeWarning();
@@ -1022,13 +1078,13 @@ async function togglePlayback() {
   if (canonicalSession.pausePending)return;
   if (transport.running || state.playPending) { pausePlayback(undefined,'pause',{preserveCanonical:transport.running}); return; }
   if(state.cleanSong&&!inspectCleanRendition(state.cleanSong).supported&&!(isBasicKeysSong(state.cleanSong)&&state.mode==='practice'&&state.targetTimeline?.notes.length)){notice(()=>cleanErrorText(i18n.locale,{code:'clean_renderer_unsupported'}),true);return;}
-  if (state.mode === 'practice' && state.compatibility.status !== 'ready') { notice(compatibilityNotice(state.compatibility), true); return; }
+  if (state.mode === 'practice' && (state.compatibility.status !== 'ready'||assistancePracticeGate(stageAssistance))) { notice(compatibilityNotice(state.compatibility), true); return; }
   if(state.songMod){try{assertModLiveAudioSupported(state.songMod,state.mode);assertPartInstrumentPolicyReady(modInputPolicy(state.songMod,state,state.mode),state.score.parts,i18n.locale);}catch(error){notice(()=>error.message,true);return;}}
   const waiting=state.recorder.active;
   if(waiting&&(waiting.manualDeadline!==null||waiting.inFlight||(transport.completed&&state.recorder.pending))){notice(() => t('app.assessmentWaiting'));return}
   if (transport.completed) { if(state.mode==='practice') { transport.reset(); if(state.loop)transport.seek(state.loop.start_ms); state.lastHighlight=''; } else resetPlayback(); }
   const generation=state.generation,ticket=++state.playTicket,song=state.cleanSong,score=state.score,mode=state.mode,targetPart=state.practicePart,practiceSelection=state.practiceSelection,instrument=state.instrument,mod=state.songMod,muted=synth.muted;
-  const current=()=>generation===state.generation&&ticket===state.playTicket&&song===state.cleanSong&&score===state.score&&mode===state.mode&&targetPart===state.practicePart&&practiceSelection===state.practiceSelection&&instrument===state.instrument&&mod===state.songMod&&muted===synth.muted&&!transport.running&&Boolean(state.compiled)&&shell.screen()==='stage'&&!document.hidden&&!document.querySelector('dialog[open]')&&(mode!=='practice'||state.compatibility.status==='ready');
+  const current=()=>generation===state.generation&&ticket===state.playTicket&&song===state.cleanSong&&score===state.score&&mode===state.mode&&targetPart===state.practicePart&&practiceSelection===state.practiceSelection&&instrument===state.instrument&&mod===state.songMod&&muted===synth.muted&&!transport.running&&Boolean(state.compiled)&&shell.screen()==='stage'&&!document.hidden&&!document.querySelector('dialog[open]')&&(mode!=='practice'||state.compatibility.status==='ready'&&!assistancePracticeGate(stageAssistance));
   state.playPending=true;
   const admissionController=new AbortController();state.audioAdmissionController=admissionController;let admissionLease=null;
   try {
@@ -1037,8 +1093,8 @@ async function togglePlayback() {
     const audioThread=!muted&&(!song||hasAudioThreadRendition(song)),beatMs=60000/(Number($('tempo').value)||100),countIn=$('count-in').checked&&!isBasicKeysSong(song)?beatMs*4:0;
     // Count-in belongs to the same prepared source position as every audio gate,
     // transport frame and recorder timestamp; never subtract it after admission.
-    const modOptions=state.songMod?songModOptions(state.songMod):null;
-    const options={context:synth.context,output:synth.output,mode,targetPart,practiceSelection,...(modOptions?{instrumentOverrides:modOptions.instrumentOverrides,mutedPartIds:modOptions.mutedPartIds}:{}),mutedParts:[...cleanMutedParts],soloParts:[...cleanSoloParts],instrument,resumePositionMs:!song&&state.loop&&!transport.hasStarted?undefined:transport.position-(audioThread&&!transport.hasStarted?countIn:0),acceptedPolicyId:song?inspectCleanRendition(song).rendition:null};
+    const modOptions=state.songMod?songModOptions(state.songMod,{assistance:stageAssistance.current()}):null;
+    const options={context:synth.context,output:synth.output,mode,targetPart,practiceSelection,...assistancePlaybackOptions(),...(modOptions?{instrumentOverrides:modOptions.instrumentOverrides,mutedPartIds:modOptions.mutedPartIds}:{}),mutedParts:[...cleanMutedParts],soloParts:[...cleanSoloParts],instrument,resumePositionMs:!song&&state.loop&&!transport.hasStarted?undefined:transport.position-(audioThread&&!transport.hasStarted?countIn:0),acceptedPolicyId:song?inspectCleanRendition(song).rendition:null};
     let now;
     // Human live sound needs its worklet even when the unchanged source
     // renderer is procedural. Admit it before starting a clock or human take.
@@ -1051,7 +1107,7 @@ async function togglePlayback() {
       // priority until the native ACK and shared recorder/transport bind finish.
       admissionLease=await notationAudioAdmission(window).acquireAudio(admissionController.signal);
       if(!admissionLease||!current())return;
-      const anchor=await (resumeCanonical?canonicalSession.resume({anchorTime:synth.context.currentTime+.05}):(song?cleanPlayer:canonicalSession).startPrepared({anchorTime:synth.context.currentTime+.05}));
+      const anchor=await (resumeCanonical?canonicalSession.resume({anchorTime:synth.context.currentTime+.05,...assistancePlaybackOptions()}):(song?cleanPlayer:canonicalSession).startPrepared({anchorTime:synth.context.currentTime+.05,...assistancePlaybackOptions()}));
       if(!anchor||!current())return;
       if(synth.context.state!=='running'||synth.context.currentTime>=anchor.anchorTime)throw Object.assign(new Error('The shared audio start anchor elapsed before transport admission.'),{code:'clean_late_start'});
       // Use the renderer's quantized sample anchor for both transport and inputs.
@@ -1078,6 +1134,7 @@ async function togglePlayback() {
   }
 }
 function beginPracticePass(now, captureEnabled = true) {
+  const checked=stageAssistance.current();if(assistancePracticeGate(stageAssistance)||checked&&!checked.scored_mode_allowed||!state.targetTimeline?.notes.length)throw new Error('This assignment has no admitted human practice targets.');
   const recorder=state.recorder;let pass=recorder.active;
   if(pass&&pass.closedWall===null&&pass.captureEnabled&&captureEnabled) recorder.resume(now,transport.position);
   else {pass=recorder.begin({wallTime:now,position:transport.position,startMs:state.loop?.start_ms||0,endMs:state.loop?.end_ms||state.compiled.timeline.duration_ms,timeline:state.targetTimeline,label:state.loop?`Loop ${state.loopIteration}`:`Take ${recorder.passes.length+1}`,captureEnabled});passDisplayLabels.set(pass,{kind:state.loop?'loop':'take',number:state.loop?state.loopIteration:recorder.passes.length});}
@@ -1087,6 +1144,8 @@ function beginPracticePass(now, captureEnabled = true) {
     const clock=canonicalSession.sourceClock();
     passInterpretations.get(pass).playback_segments.push({wall_start_ms:now,position_start_ms:transport.position,...structuredClone(canonicalSession.interpretation),...(clock?{audio_clock:{player_epoch:clock.playerEpoch,generation:clock.generation,pass_index:clock.passIndex,cycle_start_frame:clock.cycleStartFrame,pass_start_frame:clock.passStartFrame,next_boundary_frame:clock.nextBoundaryFrame,initial_anchor_frame:clock.initialAnchorFrame}}:{})});
   }
+  const interpretation=passInterpretations.get(pass)||{};
+  if(!Object.hasOwn(interpretation,'practice_assistance')){interpretation.practice_assistance=assistanceTakeIdentity(stageAssistance.current());interpretation.song_mod=state.songMod?structuredClone(state.songMod):null;interpretation.source_revision=structuredClone(songMods.identity(state));passInterpretations.set(pass,interpretation);}
   state.inputs=pass.inputs;refreshPassHistory();displayChosenPass();return pass;
 }
 
@@ -1184,11 +1243,11 @@ async function drainAssessments() {
 async function assess() {
   if(referenceInputActive())return;
   if(!state.compiled||state.mode!=='practice')return;
-  if(state.compatibility.status!=='ready'){notice(compatibilityNotice(state.compatibility),true);return}
+  if(state.compatibility.status!=='ready'||assistancePracticeGate(stageAssistance)){notice(compatibilityNotice(assistancePracticeGate(stageAssistance)||state.compatibility),true);return}
   const played=Boolean(state.recorder.active?.captureEnabled);
   pausePlayback();const generation=state.generation,recorder=state.recorder;
   if(!state.cleanSong&&!recorder.active){
-    try{const prepared=await canonicalSession.prepare({soundEnabled:false,mode:'practice',practiceSelection:state.practiceSelection,range:state.loop?{startMs:state.loop.start_ms,endMs:state.loop.end_ms}:undefined,loop:state.loop?{enabled:true}:undefined});if(!prepared||generation!==state.generation||recorder!==state.recorder)return;}
+    try{const prepared=await canonicalSession.prepare({soundEnabled:false,mode:'practice',practiceSelection:state.practiceSelection,...assistancePlaybackOptions(),...(state.songMod?songModOptions(state.songMod,{assistance:stageAssistance.current()}):{}),range:state.loop?{startMs:state.loop.start_ms,endMs:state.loop.end_ms}:undefined,loop:state.loop?{enabled:true}:undefined});if(!prepared||generation!==state.generation||recorder!==state.recorder)return;}
     catch(error){if(generation===state.generation)notice(()=>canonicalAudioErrorText(i18n.locale,error),true);return;}
   }
   const now=performance.now();if(!state.recorder.active)beginPracticePass(now,false);
@@ -1198,7 +1257,7 @@ async function assess() {
 }
 $('feedback-pass').addEventListener('change',displayChosenPass);
 $('retry-assessments').addEventListener('click',()=>{state.recorder.retryFailed();drainAssessments()});
-$('export-takes').addEventListener('click',async()=>{const recorder=state.recorder;if(canonicalSession.pendingPause){try{await canonicalSession.pendingPause;await Promise.resolve();}catch{return;}if(recorder!==state.recorder)return;}const routing=midiController?.exportRoutingData(),exported=state.recorder.exportData();exported.passes=exported.passes.map((pass,index)=>({...pass,...(passInterpretations.has(state.recorder.passes[index])?{interpretation:passInterpretations.get(state.recorder.passes[index])}:{})}));const data={...exported,score_id:state.score?.id,practice_part:state.practicePart,practice_selection:structuredClone(state.practiceSelection),song_mod:state.songMod?structuredClone(state.songMod):null,view_configuration:{practice_layout:state.practiceLayout,show_other_parts:state.showOtherParts,falling_note_labels:fallingNoteLabels?.enabled()===true},target_plan:state.practicePlan,...(routing?{midi_routing:routing}:{}),keyboard_input_configuration:keyboardInput.exportConfigurationData()};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='worldmusichub-practice-session.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
+$('export-takes').addEventListener('click',async()=>{const recorder=state.recorder;if(canonicalSession.pendingPause){try{await canonicalSession.pendingPause;await Promise.resolve();}catch{return;}if(recorder!==state.recorder)return;}const routing=midiController?.exportRoutingData(),exported=state.recorder.exportData();exported.passes=exported.passes.map((pass,index)=>({...pass,...(passInterpretations.has(state.recorder.passes[index])?{interpretation:passInterpretations.get(state.recorder.passes[index])}:{})}));const data={...exported,score_id:state.score?.id,practice_part:state.practicePart,practice_selection:structuredClone(state.practiceSelection),song_mod:state.songMod?structuredClone(state.songMod):null,view_configuration:{practice_layout:state.practiceLayout,show_other_parts:state.showOtherParts,falling_note_labels:fallingNoteLabels?.enabled()===true},target_plan:state.practicePlan,practice_assistance:assistanceTakeIdentity(stageAssistance.current()),...(routing?{midi_routing:routing}:{}),keyboard_input_configuration:keyboardInput.exportConfigurationData()};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='worldmusichub-practice-session.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
 function advanceLoopClock(now) {
   if(!state.loop||!transport.running)return;
   const clock=!state.cleanSong?canonicalSession.sourceClock():null;
@@ -1271,7 +1330,7 @@ function drawFrame(displayOnly = false) {
   const timeline = state.compiled?.timeline;
   const duration = timeline?.duration_ms || 0;
   const segmentStart = state.loop?.start_ms || 0;
-  const playbackIndex = state.mode==='practice'&&state.physicalIndex ? state.physicalIndex : state.cleanSong?state.timelineIndex:state.loop?.index || state.practiceIndex || state.timelineIndex;
+  const playbackIndex = state.mode==='practice'&&stageAssistance.current()?state.physicalIndex:state.mode==='practice'&&state.physicalIndex ? state.physicalIndex : state.cleanSong?state.timelineIndex:state.loop?.index || state.practiceIndex || state.timelineIndex;
   if (displayOnly!==true && transport.running && timeline) {
     if(!state.cleanSong)metronome?.advance({running:true,position,segment:transport.startedAt,startPosition:transport.position});
     // Source notes are scheduled only by their admitted audio-thread renderer.
@@ -1309,14 +1368,14 @@ function drawFrame(displayOnly = false) {
   const written = position < segmentStart ? null : isBasicKeysSong(state.cleanSong)?basicKeyWrittenAt(state.cleanSong,engravedView.basicPages(),position,state.timelineIndex?.range(position)||[]):writtenCursor?.at(position);
   const soundingSources = new Set(active.flatMap(note=>mappedSourceIds(note,state.mode==='practice'?state.targetGroups.get(note.id):null)));
   const humanIds=humanPartIds();
-  const currentWritten = (written?.entries || []).filter(entry=>(state.mode!=='practice'||humanIds.has(entry.partId))&&(entry.note.pitch||entry.role==='percussion_selector'?soundingSources.has(entry.sourceNoteId):true));
+  const currentWritten = (written?.entries || []).filter(entry=>(state.mode!=='practice'||isHumanWritten(entry))&&(entry.note.pitch||entry.role==='percussion_selector'?soundingSources.has(entry.sourceNoteId):true));
   const displayedWritten=displayedWrittenEntries(written);
-  if(shell.notationVisible()&&state.engravingActive&&written?.occurrence)engravedView.setExpectedWrittenNotes?.({sourceNoteIds:displayedWritten.filter(entry=>state.mode!=='practice'||humanIds.has(entry.partId)).map(entry=>entry.sourceNoteId),sourceMeasureIndex:written.occurrence.source_measure_index});
+  if(shell.notationVisible()&&state.engravingActive&&written?.occurrence)engravedView.setExpectedWrittenNotes?.({sourceNoteIds:displayedWritten.filter(entry=>state.mode!=='practice'||isHumanWritten(entry)).map(entry=>entry.sourceNoteId),sourceMeasureIndex:written.occurrence.source_measure_index});
   else engravedView.clearExpectedWrittenNotes?.({preserveRenditionRows:hasBasicKeyRendition(state.cleanSong)&&shell.notationVisible()});
   if(displayOnly!==true&&shell.notationVisible())notationFollowing?.tick(position < segmentStart ? -1 : position,transport.running,{...written,entries:displayedWritten,pageAnchor:writtenCursor?.pageAnchor(position,displayedPartId())});
   const signature = JSON.stringify([i18n.revision,written?.occurrence?.id || null,currentWritten.map(entry=>entry.sourceNoteId),displayedWritten.map(entry=>entry.sourceNoteId)]);
   if (signature !== state.lastHighlight) {
-    updateWrittenNoteHighlights(document,displayedWritten.filter(entry=>state.mode!=='practice'||humanIds.has(entry.partId)).map(entry=>entry.sourceNoteId));
+    updateWrittenNoteHighlights(document,displayedWritten.filter(entry=>state.mode!=='practice'||isHumanWritten(entry)).map(entry=>entry.sourceNoteId));
     state.lastHighlight = signature;
     if((writtenCursor?.state().status==='ready'||isBasicKeysSong(state.cleanSong)&&written?.occurrence)&&writtenCursorStatus){
       if(isBasicKeysSong(state.cleanSong)){writtenCursorStatus.dataset.status='ready';writtenCursorRetry.hidden=true;}
@@ -1329,7 +1388,7 @@ function drawFrame(displayOnly = false) {
   }
   const displayRange=state.instrument==='piano'?[state.geometry[0].midi,state.geometry.at(-1).midi]:[Math.min(...state.guitar.tuning)+state.guitar.capo,Math.max(...state.guitar.tuning)+state.guitar.frets];
   const {availableMidi,excludedMachinePartIds}=practiceDisplayCache(state);
-  const stageNotes=(humanNotes,sourceNotes)=>practiceStageNotes({humanNotes,hiddenPartIds:state.hiddenPartIds,targetGroups:state.targetGroups,sourceNotes:state.mode==='listen'&&!state.cleanSong?humanNotes:sourceNotes,availableMidi,excludedMachinePartIds,humanPartIds:humanIds,mode:state.mode,layout:state.practiceLayout,showOthers:state.showOtherParts,range:displayRange});
+  const stageNotes=(humanNotes,sourceNotes)=>practiceStageNotes({...getPracticeAssistanceDisplay(),humanNotes,hiddenPartIds:state.hiddenPartIds,targetGroups:state.targetGroups,sourceNotes:state.mode==='listen'&&!state.cleanSong?humanNotes:sourceNotes,availableMidi,excludedMachinePartIds,humanPartIds:humanIds,mode:state.mode,layout:state.practiceLayout,showOthers:state.showOtherParts,range:displayRange});
   const activeDisplay=stageNotes(active,position<segmentStart?[]:state.sourceDisplayIndex?.range(position)||[]);
   highlightKeys(activeDisplay);
   if (state.instrument === 'guitar') {
@@ -1543,11 +1602,11 @@ document.addEventListener('focusin',event=>{if(event.target.closest?.('.beginner
 window.addEventListener('blur', () => {freeWindowFocused=false;keyboardComposing=false;keyboardInput.compositionEnd();pausePlayback('app.blurPaused','blur')});
 window.addEventListener('focus', () => {if(!freeWindowFocused)freeLiveStart=performance.now();freeWindowFocused=true;});
 document.addEventListener('visibilitychange', () => { if (document.hidden) pausePlayback('app.hiddenPaused','hidden');else freeLiveStart=performance.now(); });
-window.addEventListener('pagehide', () => { bulkImportView?.queue.cancel();scoreSaveNavigation++;pausePlayback(undefined,'pagehide'); cancelAnimationFrame(state.frame);cancelPendingStart();if(preview.controller){preview.cancel();preview.publish({...preview.value,status:'error',message:t('app.previewStopped')})} });
+window.addEventListener('pagehide', () => { resetAssistanceOnNavigation(stageAssistance);resetAssistanceOnNavigation(previewAssistance);bulkImportView?.queue.cancel();scoreSaveNavigation++;pausePlayback(undefined,'pagehide'); cancelAnimationFrame(state.frame);cancelPendingStart();if(preview.controller){preview.cancel();preview.publish({...preview.value,status:'error',message:t('app.previewStopped')})} });
 let notationResizeFrame = 0;
 window.addEventListener('resize', () => { cancelAnimationFrame(notationResizeFrame); notationResizeFrame = requestAnimationFrame(() => { renderNotationPage(); drawFrame(); }); });
 $('workspace').addEventListener('notationlayoutchange', () => { cancelAnimationFrame(notationResizeFrame); notationResizeFrame = requestAnimationFrame(() => { renderNotationPage(); drawFrame(); }); });
-window.addEventListener('pageshow', event => { if (event.persisted) { cancelAnimationFrame(state.frame); state.frame = requestAnimationFrame(animate); } });
+window.addEventListener('pageshow', event => { if (event.persisted) { if(state.compiled)void checkInstrument();if(preview.value.compiled)refreshPreview();cancelAnimationFrame(state.frame); state.frame = requestAnimationFrame(animate); } });
 
 function cancelCatalogSelection(){
   preview?.cancel();
@@ -1557,14 +1616,25 @@ function cancelPendingStart(){if(startingPreview){state.loadIntent++;cancelCatal
 function previewCompatibility(result,profile=currentProfile()){
   return result.status==='ready'?{...result,reasonKey:profile.kind==='piano'?'app.compatibilityPianoReady':'app.compatibilityGuitarReady'}:result;
 }
-async function checkPreview(compiled,part,signal){
+async function preparePracticeAdmission(compiled,selection,profile,assistance=null,loop=null,signal){
+  const checked=assistance?scopedAssistanceTargets(assistance,compiled.timeline,loop):null;
+  const sourceTargets=checked?.sourceTimeline||practiceScope(compiled.timeline,selection,loop).targets;
+  const plan=checked?.plan||validateTargetPlan(await api('/api/practice-targets',{timeline:sourceTargets,profile},signal),sourceTargets);
+  const report=await api('/api/instrument-check',{timeline:sourceTargets,profile},signal);
+  let compatibility=compatibilityStatus(report,sourceTargets.notes);
+  if(checked&&!checked.allowed)compatibility={status:'blocked',assistance:true,assistanceReason:plan.target_count?'infeasible':'noHuman'};
+  else if(!plan.playable&&compatibility.status==='ready')compatibility={status:'blocked',reasonKey:'app.compatibilityPlanBlocked'};
+  return {plan,report,sourceTargets,compatibility:previewCompatibility(compatibility,profile)};
+}
+function installPracticeAdmission({plan,report,sourceTargets,compatibility},{publish=true}={}){
+  state.sourceTargetTimeline=sourceTargets;state.practicePlan=plan;state.targetTimeline=plan.timeline;state.targetGroups=new Map(plan.groups.map(group=>[group.target_id,group]));
+  state.physicalIndex=new TimelineIndex(state.loop?windowNotes(plan.timeline.notes,state.loop.start_ms,state.loop.end_ms):plan.timeline.notes);state.compatibility=compatibility;
+  state.instrumentOutOfRange=report.note_options.filter(note=>!note.playable).length;state.instrumentConflict=report.diagnostics.some(d=>d.code==='guitar_string_conflict');
+  if(publish){updatePracticeScopeLabel();renderTargetMappings();}
+}
+async function checkPreview(compiled,part,signal,{assistance=null}={}){
   if(state.profileDirty)return{status:'dirty',reasonKey:'app.previewDirty'};
-  const profile=currentProfile(),targets=practiceScope(compiled.timeline,part,null).targets;
-  const plan=validateTargetPlan(await api('/api/practice-targets',{timeline:targets,profile},signal),targets);
-  const report=await api('/api/instrument-check',{timeline:targets,profile},signal);
-  const result=compatibilityStatus(report,targets.notes);
-  if(!plan.playable&&result.status==='ready')return{status:'blocked',reasonKey:'app.previewBlocked'};
-  return previewCompatibility(result,profile);
+  return (await preparePracticeAdmission(compiled,part,currentProfile(),assistance,null,signal)).compatibility;
 }
 function renderPreview(){
   refreshPracticeView();
@@ -1609,6 +1679,11 @@ async function selectSongScore(identity){
   await preview.select(identity,async signal=>{if(row.source==='saved'){const loaded=await scoreStorage.load(row.libraryKey,{signal});return loaded.cleanSong?loaded:loaded.score;}return loadSongListItem(row,{model:scoreStorage,signal,loadCatalog:(item,signal)=>fetchCatalogScore(item,api,catalogCache,signal)});});
 }
 async function selectCatalogScore(id){return selectSongScore(id)}
+function restorePreviewAssistance(){
+  const version=preview.version,compiled=preview.value.compiled,pending=previewAssistance.restore();
+  if(previewAssistance.state().phase==='default')return;
+  void pending.then(async assistance=>{if(version!==preview.version||compiled!==preview.value.compiled)return;const compatibility=assistancePracticeGate(previewAssistance)||await checkPreview(compiled,preview.value.practiceSelection,undefined,{assistance});if(version===preview.version&&compiled===preview.value.compiled)preview.publish({...preview.value,assistance,compatibility});}).catch(error=>{if(version===preview.version)preview.publish({...preview.value,compatibility:{status:'blocked',assistance:true,reason:error.message}});});
+}
 function refreshPreview(){
   const candidate=preview.value;
   if(candidate.score){preview.cancel();preview.publish({...candidate,compatibility:{status:state.profileDirty?'dirty':'pending',reasonKey:state.profileDirty?'app.previewDirty':'app.previewRechecking'}});}
@@ -1724,7 +1799,7 @@ scoreStorage.subscribe(snapshot=>{const signature=JSON.stringify(snapshot.entrie
 $('score-library').addEventListener('close',()=>{if(scoreStorage.snapshot().kind==='browser')void scoreStorage.rescan()});
 // A completed paint needs current source IDs before its first reveal. The
 // display-only refresh cannot advance transport, schedule sound or grade input.
-const engravedView = setupEngravedView({i18n,onRenderComplete:()=>{drawFrame(true);notationFollowing?.viewportChanged();},onBasicPage:(page,batch)=>{if(hasBasicKeyRendition(state.cleanSong)){if(page){state.notationPart=batch?.scope==='all'?null:page.part_id;$('notation-part').value=state.notationPart||'';}if(!state.engravingActive)renderNotationPage();}},getScore:()=>state.score,getCleanSong:()=>state.cleanSong,getPracticePart:()=>state.practicePart,getPracticeSelection:()=>state.practiceSelection,getPracticeDisplay:()=>({layout:state.inspection?'inspection':state.practiceLayout,showOthers:state.inspection||state.showOtherParts,hiddenPartIds:state.inspection?[]:[...state.hiddenPartIds]}),getMode:()=>state.mode,isVisible:()=>shell.screen()==='stage'&&shell.notationVisible(),notice,onVisibility:active=>{
+const engravedView = setupEngravedView({getPracticeAssistanceDisplay,i18n,onRenderComplete:()=>{drawFrame(true);notationFollowing?.viewportChanged();},onBasicPage:(page,batch)=>{if(hasBasicKeyRendition(state.cleanSong)){if(page){state.notationPart=batch?.scope==='all'?null:page.part_id;$('notation-part').value=state.notationPart||'';}if(!state.engravingActive)renderNotationPage();}},getScore:()=>state.score,getCleanSong:()=>state.cleanSong,getPracticePart:()=>state.practicePart,getPracticeSelection:()=>state.practiceSelection,getPracticeDisplay:()=>({layout:state.inspection?'inspection':state.practiceLayout,showOthers:state.inspection||state.showOtherParts,hiddenPartIds:state.inspection?[]:[...state.hiddenPartIds]}),getMode:()=>state.mode,isVisible:()=>shell.screen()==='stage'&&shell.notationVisible(),notice,onVisibility:active=>{
   state.engravingActive=active;
   document.querySelector('.engraving-pages').hidden=!active;
   const displayOptions=document.querySelector('.notation-display-options');if(displayOptions)displayOptions.hidden=!active;
@@ -1774,13 +1849,13 @@ externalOmrView = setupExternalOmrReview({api,onActivate:(score,signal,options)=
 // selected-part octave copy. Keep the session's All ownership unchanged.
 adaptationView = setupAdaptationView({api,pausePlayback,notice,onActivate:activateCanonicalTransformation,getContext:()=>({score:state.cleanSong?null:state.score,part:state.practicePart??(state.score?.parts.length===1?state.score.parts[0].id:null),profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
 transpositionView = setupTranspositionView({api,pausePlayback,notice,onActivate:activateCanonicalTransformation,getContext:()=>({score:state.cleanSong?null:state.score,timeline:state.compiled?.timeline,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
-const guitarContext=()=>({score:state.score,timeline:state.compiled?.timeline,cleanSong:state.cleanSong,...(state.practiceSelection?{part_id:null,selected_part_ids:state.practiceSelection.part_ids}:{part_id:state.practicePart}),profile:currentProfile(),dirty:state.profileDirty});
+const guitarContext=()=>({score:state.score,timeline:state.compiled?.timeline,cleanSong:state.cleanSong,...(state.practiceSelection?{part_id:null,selected_part_ids:state.practiceSelection.part_ids}:{part_id:state.practicePart}),profile:currentProfile(),dirty:state.profileDirty,...fingeringAssistanceContext()});
 guitarFingering=setupGuitarFingering({api,getContext:guitarContext,onChange:()=>guitarFingeringView?.render()});
 guitarFingeringView=setupGuitarFingeringView({document,controller:guitarFingering,getContext:guitarContext,onRefresh:drawFrame});
 guitarFingeringView.render();
 metronome = setupMetronome({api,getScore:()=>state.cleanSong?null:state.score,getDuration:()=>state.compiled?.timeline.duration_ms||0,getWindow:()=>state.loop,getPlayback:()=>({running:transport.running,position:playbackPosition(performance.now()),segment:transport.startedAt}),getCountInMs:()=>$('count-in').checked?4*60000/(Number($('tempo').value)||100):0,synth});
 performanceView=setupPerformanceView({i18n,getContext:()=>({geometry:state.geometry,rangeLabel:`${midiName(state.geometry[0].midi)}–${midiName(state.geometry.at(-1).midi)}`,mode:state.mode,instrument:state.instrument,position:playbackPosition(performance.now()),segmentStart:state.loop?.start_ms||0,countInBeatMs:60000/(Number($('tempo').value)||100),running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,now:performance.now(),recorder:state.recorder})});
-pianoFingering=setupPianoFingeringView({document,api,getContext:()=>({score:state.score,timeline:state.compiled?.timeline,cleanSong:state.cleanSong,part_id:state.practicePart,profile:currentProfile(),dirty:state.profileDirty}),onChange:()=>drawFrame(),openSettings:()=>shell.open('settings')});
+pianoFingering=setupPianoFingeringView({document,api,getContext:()=>({score:state.score,timeline:state.compiled?.timeline,cleanSong:state.cleanSong,part_id:state.practiceSelection?.kind==='parts'?state.practiceSelection.part_ids[0]:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,...fingeringAssistanceContext()}),onChange:()=>drawFrame(),openSettings:()=>shell.open('settings')});
 performanceView.setPianoGuidance($('piano-fingering-guidance'));
 writtenCursorStatus=document.createElement('p');writtenCursorStatus.id='written-cursor-status';writtenCursorStatus.setAttribute('aria-live','off');
 writtenCursorRetry=document.createElement('button');writtenCursorRetry.id='written-cursor-retry';writtenCursorRetry.type='button';writtenCursorRetry.className='button compact';bindText(writtenCursorRetry, () => t('app.retryNotePositions'));writtenCursorRetry.hidden=true;
