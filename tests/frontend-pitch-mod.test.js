@@ -178,3 +178,12 @@ test('tempo publishes its prechecked assistance and targets even if later previe
   await app.click('play-button');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing','Already checked stage playback remains usable');const take=await app.exported('export-takes');assert.equal(take.practice_assistance.receipt.runtime_digest,tempo.plus2.receipt.runtime_digest);assert.deepEqual(take.target_plan.timeline.notes.map(n=>[n.midi,n.duration_ms]),[[62,500],[62,500]]);
  }finally{await app.close();}
 });
+
+
+for(const editTiming of ['before','after'])test(`default Original role edits ${editTiming} pitch Check preserve admitted preview readiness`,async()=>{
+ const vector=JSON.parse(readFileSync(new URL('./fixtures/pitch-mod-browser-c4-projection.json',import.meta.url))),server=await nativeScoreServer({scores:[vector.original]});
+ server.setRoute(({path,body})=>path==='/api/compile'&&body.id===vector.original.id?nativeResponse(vector.compilation):path==='/api/pitch-mod/project'?nativeResponse(vector.plus2):undefined);
+ const app=await nativeStorageApp(server),key=[...server.records.keys()][0];
+ try{await app.until(()=>app.savedButton(key));await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('configure-song-mod').disabled);await app.click('configure-song-mod');const editRoles=async()=>{await app.click('song-mod-all-machine');const human=app.$('song-mod-parts').querySelector('[data-mod-performer="human"]');human.value='human';app.emit(human,'change');};if(editTiming==='before')await editRoles();await checked(app,2);if(editTiming==='after')await editRoles();await apply(app);assert.equal(app.$('start-performance').disabled,false,app.$('song-mod-preview-summary').textContent);app.$('count-in').checked=false;await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');const take=await app.exported('export-takes');assert.deepEqual(take.practice_selection.part_ids,['human']);assert.deepEqual(take.target_plan.timeline.notes.map(n=>n.midi),[62,62,62]);assert.equal(server.requests.filter(row=>row.path.includes('/assistance/')).length,0,'Default Original never opts into note assistance');}
+ finally{await app.close();}
+});

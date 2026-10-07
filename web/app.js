@@ -590,13 +590,13 @@ async function prepareTempoPitchCarry(compiled,semitones,signal){
   return {source,effective,mod,options:playbackOptions,admission,install:()=>draft.install('stage'),commit(){if(checked)draft.assistanceController.commitDraft({resetConfirmed:true});pitchMods.save(source,view.configuration,mod,{records:Object.fromEntries(draft.records),expectedRaw:saved?.raw??null});}};
 }
 function createPitchDraftController(context,view,{restore=false}={}){
-  let installed=null;const effective=view?pitchViewContext(context,view):context,records=new Map(),storage={getItem:key=>installed?pitchMods.preferences.getItem(key):records.get(key)??null,setItem:(key,raw)=>installed?pitchMods.preferences.setItem(key,raw):records.set(key,raw)},profile=currentProfile(),admissionKey=context.origin==='stage'?assistanceContext('stage')?.admissionKey:'null',binding=()=>installed?assistanceContext(installed):({...appAssistanceContext(effective,profile,songMods.identity(context)),admissionKey});
+  let installed=null,bindingMod=context.songMod||context.mod;const effective=view?pitchViewContext(context,view):context,records=new Map(),storage={getItem:key=>installed?pitchMods.preferences.getItem(key):records.get(key)??null,setItem:(key,raw)=>installed?pitchMods.preferences.setItem(key,raw):records.set(key,raw)},profile=currentProfile(),admissionKey=context.origin==='stage'?assistanceContext('stage')?.admissionKey:'null',binding=()=>installed?assistanceContext(installed):({...appAssistanceContext({...effective,songMod:bindingMod},profile,songMods.identity(context)),admissionKey});
   if(restore){for(const store of [assistanceStore,progressionStore]){const key=store.key(binding()),raw=pitchMods.preferences.getItem(key);if(raw!==null)records.set(key,raw);}}
   const controller=createPracticeAssistanceController({api,store:new AppAssistanceStore({storage}),progressionStore:new PracticeProgressionStore({storage}),getContext:binding,onChange:assistanceChanged});
   // A detached draft may reuse the current immutable receipt until its settings
   // change. Display/mute edits must not turn a fresh pitch view into a new take.
   const current=restore?context.assistance:null,assistanceController=current?{...controller,state(){const value=controller.state();return {...value,active:value.active||current};},current(){return controller.current()||current;}}:controller;
-  return {view,assistanceController,records,effective,install(where){installed=where;if(where==='stage')stageAssistance=controller;else{previewAssistance=controller;preview.assistanceController=controller;}return controller;}};
+  return {view,assistanceController,records,effective,prepareUnassisted(mod){bindingMod=mod;controller.beginDraft();},install(where){installed=where;if(where==='stage')stageAssistance=controller;else{previewAssistance=controller;preview.assistanceController=controller;}return controller;}};
 }
 function getSongModAssistanceController(where,context){return context.pitchView||pitchMods.read(context)?createPitchDraftController(context,context.pitchView,{restore:true}):context.assistanceController;}
 async function checkSongPitchMod(context,semitones){
@@ -632,6 +632,7 @@ async function applySongMod({origin,context,mod,pitchView=null,pitchChanged=fals
   if(origin==='stage'&&changes.mix&&canonicalSession.pendingPause){await canonicalSession.pendingPause;await Promise.resolve();}
   if(!current())return;assertCandidate();
   assertPartInstrumentPolicyCurrent(livePolicy,modInputBinding(mod,prospective));assertModLiveAudioSupported(mod);
+  if(context.pitchDraft&&!assistance&&!assistanceChanged)context.pitchDraft.prepareUnassisted(mod);
   // No callbacks, DOM publication or await may split checked ownership from
   // its matching Mod/selection. All fallible preparation precedes this boundary.
   commitAssistance();

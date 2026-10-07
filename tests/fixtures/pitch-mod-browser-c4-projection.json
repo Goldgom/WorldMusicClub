@@ -1,0 +1,1189 @@
+{
+  "generator": "Actual Rust handler response captured during failed browser run 37623409475; source SHA 89912eba3b525cbaf91488d6d6b41b1948cf8262. This is source projection evidence, not successful browser acceptance.",
+  "original": {
+    "composer": "WorldMusicHub original exercise",
+    "format_metadata": {
+      "producer": "WorldMusicHub",
+      "producer_version": "0.2.0-alpha.1",
+      "schema_revision": 2
+    },
+    "id": "original-pitch-mod-c4",
+    "keys": [
+      {
+        "at": {
+          "denominator": 1,
+          "numerator": 0
+        },
+        "fifths": 0,
+        "mode": "major"
+      }
+    ],
+    "measures": [
+      {
+        "at": {
+          "denominator": 1,
+          "numerator": 0
+        },
+        "length": {
+          "denominator": 1,
+          "numerator": 4
+        },
+        "number": 1
+      },
+      {
+        "at": {
+          "denominator": 1,
+          "numerator": 4
+        },
+        "length": {
+          "denominator": 1,
+          "numerator": 4
+        },
+        "number": 2
+      },
+      {
+        "at": {
+          "denominator": 1,
+          "numerator": 8
+        },
+        "length": {
+          "denominator": 1,
+          "numerator": 4
+        },
+        "number": 3
+      },
+      {
+        "at": {
+          "denominator": 1,
+          "numerator": 12
+        },
+        "length": {
+          "denominator": 1,
+          "numerator": 4
+        },
+        "number": 4
+      }
+    ],
+    "meters": [
+      {
+        "at": {
+          "denominator": 1,
+          "numerator": 0
+        },
+        "denominator": 4,
+        "numerator": 4
+      }
+    ],
+    "parts": [
+      {
+        "id": "human",
+        "instrument": "piano",
+        "name": "Human C4",
+        "notes": [
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 4
+            },
+            "duration": {
+              "denominator": 1,
+              "numerator": 2
+            },
+            "id": "human-c4-1",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "C"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 8
+            },
+            "duration": {
+              "denominator": 1,
+              "numerator": 2
+            },
+            "id": "human-c4-2",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "C"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 12
+            },
+            "duration": {
+              "denominator": 1,
+              "numerator": 2
+            },
+            "id": "human-c4-3",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "C"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          }
+        ]
+      },
+      {
+        "id": "machine",
+        "instrument": "piano",
+        "name": "Machine C4",
+        "notes": [
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 0
+            },
+            "duration": {
+              "denominator": 1,
+              "numerator": 2
+            },
+            "id": "machine-c4-1",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "C"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 4
+            },
+            "duration": {
+              "denominator": 1,
+              "numerator": 2
+            },
+            "id": "machine-c4-2",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "C"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 8
+            },
+            "duration": {
+              "denominator": 1,
+              "numerator": 2
+            },
+            "id": "machine-c4-3",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "C"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 12
+            },
+            "duration": {
+              "denominator": 1,
+              "numerator": 2
+            },
+            "id": "machine-c4-4",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "C"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          }
+        ]
+      }
+    ],
+    "provenance": {
+      "attribution": "Newly authored C4-only acceptance exercise for whole-song Mod; not a transcription of any song",
+      "kind": "original_exercise",
+      "license": "CC0-1.0",
+      "source_url": null
+    },
+    "repeats": [],
+    "source": null,
+    "tempo": [
+      {
+        "at": {
+          "denominator": 1,
+          "numerator": 0
+        },
+        "bpm": 120
+      }
+    ],
+    "title": "Original C4 whole-song pitch Mod exercise",
+    "version": 1
+  },
+  "compilation": {
+    "diagnostics": [],
+    "score": {
+      "composer": "WorldMusicHub original exercise",
+      "format_metadata": {
+        "producer": "WorldMusicHub",
+        "producer_version": "0.2.0-alpha.1",
+        "schema_revision": 2
+      },
+      "id": "original-pitch-mod-c4",
+      "keys": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "fifths": 0,
+          "mode": "major"
+        }
+      ],
+      "measures": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 1
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 2
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 8
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 3
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 12
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 4
+        }
+      ],
+      "meters": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "denominator": 4,
+          "numerator": 4
+        }
+      ],
+      "parts": [
+        {
+          "id": "human",
+          "instrument": "piano",
+          "name": "Human C4",
+          "notes": [
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 4
+              },
+              "duration": {
+                "denominator": 1,
+                "numerator": 2
+              },
+              "id": "human-c4-1",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "C"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 8
+              },
+              "duration": {
+                "denominator": 1,
+                "numerator": 2
+              },
+              "id": "human-c4-2",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "C"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 12
+              },
+              "duration": {
+                "denominator": 1,
+                "numerator": 2
+              },
+              "id": "human-c4-3",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "C"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            }
+          ]
+        },
+        {
+          "id": "machine",
+          "instrument": "piano",
+          "name": "Machine C4",
+          "notes": [
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 0
+              },
+              "duration": {
+                "denominator": 1,
+                "numerator": 2
+              },
+              "id": "machine-c4-1",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "C"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 4
+              },
+              "duration": {
+                "denominator": 1,
+                "numerator": 2
+              },
+              "id": "machine-c4-2",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "C"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 8
+              },
+              "duration": {
+                "denominator": 1,
+                "numerator": 2
+              },
+              "id": "machine-c4-3",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "C"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 12
+              },
+              "duration": {
+                "denominator": 1,
+                "numerator": 2
+              },
+              "id": "machine-c4-4",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "C"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "attribution": "Newly authored C4-only acceptance exercise for whole-song Mod; not a transcription of any song",
+        "kind": "original_exercise",
+        "license": "CC0-1.0",
+        "source_url": null
+      },
+      "repeats": [],
+      "source": null,
+      "tempo": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "bpm": 120
+        }
+      ],
+      "title": "Original C4 whole-song pitch Mod exercise",
+      "version": 1
+    },
+    "timeline": {
+      "duration_ms": 8000,
+      "notes": [
+        {
+          "duration_ms": 1000,
+          "id": "machine-c4-1",
+          "midi": 60,
+          "part_id": "machine",
+          "source_note_id": "machine-c4-1",
+          "source_note_ids": [
+            "machine-c4-1"
+          ],
+          "staff": 1,
+          "start_ms": 0,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 1000,
+          "id": "human-c4-1",
+          "midi": 60,
+          "part_id": "human",
+          "source_note_id": "human-c4-1",
+          "source_note_ids": [
+            "human-c4-1"
+          ],
+          "staff": 1,
+          "start_ms": 2000,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 1000,
+          "id": "machine-c4-2",
+          "midi": 60,
+          "part_id": "machine",
+          "source_note_id": "machine-c4-2",
+          "source_note_ids": [
+            "machine-c4-2"
+          ],
+          "staff": 1,
+          "start_ms": 2000,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 1000,
+          "id": "human-c4-2",
+          "midi": 60,
+          "part_id": "human",
+          "source_note_id": "human-c4-2",
+          "source_note_ids": [
+            "human-c4-2"
+          ],
+          "staff": 1,
+          "start_ms": 4000,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 1000,
+          "id": "machine-c4-3",
+          "midi": 60,
+          "part_id": "machine",
+          "source_note_id": "machine-c4-3",
+          "source_note_ids": [
+            "machine-c4-3"
+          ],
+          "staff": 1,
+          "start_ms": 4000,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 1000,
+          "id": "human-c4-3",
+          "midi": 60,
+          "part_id": "human",
+          "source_note_id": "human-c4-3",
+          "source_note_ids": [
+            "human-c4-3"
+          ],
+          "staff": 1,
+          "start_ms": 6000,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 1000,
+          "id": "machine-c4-4",
+          "midi": 60,
+          "part_id": "machine",
+          "source_note_id": "machine-c4-4",
+          "source_note_ids": [
+            "machine-c4-4"
+          ],
+          "staff": 1,
+          "start_ms": 6000,
+          "velocity": 90,
+          "voice": "1"
+        }
+      ]
+    }
+  },
+  "plus2": {
+    "audio_profile": {
+      "compiled_fingerprint": "9ac87ce9e7137e97aae7803622679828117a12d9c1288e6353f5929f1bb16d7c",
+      "duration_ms": 8000,
+      "occurrences": [
+        {
+          "duration_ms": 1000,
+          "id": "machine-c4-1",
+          "midi": 62,
+          "part_index": 1,
+          "source_indices": [
+            3
+          ],
+          "start_ms": 0,
+          "velocity": 90
+        },
+        {
+          "duration_ms": 1000,
+          "id": "human-c4-1",
+          "midi": 62,
+          "part_index": 0,
+          "source_indices": [
+            0
+          ],
+          "start_ms": 2000,
+          "velocity": 90
+        },
+        {
+          "duration_ms": 1000,
+          "id": "machine-c4-2",
+          "midi": 62,
+          "part_index": 1,
+          "source_indices": [
+            4
+          ],
+          "start_ms": 2000,
+          "velocity": 90
+        },
+        {
+          "duration_ms": 1000,
+          "id": "human-c4-2",
+          "midi": 62,
+          "part_index": 0,
+          "source_indices": [
+            1
+          ],
+          "start_ms": 4000,
+          "velocity": 90
+        },
+        {
+          "duration_ms": 1000,
+          "id": "machine-c4-3",
+          "midi": 62,
+          "part_index": 1,
+          "source_indices": [
+            5
+          ],
+          "start_ms": 4000,
+          "velocity": 90
+        },
+        {
+          "duration_ms": 1000,
+          "id": "human-c4-3",
+          "midi": 62,
+          "part_index": 0,
+          "source_indices": [
+            2
+          ],
+          "start_ms": 6000,
+          "velocity": 90
+        },
+        {
+          "duration_ms": 1000,
+          "id": "machine-c4-4",
+          "midi": 62,
+          "part_index": 1,
+          "source_indices": [
+            6
+          ],
+          "start_ms": 6000,
+          "velocity": 90
+        }
+      ],
+      "part_ids": [
+        "human",
+        "machine"
+      ],
+      "policy_id": "wmh-canonical-sine-ms-v1",
+      "profile": "wmh-canonical-compiled-audio-v1",
+      "source_fingerprint": "888a5f4ac9abee1ea222799068c6926827461478f40850c3422fa43551dd5387",
+      "source_note_ids": [
+        "human-c4-1",
+        "human-c4-2",
+        "human-c4-3",
+        "machine-c4-1",
+        "machine-c4-2",
+        "machine-c4-3",
+        "machine-c4-4"
+      ],
+      "source_references": 7
+    },
+    "compilation": {
+      "diagnostics": [],
+      "score": {
+        "composer": "WorldMusicHub original exercise",
+        "format_metadata": {
+          "producer": "WorldMusicHub",
+          "producer_version": "0.2.0-alpha.1",
+          "schema_revision": 2
+        },
+        "id": "original-pitch-mod-c4",
+        "keys": [
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 0
+            },
+            "fifths": 2,
+            "mode": "major"
+          }
+        ],
+        "measures": [
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 0
+            },
+            "length": {
+              "denominator": 1,
+              "numerator": 4
+            },
+            "number": 1
+          },
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 4
+            },
+            "length": {
+              "denominator": 1,
+              "numerator": 4
+            },
+            "number": 2
+          },
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 8
+            },
+            "length": {
+              "denominator": 1,
+              "numerator": 4
+            },
+            "number": 3
+          },
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 12
+            },
+            "length": {
+              "denominator": 1,
+              "numerator": 4
+            },
+            "number": 4
+          }
+        ],
+        "meters": [
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 0
+            },
+            "denominator": 4,
+            "numerator": 4
+          }
+        ],
+        "parts": [
+          {
+            "id": "human",
+            "instrument": "piano",
+            "name": "Human C4",
+            "notes": [
+              {
+                "at": {
+                  "denominator": 1,
+                  "numerator": 4
+                },
+                "duration": {
+                  "denominator": 1,
+                  "numerator": 2
+                },
+                "id": "human-c4-1",
+                "pitch": {
+                  "alter": 0,
+                  "octave": 4,
+                  "step": "D"
+                },
+                "staff": 1,
+                "tie_start": false,
+                "tie_stop": false,
+                "velocity": 90,
+                "voice": "1"
+              },
+              {
+                "at": {
+                  "denominator": 1,
+                  "numerator": 8
+                },
+                "duration": {
+                  "denominator": 1,
+                  "numerator": 2
+                },
+                "id": "human-c4-2",
+                "pitch": {
+                  "alter": 0,
+                  "octave": 4,
+                  "step": "D"
+                },
+                "staff": 1,
+                "tie_start": false,
+                "tie_stop": false,
+                "velocity": 90,
+                "voice": "1"
+              },
+              {
+                "at": {
+                  "denominator": 1,
+                  "numerator": 12
+                },
+                "duration": {
+                  "denominator": 1,
+                  "numerator": 2
+                },
+                "id": "human-c4-3",
+                "pitch": {
+                  "alter": 0,
+                  "octave": 4,
+                  "step": "D"
+                },
+                "staff": 1,
+                "tie_start": false,
+                "tie_stop": false,
+                "velocity": 90,
+                "voice": "1"
+              }
+            ]
+          },
+          {
+            "id": "machine",
+            "instrument": "piano",
+            "name": "Machine C4",
+            "notes": [
+              {
+                "at": {
+                  "denominator": 1,
+                  "numerator": 0
+                },
+                "duration": {
+                  "denominator": 1,
+                  "numerator": 2
+                },
+                "id": "machine-c4-1",
+                "pitch": {
+                  "alter": 0,
+                  "octave": 4,
+                  "step": "D"
+                },
+                "staff": 1,
+                "tie_start": false,
+                "tie_stop": false,
+                "velocity": 90,
+                "voice": "1"
+              },
+              {
+                "at": {
+                  "denominator": 1,
+                  "numerator": 4
+                },
+                "duration": {
+                  "denominator": 1,
+                  "numerator": 2
+                },
+                "id": "machine-c4-2",
+                "pitch": {
+                  "alter": 0,
+                  "octave": 4,
+                  "step": "D"
+                },
+                "staff": 1,
+                "tie_start": false,
+                "tie_stop": false,
+                "velocity": 90,
+                "voice": "1"
+              },
+              {
+                "at": {
+                  "denominator": 1,
+                  "numerator": 8
+                },
+                "duration": {
+                  "denominator": 1,
+                  "numerator": 2
+                },
+                "id": "machine-c4-3",
+                "pitch": {
+                  "alter": 0,
+                  "octave": 4,
+                  "step": "D"
+                },
+                "staff": 1,
+                "tie_start": false,
+                "tie_stop": false,
+                "velocity": 90,
+                "voice": "1"
+              },
+              {
+                "at": {
+                  "denominator": 1,
+                  "numerator": 12
+                },
+                "duration": {
+                  "denominator": 1,
+                  "numerator": 2
+                },
+                "id": "machine-c4-4",
+                "pitch": {
+                  "alter": 0,
+                  "octave": 4,
+                  "step": "D"
+                },
+                "staff": 1,
+                "tie_start": false,
+                "tie_stop": false,
+                "velocity": 90,
+                "voice": "1"
+              }
+            ]
+          }
+        ],
+        "provenance": {
+          "attribution": "Newly authored C4-only acceptance exercise for whole-song Mod; not a transcription of any song",
+          "kind": "original_exercise",
+          "license": "CC0-1.0",
+          "source_url": null
+        },
+        "repeats": [],
+        "source": null,
+        "tempo": [
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 0
+            },
+            "bpm": 120
+          }
+        ],
+        "title": "Original C4 whole-song pitch Mod exercise",
+        "version": 1
+      },
+      "timeline": {
+        "duration_ms": 8000,
+        "notes": [
+          {
+            "duration_ms": 1000,
+            "id": "machine-c4-1",
+            "midi": 62,
+            "part_id": "machine",
+            "source_note_id": "machine-c4-1",
+            "source_note_ids": [
+              "machine-c4-1"
+            ],
+            "staff": 1,
+            "start_ms": 0,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "duration_ms": 1000,
+            "id": "human-c4-1",
+            "midi": 62,
+            "part_id": "human",
+            "source_note_id": "human-c4-1",
+            "source_note_ids": [
+              "human-c4-1"
+            ],
+            "staff": 1,
+            "start_ms": 2000,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "duration_ms": 1000,
+            "id": "machine-c4-2",
+            "midi": 62,
+            "part_id": "machine",
+            "source_note_id": "machine-c4-2",
+            "source_note_ids": [
+              "machine-c4-2"
+            ],
+            "staff": 1,
+            "start_ms": 2000,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "duration_ms": 1000,
+            "id": "human-c4-2",
+            "midi": 62,
+            "part_id": "human",
+            "source_note_id": "human-c4-2",
+            "source_note_ids": [
+              "human-c4-2"
+            ],
+            "staff": 1,
+            "start_ms": 4000,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "duration_ms": 1000,
+            "id": "machine-c4-3",
+            "midi": 62,
+            "part_id": "machine",
+            "source_note_id": "machine-c4-3",
+            "source_note_ids": [
+              "machine-c4-3"
+            ],
+            "staff": 1,
+            "start_ms": 4000,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "duration_ms": 1000,
+            "id": "human-c4-3",
+            "midi": 62,
+            "part_id": "human",
+            "source_note_id": "human-c4-3",
+            "source_note_ids": [
+              "human-c4-3"
+            ],
+            "staff": 1,
+            "start_ms": 6000,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "duration_ms": 1000,
+            "id": "machine-c4-4",
+            "midi": 62,
+            "part_id": "machine",
+            "source_note_id": "machine-c4-4",
+            "source_note_ids": [
+              "machine-c4-4"
+            ],
+            "staff": 1,
+            "start_ms": 6000,
+            "velocity": 90,
+            "voice": "1"
+          }
+        ]
+      }
+    },
+    "configuration": {
+      "format": "wmc-pitch-mod",
+      "semitones": 2,
+      "version": 1
+    },
+    "identity": {
+      "digest": "79dd410ca257f9f83849926a1a45b303465cfe8edfaad5127e50c57bb6ed126f",
+      "format": "wmc-pitch-mod",
+      "original_receipt": {
+        "choice": null,
+        "runtime_digest": "305a52f1447be13fe43e05aac1385d7e9b572baa06317529f085c18a9db4ae1e",
+        "runtime_policy": "wmc-canonical-practice-v1",
+        "saved_package_sha256": null,
+        "source_binding": {
+          "digest": "38993c3d1bc4bef7294ce6f587b828100b0a3ae8283cc5a4f19e2117b4789672",
+          "domain": "wmc-canonical-score-serde-json",
+          "serialization_revision": 1
+        },
+        "source_profile": "wmc-canonical-score-v1"
+      },
+      "semitones": 2,
+      "version": 1,
+      "written_interval": {
+        "diatonic_steps": 1,
+        "fifths_delta": 2
+      }
+    },
+    "receipt": {
+      "choice": null,
+      "runtime_digest": "2c74964cbe1bfa89aa442eb433a0f7339811b483a94d93205172482eef20a14b",
+      "runtime_policy": "wmc-pitch-mod-v1",
+      "saved_package_sha256": null,
+      "source_binding": {
+        "digest": "38993c3d1bc4bef7294ce6f587b828100b0a3ae8283cc5a4f19e2117b4789672",
+        "domain": "wmc-canonical-score-serde-json",
+        "serialization_revision": 1
+      },
+      "source_profile": "wmc-canonical-score-v1"
+    },
+    "source": {
+      "choice": null,
+      "kind": "canonical",
+      "profile": "wmc-canonical-score-v1",
+      "runtime_policy": "wmc-canonical-practice-v1",
+      "source_binding": {
+        "digest": "38993c3d1bc4bef7294ce6f587b828100b0a3ae8283cc5a4f19e2117b4789672",
+        "domain": "wmc-canonical-score-serde-json",
+        "serialization_revision": 1
+      }
+    },
+    "source_pitches": [
+      {
+        "effective_midi": 62,
+        "original_midi": 60,
+        "part_id": "human",
+        "percussion": false,
+        "source_id": "human-c4-1"
+      },
+      {
+        "effective_midi": 62,
+        "original_midi": 60,
+        "part_id": "human",
+        "percussion": false,
+        "source_id": "human-c4-2"
+      },
+      {
+        "effective_midi": 62,
+        "original_midi": 60,
+        "part_id": "human",
+        "percussion": false,
+        "source_id": "human-c4-3"
+      },
+      {
+        "effective_midi": 62,
+        "original_midi": 60,
+        "part_id": "machine",
+        "percussion": false,
+        "source_id": "machine-c4-1"
+      },
+      {
+        "effective_midi": 62,
+        "original_midi": 60,
+        "part_id": "machine",
+        "percussion": false,
+        "source_id": "machine-c4-2"
+      },
+      {
+        "effective_midi": 62,
+        "original_midi": 60,
+        "part_id": "machine",
+        "percussion": false,
+        "source_id": "machine-c4-3"
+      },
+      {
+        "effective_midi": 62,
+        "original_midi": 60,
+        "part_id": "machine",
+        "percussion": false,
+        "source_id": "machine-c4-4"
+      }
+    ]
+  }
+}
