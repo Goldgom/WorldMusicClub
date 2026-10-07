@@ -1,4 +1,5 @@
 const en={
+ sessionDefault:'Saved note-assistance preferences could not be read. Original full-part practice is available in this tab; this choice has not been saved.',
  session:'This session keeps its checked note assignment. Note assistance is saved as Off for the next Start.',
  offAction:'Turn off note assistance · use full-part practice',offUndo:'Keep note assistance',offDraft:'Apply will turn off note assistance for this source and restore full-part practice.',offExplanation:'Every note in the selected human parts returns to you. Standard instrument checks still apply. This replaces the saved note assignment; the source stays unchanged.',off:'Note assistance is off · full-part practice',
  stale:'The source or profile changed. Close and reopen Mod before applying.',
@@ -21,6 +22,7 @@ const en={
  summary:'{human} human targets · {machine} machine notes',machineWithin:'Machine help in this human part uses its saved machine sound. Human live sound stays separate.',
 };
 const zh={
+ sessionDefault:'无法读取已保存的音符辅助偏好。当前标签页可使用原始完整声部练习；此选择尚未保存。',
  session:'本次演奏保留已检查的音符分配。已保存的关闭辅助选项将在下次开始新演奏时应用。',
  offAction:'关闭音符辅助 · 使用完整声部练习',offUndo:'保留音符辅助',offDraft:'应用后将关闭此来源的音符辅助，恢复完整声部练习。',offExplanation:'所选真人声部内的全部音符将由您演奏，仍需通过通常的乐器检查。此操作替换已保存的音符分配，不改变原始来源。',off:'音符辅助已关闭 · 完整声部练习',
  stale:'来源或乐器配置已改变。请关闭并重新打开 Mod 后再应用。',

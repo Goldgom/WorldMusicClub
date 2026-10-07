@@ -63,3 +63,36 @@ test('failed Off preserves an unsaved Automatic overlay; successful Off removes 
  const storage=memory(),write=storage.setItem;storage.setItem=()=>{throw Error('quota');};const store=new AppAssistanceStore({storage}),ctx=context(),controller=createPracticeAssistanceController({getContext:()=>ctx,store,api:async()=>f.automatic});await controller.restore();controller.beginDraft();controller.setDraft({mode:'automatic',settings:f.automatic.checked.plan.settings});await controller.prepareDraft();controller.commitDraft({resetConfirmed:true});const active=controller.current();assert.equal(controller.state().persistence.status,'unsaved');controller.beginDraft();assert.throws(()=>controller.disableDraft({resetConfirmed:true}),/could not be saved/);assert.equal(controller.current(),active);assert.equal(store.read(ctx).recipe.mode,'automatic');assert.equal(storage.values.size,0);
  storage.setItem=write;controller.disableDraft({resetConfirmed:true});assert.equal(store.read(ctx).status,'off');assert.equal(store.read(ctx).recipe,null);const reload=createPracticeAssistanceController({getContext:()=>ctx,store,api:async()=>{throw Error('No request after explicit Off');}});await reload.restore();assert.equal(reload.state().phase,'off');assert.equal(assistancePracticeGate(reload),null);
 });
+
+for(const lost of ['read access','saved bytes'])test(`known checked assignment cannot fall back to Original after losing ${lost}`,async()=>{
+ const storage=memory(),store=new AppAssistanceStore({storage}),ctx=context();let calls=0;
+ const controller=createPracticeAssistanceController({getContext:()=>ctx,store,api:async()=>{calls++;return f.automatic;}});
+ await controller.restore();controller.beginDraft();controller.setDraft({mode:'automatic',settings:f.automatic.checked.plan.settings});await controller.prepareDraft();const active=controller.commitDraft({resetConfirmed:true});
+ if(lost==='read access')storage.getItem=()=>{throw Error('Storage access lost');};else storage.values.delete(store.key(ctx));
+ assert.equal(controller.current(),active,'The admitted active receipt remains pinned');controller.reset();await controller.restore();
+ assert.equal(controller.current(),null);assert.equal(assistancePracticeGate(controller).status,'blocked');assert.equal(controller.state().persistence.status,'unavailable');assert.equal(calls,1);
+});
+
+test('only first-use unavailable storage permits Original defaults; observed invalid or readable state remains strict',async()=>{
+ for(const initial of ['unavailable','invalid','readable']){
+  let denied=initial==='unavailable';const storage=memory(),get=storage.getItem,ctx=context();storage.getItem=key=>{if(denied)throw Error('Storage disabled');return get(key);};if(initial==='invalid')storage.values.set(new AppAssistanceStore({storage}).key(ctx),'broken');
+  const store=new AppAssistanceStore({storage}),controller=createPracticeAssistanceController({getContext:()=>ctx,store,api:async()=>{throw Error('Default storage policy must not make assistance requests');}});
+  await controller.restore();if(initial==='unavailable'){assert.equal(controller.state().phase,'default');assert.equal(controller.state().persistence.storageUnavailable,true);assert.equal(assistancePracticeGate(controller),null);}else{denied=true;controller.reset();await controller.restore();assert.equal(controller.state().blocked,true);assert.equal(assistancePracticeGate(controller).status,'blocked');}
+ }
+});
+
+test('explicit Automatic under first-use unavailable storage remains a checked tab-only recipe across controllers',async()=>{
+ const denied=()=>{throw Error('Storage disabled');},store=new AppAssistanceStore({storage:{getItem:denied,setItem:denied}}),ctx=context();let calls=0;
+ const make=()=>createPracticeAssistanceController({getContext:()=>ctx,store,api:async()=>{calls++;return f.automatic;}}),preview=make();await preview.restore();preview.beginDraft();preview.setDraft({mode:'automatic',settings:f.automatic.checked.plan.settings});await preview.prepareDraft();const active=preview.commitDraft({resetConfirmed:true});assert.equal(preview.state().persistence.status,'unsaved');
+ const stage=make();await stage.restore();assert.equal(calls,2);assert.equal(stage.state().persistence.status,'unsaved');assert.equal(stage.current().plan.selection_digest,active.plan.selection_digest);assert.equal(assistancePracticeGate(stage),null);
+});
+
+test('storage recovery and changed bytes cannot revive an unsaved recipe or default a known checked source',async()=>{
+ const storage=memory(),get=storage.getItem,set=storage.setItem,ctx=context();let denied=true,calls=0;
+ storage.getItem=key=>{if(denied)throw Error('Storage disabled');return get(key);};storage.setItem=(key,value)=>{if(denied)throw Error('Storage disabled');return set(key,value);};
+ const store=new AppAssistanceStore({storage}),make=()=>createPracticeAssistanceController({getContext:()=>ctx,store,api:async()=>{calls++;return f.automatic;}}),preview=make();
+ await preview.restore();preview.beginDraft();preview.setDraft({mode:'automatic',settings:f.automatic.checked.plan.settings});await preview.prepareDraft();const active=preview.commitDraft({resetConfirmed:true});assert.equal(store.read(ctx).status,'unsaved');
+ denied=false;assert.equal(store.read(ctx).recipe.expected_selection_digest,active.plan.selection_digest,'Unchanged empty bytes still own the tab-only overlay');storage.values.set(store.key(ctx),'another window wrote incompatible bytes');
+ const blocked=make();await blocked.restore();assert.equal(blocked.state().persistence.status,'invalid');assert.equal(blocked.current(),null);assert.equal(calls,1);assert.equal(preview.current(),active);
+ storage.values.delete(store.key(ctx));blocked.reset();await blocked.restore();assert.equal(blocked.state().persistence.status,'unavailable');assert.equal(blocked.current(),null);assert.equal(assistancePracticeGate(blocked).status,'blocked');assert.equal(calls,1);
+});

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {nativeScoreServer,nativeStorageApp,nativeResponse} from './native-storage-app-fixtures.js';
+import {compileBrowserFixture} from './frontend-browser-compilation-fixture.js';
 import {basicKeyRenditionFixture} from './basic-key-rendition-fixtures.js';
 import {originalMultipartNotation} from './notation-scope-fixtures.js';
 import {beat,pitchMidi} from '../web/music.js';
@@ -128,6 +129,13 @@ test('display and playback mute edits preserve the human take, targets and pause
  const f=await basicFixture(),{app,score}=f,parts=score.parts;
  const humanState=take=>take.passes.map(pass=>({id:pass.id,timeline:pass.timeline,inputs:pass.inputs,captures:pass.captures}));
  try{await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');f.time(1120);const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:71,button:0});await app.tick();f.time(1160);app.emit(key,'pointerup',{pointerId:71});await app.click('play-button');const before=await app.exported('export-takes'),position=app.$('progress').value;assert.equal(before.passes[0].inputs.length,1);
+  if(app.$('notation-toggle').getAttribute('aria-expanded')!=='true')await app.click('notation-toggle');await app.click('jianpu-button');
+  const painted=()=>JSON.parse(app.$('workspace').dataset.renderedNotationParts||'[]');await app.until(()=>painted().join()===parts[0].id);assert.equal(app.$('notation-scope').disabled,true);
+  for(const show of [true,false,true]){
+   await app.click('edit-song-mod');app.$('song-mod-layout').value='complete';app.emit(app.$('song-mod-layout'),'change');app.$('song-mod-show-others').checked=show;app.emit(app.$('song-mod-show-others'),'change');await apply(app);
+   const expected=(show?parts:[parts[0]]).map(part=>part.id);await app.until(()=>painted().join()===expected.join(),'Display-only Mod must refresh current notation scope');assert.equal(app.$('notation-scope').disabled,!show);
+   const displayed=await app.exported('export-takes');assert.deepEqual(humanState(displayed),humanState(before));assert.deepEqual(displayed.target_plan,before.target_plan);assert.equal(app.$('progress').value,position);
+  }
   await app.click('edit-song-mod');app.$('song-mod-layout').value='complete';app.$('song-mod-show-others').checked=false;app.emit(app.$('song-mod-show-others'),'change');set(app,'visible',parts[2].id,false);assert.match(app.$('song-mod-warning').textContent,/keep the current position/);await apply(app);let after=await app.exported('export-takes');assert.deepEqual(humanState(after),humanState(before));assert.deepEqual(after.target_plan,before.target_plan);assert.equal(app.$('progress').value,position);
   await app.click('edit-song-mod');set(app,'mute',parts[1].id,true);await apply(app);after=await app.exported('export-takes');assert.deepEqual(humanState(after),humanState(before));assert.deepEqual(after.target_plan,before.target_plan);assert.equal(app.$('progress').value,position);await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(source(app).core.plan.count,1);assert.equal((await app.exported('export-takes')).passes.length,before.passes.length);
  }finally{await app.close();}
@@ -333,4 +341,23 @@ test('procedural source awaits live worklet readiness before starting a human ta
 test('procedural accompaniment admits human live guitar on its existing worklet before recording',async()=>{
  const {app,score,time}=await proceduralModFixture();
  try{await app.click('configure-song-mod');set(app,'live-instrument',score.parts[0].id,'guitar');await apply(app);await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');assert.equal(liveCore(app).state,'ready');time(1120);const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:98,button:0});await app.tick();time(1160);assert.equal(manualPlays(app).length,1);assert.equal(manualPlays(app)[0][4],'guitar');assert.equal(liveCore(app).activeNotes,1);assert.ok(liveCore(app).pcmEnergy>0);assert.equal((await app.exported('export-takes')).passes[0].inputs.length,1);}finally{await app.close();}
+});
+
+test('a newer loop request fences both pending Mod admissions before targets, sound or takes can commit',async()=>{
+ const score=originalMultipartNotation({partCount:2,measures:4});for(const part of score.parts)for(const [index,note]of part.notes.entries()){note.at={numerator:index,denominator:1};note.duration={numerator:1,denominator:1};}score.measures=[{number:1,at:{numerator:0,denominator:1},length:{numerator:2,denominator:1}}];
+ const server=await nativeScoreServer({scores:[score]}),storageValues=new Map();let checks=0,hold=false,releaseMod,releaseLoop;
+ const windowReply=body=>{const timeline=compileBrowserFixture(body.score).timeline,unit=60000/body.score.tempo[0].bpm,start_ms=beat(body.from)*unit,end_ms=beat(body.to)*unit;return nativeResponse({start_ms,end_ms,target_note_ids:timeline.notes.filter(n=>n.start_ms>=start_ms&&n.start_ms<end_ms).map(n=>n.id),crossing_notes:0,diagnostics:[]});};
+ server.setRoute(({path,body,defaultReply})=>{if(path==='/api/compile')return nativeResponse(compileBrowserFixture(body));if(path==='/api/practice-window')return hold?new Promise(resolve=>{releaseLoop=()=>resolve(windowReply(body));}):windowReply(body);if(hold&&path==='/api/instrument-check'&&++checks===1)return new Promise(resolve=>{releaseMod=()=>resolve(defaultReply());});});
+ const app=await nativeStorageApp(server,{now:()=>1000,storageValues});
+ try{
+  const key=[...server.records.keys()][0];await app.until(()=>app.savedButton(key)&&!app.$('start-performance').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>!app.$('start-performance').disabled);app.$('count-in').checked=false;await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');await app.click('play-button');
+  app.$('loop-to').value='1';await app.click('loop-apply');await app.until(()=>app.$('loop-enabled').checked&&!app.$('play-button').disabled);await app.click('play-button');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');await app.click('play-button');
+  const before=await app.exported('export-takes'),stored=[...storageValues];assert.equal(before.passes.length,1);
+  await app.click('edit-song-mod');set(app,'live-instrument',score.parts[0].id,'guitar');set(app,'live-instrument',score.parts[1].id,'guitar');hold=true;await app.click('song-mod-apply');await app.until(()=>Boolean(releaseMod));
+  // Adversarial DOM delivery while Mod is waiting: loop request identity changes
+  // before its source range is published or the recorder generation advances.
+  app.$('loop-to').value='2';await app.click('loop-apply');await app.until(()=>Boolean(releaseLoop));releaseMod();await app.until(()=>!app.$('song-mod-dialog').open);
+  assert.equal(checks,2,'The scoped and full-source admissions both finished');assert.deepEqual(await app.exported('export-takes'),before);assert.deepEqual([...storageValues],stored);
+  hold=false;releaseLoop();const expected=compileBrowserFixture(score).timeline.notes.filter(n=>n.start_ms<2*60000/score.tempo[0].bpm).length;await app.until(()=>!app.$('play-button').disabled&&app.$('loop-enabled').checked&&app.$('practice-scope').textContent.includes(`${expected} physical attacks`));const next=await app.exported('export-takes');assert.deepEqual(next.song_mod,before.song_mod);assert.ok(next.target_plan.target_count>before.target_plan.target_count);assert.equal(next.passes.length,0,'Only the explicit new loop reset owns the take boundary');
+ }finally{releaseMod?.();releaseLoop?.();await app.close();}
 });

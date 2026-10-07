@@ -46,7 +46,7 @@ export function setupPracticeAssistanceView({document,parent,i18n,onChange=()=>{
       check.hidden=disableRequested;check.textContent=t(busy?'checking':'check');check.disabled=busy||automatic&&(unsupported||empty);
       status.textContent=disableRequested?t('offDraft'):localError?t('error')+' '+localError.message:s.error?t('error')+' '+s.error.message:busy?t('checking'):plan?t('counts',{human:plan.coverage.human_target_count,machine:plan.coverage.machine_occurrence_count})+(plan.scored_mode_allowed?'':' · '+t('noScore')):s.persistence.status==='off'?t('off'):t('unchecked');status.dataset.phase=disableRequested?'off-draft':s.phase;
       units.hidden=!plan;units.textContent=plan?t('units',{human:plan.coverage.human_source_unit_count,machine:plan.coverage.machine_source_unit_count,total:plan.coverage.source_unit_count}):'';
-      human.textContent=t('human');machine.textContent=t('machine');persistence.hidden=!['invalid','unsaved','unavailable','off'].includes(s.persistence.status);persistence.textContent=persistence.hidden?'':t(s.active&&s.persistence.status==='off'?'session':s.persistence.status);
+      human.textContent=t('human');machine.textContent=t('machine');persistence.hidden=!s.persistence.storageUnavailable&&!['invalid','unsaved','unavailable','off'].includes(s.persistence.status);persistence.textContent=persistence.hidden?'':t(s.active&&s.persistence.status==='off'?'session':s.persistence.storageUnavailable?'sessionDefault':s.persistence.status);
       replaceLabel.hidden=!s.replaceInvalidRequired;replaceText.textContent=t('replace');replace.disabled=externalBusy;
       resetLabel.hidden=!resetRequired();resetText.textContent=t('reset');reset.disabled=externalBusy;
     }finally{rendering=false;}

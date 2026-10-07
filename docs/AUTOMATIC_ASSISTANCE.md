@@ -210,7 +210,11 @@ Incompatible saved preferences remain preserved until the user explicitly
 confirms replacement. A preference changed in another window must be reopened
 before replacement. Storage failure is reported as tab-only, retaining the
 prior stored value; the current app retains that unsaved recipe within the tab.
-Unavailable storage requires an explicit session assignment. Take exports
+If storage is unavailable from first use and no assistance preference is known,
+Original full-part practice remains available for this tab with a visible
+unsaved-preference warning. Known saved, invalid or previously checked assignments
+never silently fall back when access or bytes are lost. Explicit checked
+assignments still require validation and disclose save failure. Take exports
 include a checked plan/receipt and human-target/machine-occurrence identity
 snapshot, with per-pass interpretation records, so a later assignment cannot
 silently relabel an earlier take.

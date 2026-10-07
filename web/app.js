@@ -559,8 +559,8 @@ function modInputPolicy(mod,context,mode){return createPartInstrumentPolicy(mod,
 function modContext(origin) {
   const value=origin==='preview'?preview.value:{score:state.score,compiled:state.compiled,cleanSong:state.cleanSong,mode:state.mode,practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts};
   if(!value?.score||!value.compiled||value.score.parts.length>128)return null;
-  const entry=songMods.read(value),assistanceController=origin==='stage'?stageAssistance:previewAssistance,assistance=assistanceController.current();
-  return {...value,...entry,assistanceController,assistance,assistanceStatus:assistance&&assistanceController.state().persistence.status==='off'?'session':assistanceController.state().persistence.status,performanceInstrument:state.instrument,mod:origin==='stage'&&state.songMod?state.songMod:entry.mod,capabilities:{...songModCapabilities(value),liveAudio:synth.muted||!liveAudioUnavailable(),liveAudioReason:synth.liveError?liveAudioErrorText(synth.liveError):''},previewVersion:preview.version,navigation:scoreSaveNavigation,generation:state.generation,hasTakes:origin==='stage'&&(transport.hasStarted||state.recorder.passes.length>0)};
+  const entry=songMods.read(value),assistanceController=origin==='stage'?stageAssistance:previewAssistance,assistance=assistanceController.current(),persistence=assistanceController.state().persistence;
+  return {...value,...entry,assistanceController,assistance,assistanceStatus:assistance&&persistence.status==='off'?'session':persistence.storageUnavailable?'sessionDefault':persistence.status,performanceInstrument:state.instrument,mod:origin==='stage'&&state.songMod?state.songMod:entry.mod,capabilities:{...songModCapabilities(value),liveAudio:synth.muted||!liveAudioUnavailable(),liveAudioReason:synth.liveError?liveAudioErrorText(synth.liveError):''},previewVersion:preview.version,navigation:scoreSaveNavigation,generation:state.generation,hasTakes:origin==='stage'&&(transport.hasStarted||state.recorder.passes.length>0)};
 }
 function scoreAdmissionPending(){return Boolean(state.compileController&&!state.compileController.signal.aborted);}
 function refreshSongModView(){
@@ -574,18 +574,21 @@ async function applySongMod({origin,context,mod,assistance=null,assistanceChange
   const prospective={...context,songMod:mod,mod,assistance},livePolicy=assertPartInstrumentPolicyReady(modInputPolicy(mod,prospective),context.score.parts,i18n.locale);
   const options=songModOptions(mod,{assistance}),changes=songModChanges(context.mod,mod),requiresReset=changes.requiresReset||assistanceChanged;
   if(origin==='stage'&&requiresReset&&(assistanceChanged||context.assistance||context.assistanceController?.state().persistence.recipe)&&(context.hasTakes||context.assistance||context.assistanceController?.state().persistence.recipe)&&!resetConfirmed)throw new Error('Confirm that changing this assignment restarts the session and clears its takes.');
-  const profileSnapshot=JSON.stringify(currentProfile());
-  const current=()=>isCurrent()&&profileSnapshot===JSON.stringify(currentProfile())&&!scoreAdmissionPending()&&context.generation===state.generation&&!document.hidden&&context.navigation===scoreSaveNavigation&&(origin==='stage'?context.mode===state.mode&&context.score===state.score&&shell.screen()==='stage':context.score===preview.value.score&&context.identity===preview.value.identity&&context.previewVersion===preview.version&&shell.screen()==='library');
+  const profileSnapshot=JSON.stringify(currentProfile()),loop=origin==='stage'?state.loop:null,loopRequest=state.loopRequest,practiceVersion=state.practiceVersion;
+  const current=()=>isCurrent()&&profileSnapshot===JSON.stringify(currentProfile())&&!scoreAdmissionPending()&&context.generation===state.generation&&!document.hidden&&context.navigation===scoreSaveNavigation&&(origin==='stage'?context.mode===state.mode&&context.score===state.score&&state.loop===loop&&state.loopRequest===loopRequest&&state.practiceVersion===practiceVersion&&shell.screen()==='stage':context.score===preview.value.score&&context.identity===preview.value.identity&&context.previewVersion===preview.version&&shell.screen()==='library');
   function assertCandidate(){
     if(!assistance)return;
     const live=appAssistanceContext({...((origin==='stage')?state:preview.value),songMod:mod},currentProfile(),songMods.identity(context));
     const binding={...live,mode:assistance.plan.mode,settings:assistance.plan.settings,revision:assistance.plan.revision,expected_selection_digest:assistance.plan.selection_digest};assertPracticeAssistanceCurrent(assistance,binding);return binding;
   }
   if(!current())return;assertCandidate();
-  const admission=options.mode==='practice'&&(origin==='preview'||requiresReset)?await preparePracticeAdmission(context.compiled,options.practiceSelection,currentProfile(),assistance,null):null;
+  const admission=options.mode==='practice'&&(origin==='preview'||requiresReset)?await preparePracticeAdmission(context.compiled,options.practiceSelection,currentProfile(),assistance,loop):null;
   const compatibility=admission?.compatibility||(origin==='preview'?{status:'ready'}:state.compatibility);
+  // The lobby always starts the full source. A valid stage A/B range must not
+  // make out-of-range notes elsewhere appear admitted in that preview.
+  const fullCompatibility=loop&&requiresReset&&options.mode==='practice'?(await preparePracticeAdmission(context.compiled,options.practiceSelection,currentProfile(),assistance,null)).compatibility:compatibility;
   if(assistance||assistanceDisabled){
-    const audioOptions={sampleRate:synth.context?.sampleRate||48000,mode:options.mode,practiceSelection:assistance&&!assistance.plan.selection.selected_part_ids.length?{kind:'parts',part_ids:[]}:options.practiceSelection,instrumentOverrides:options.instrumentOverrides,mutedPartIds:options.mutedPartIds,mutedParts:options.mutedPartIds,instrument:state.instrument,assistance,assistanceContext:assertCandidate};
+    const audioOptions={sampleRate:synth.context?.sampleRate||48000,mode:options.mode,practiceSelection:assistance&&!assistance.plan.selection.selected_part_ids.length?{kind:'parts',part_ids:[]}:options.practiceSelection,instrumentOverrides:options.instrumentOverrides,mutedPartIds:options.mutedPartIds,mutedParts:options.mutedPartIds,instrument:state.instrument,assistance,assistanceContext:assertCandidate,...(loop?{range:{startMs:loop.start_ms,endMs:loop.end_ms},loop:{enabled:true}}:{})};
     if(!context.cleanSong){const audioProfile=await api('/api/canonical-audio-profile',context.compiled.score);if(!current())return;buildCanonicalAudioPlan(context.compiled,audioProfile,{...audioOptions,acceptedPolicyId:CANONICAL_AUDIO_POLICY});}
     else if(hasBasicKeyRendition(context.cleanSong))buildBasicKeyAudioPlan(context.cleanSong,audioOptions);
     else if(isVsqSong(context.cleanSong))buildVsqAudioPlan(context.cleanSong,audioOptions);
@@ -602,7 +605,7 @@ async function applySongMod({origin,context,mod,assistance=null,assistanceChange
     state.songMod=mod;state.mode=options.mode;state.practiceSelection=resolvePracticeSelection(state.score.parts,options.practiceSelection);
     state.practicePart=state.practiceSelection.kind==='all'&&!state.cleanSong?null:state.practiceSelection.part_ids[0]||null;
     state.practiceLayout=options.practiceLayout;state.showOtherParts=options.showOthers;state.hiddenPartIds=new Set(options.hiddenPartIds);
-    if(requiresReset){state.loop=null;state.loopRequest++;rebuildPracticeScope({publish:false});if(admission)installPracticeAdmission(admission,{publish:false});else{state.compatibility={status:'ready'};state.targetTimeline=null;state.practicePlan=null;}}
+    if(requiresReset){state.loopRequest++;rebuildPracticeScope({publish:false});if(admission)installPracticeAdmission(admission,{publish:false});else{state.compatibility={status:'ready'};state.targetTimeline=null;state.practicePlan=null;}}
   }
   songMods.save(context,mod);
   if(!commit())throw new Error('The Mod dialog changed during the synchronous commit.');
@@ -613,12 +616,12 @@ async function applySongMod({origin,context,mod,assistance=null,assistanceChange
     cleanMutedParts.clear();cleanSoloParts.clear();for(const id of options.mutedPartIds)cleanMutedParts.add(id);
     $('session-mode').value=state.mode;$('practice-part').value=state.practicePart||'';
     if(requiresReset){
-      $('loop-enabled').checked=false;updatePracticeScopeLabel();renderTargetMappings();resetPlayback();
-      engravedView.practicePartChanged();state.notationPart=engravedView.scopeInfo().partId;$('notation-part').value=state.notationPart||'';
+      $('loop-enabled').checked=Boolean(state.loop);updateLoopStatus();updatePracticeScopeLabel();renderTargetMappings();resetPlayback();
     }else if(changes.mix)canonicalSession.stop();
+    if(requiresReset||changes.display){engravedView.practicePartChanged();state.notationPart=engravedView.scopeInfo().partId;$('notation-part').value=state.notationPart||'';}
     renderNotationPage();drawFrame(true);updateRangeWarning();updateButtons();
     const candidate=preview.value,identity=candidate.status==='ready'&&candidate.compiled&&candidate.score?songMods.identity(candidate):null;
-    if(identity&&identity.songId===mod.songId&&identity.sourceRevision.kind===mod.sourceRevision.kind&&identity.sourceRevision.value===mod.sourceRevision.value){if(!requiresReset&&candidate.compatibility.status==='pending')preview.publish({...candidate,...options,songMod:mod});else preview.adopt(candidate.compiled,requiresReset?compatibility:candidate.compatibility,options.part,candidate.identity,candidate.cleanSong,{practiceSelection:options.practiceSelection,practiceLayout:options.practiceLayout,showOthers:options.showOthers,songMod:mod});}
+    if(identity&&identity.songId===mod.songId&&identity.sourceRevision.kind===mod.sourceRevision.kind&&identity.sourceRevision.value===mod.sourceRevision.value){if(!requiresReset&&candidate.compatibility.status==='pending')preview.publish({...candidate,...options,songMod:mod});else preview.adopt(candidate.compiled,requiresReset?fullCompatibility:candidate.compatibility,options.part,candidate.identity,candidate.cleanSong,{practiceSelection:options.practiceSelection,practiceLayout:options.practiceLayout,showOthers:options.showOthers,songMod:mod});}
   }
   refreshSongModView();
 }

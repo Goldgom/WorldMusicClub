@@ -25,10 +25,22 @@ export function currentAppAssistanceBinding(controller,context) {
 /** Quota failures retain an explicit tab-only recipe across preview/stage
  * revalidation. Invalid or changed stored bytes never inherit that overlay. */
 export class AppAssistanceStore extends PracticeAssistanceStore {
-  constructor(options){super(options);this.session=new Map();}
-  read(context){const stored=super.read(context),session=this.session.get(this.key(context));return session&&stored.status!=='invalid'&&stored.raw===session.raw?session:stored;}
-  clear(context,options){const cleared=super.clear(context,options);this.session.delete(this.key(context));return cleared;}
-  save(context,recipe,options){const saved=super.save(context,recipe,options);if(saved.status==='unsaved')this.session.set(this.key(context),saved);else this.session.delete(this.key(context));return saved;}
+  constructor(options){super(options);this.session=new Map();this.known=new Set();this.storageSeen=false;}
+  read(context){
+    const stored=super.read(context),key=this.key(context),session=this.session.get(key);
+    if(stored.status!=='unavailable')this.storageSeen=true;
+    if(stored.raw!==null)this.known.add(key);
+    if(session&&stored.status!=='invalid'&&stored.raw===session.raw)return session;
+    if(session)this.session.delete(key);
+    // First-use storage denial must not opt an ordinary whole-part session
+    // into note assistance. Once a recipe/marker is known, losing its bytes
+    // or access can never silently restore the unassisted default.
+    if(stored.status==='unavailable'&&!this.storageSeen&&!this.known.has(key))return {...stored,status:'default',storageUnavailable:true};
+    if(stored.status==='default'&&this.known.has(key))return {...stored,status:'unavailable',error:new Error('The previously known note-assistance preference is unavailable. Reopen Mod to explicitly replace it.')};
+    return stored;
+  }
+  clear(context,options){const cleared=super.clear(context,options),key=this.key(context);this.known.add(key);this.storageSeen=true;this.session.delete(key);return cleared;}
+  save(context,recipe,options){const saved=super.save(context,recipe,options),key=this.key(context);this.known.add(key);if(saved.status==='unsaved')this.session.set(key,saved);else{this.storageSeen=true;this.session.delete(key);}return saved;}
 }
 
 export function assistancePracticeGate(controller) {

@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseHTML} from 'linkedom';
+import {AppAssistanceStore} from '../web/app-assistance.js';
 import {setupSongModView} from '../web/song-mod-view.js';
 import {createSongMod} from '../web/song-mod.js';
 import {createPracticeAssistanceController,PracticeAssistanceStore} from '../web/practice-assistance.js';
 import {assistanceContext,assistanceResponse,memoryStorage,deferred} from './practice-assistance-fixtures.js';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 async function settle(predicate){for(let i=0;i<30;i++){if(predicate())return;await tick();}assert.ok(predicate(),'Expected the DOM operation to settle');}
-function fixture({stage=false,hasTakes=stage,guitar=false,api,storage=memoryStorage()}={}){
+function fixture({appStore=false,stage=false,hasTakes=stage,guitar=false,api,storage=memoryStorage()}={}){
  const {document,window}=parseHTML('<html><body><section class="preview-copy"></section><div class="preview-actions"></div><div id="stage-hud"></div><div id="workspace"></div><input type="checkbox" id="falling-note-labels"></body></html>');
  Object.defineProperty(window.HTMLSelectElement.prototype,'value',{configurable:true,get(){return this.querySelector('option[selected]')?.value||this.querySelector('option')?.value||'';},set(value){for(const option of this.querySelectorAll('option'))option.toggleAttribute('selected',option.value===String(value));}});
  Object.defineProperty(window.HTMLElement.prototype,'open',{configurable:true,get(){return this.hasAttribute('open');},set(value){this.toggleAttribute('open',Boolean(value));}});
@@ -19,7 +20,7 @@ function fixture({stage=false,hasTakes=stage,guitar=false,api,storage=memoryStor
  const score={id:'original',parts:[{id:'piano',name:'Piano',notes:[]},{id:'bass',name:'Bass',notes:[]}]},identity={songId:score.id,sourceRevision:{kind:'canonical-score-v1',value:'e'.repeat(64)}},mod=createSongMod(identity,{layout:'complete',showOtherParts:true,parts:score.parts.map(part=>({partId:part.id,performer:part.id==='piano'?'human':'machine',instrument:'reed',liveInstrument:'follow',muted:false,visible:true}))});
  let context={score,mod,original:mod,hasTakes,capabilities:{instruments:true,liveAudio:true},performanceInstrument:'piano'},starts=0,applies=0;const calls=[],applyOptions=[];
  const currentBinding=()=>({...binding,selection:{selected_part_ids:context.mod.config.parts.filter(p=>p.performer==='human').map(p=>p.partId),profile:binding.selection.profile}});
- const controller=createPracticeAssistanceController({getContext:currentBinding,store:new PracticeAssistanceStore({storage}),api:async(path,body,signal)=>{calls.push({path,body,signal});return api?api(path,body,signal):assistanceResponse(currentBinding(),{mode:path.endsWith('/original')?'original':'automatic',settings:body.settings??null,selection:body.selection});}});
+ const controller=createPracticeAssistanceController({getContext:currentBinding,store:new (appStore?AppAssistanceStore:PracticeAssistanceStore)({storage}),api:async(path,body,signal)=>{calls.push({path,body,signal});return api?api(path,body,signal):assistanceResponse(currentBinding(),{mode:path.endsWith('/original')?'original':'automatic',settings:body.settings??null,selection:body.selection});}});
  context.assistanceController=controller;
  const view=setupSongModView({document,i18n,getContext:()=>context,onStart:()=>starts++,onApply:async options=>{applies++;applyOptions.push(options);const checked=options.commitAssistance();context={...context,mod:options.mod,assistance:checked};context.assistanceStatus=controller.state().persistence.status;assert.equal(options.commit(),true);view.update({preview:context,stage:stage?context:null,canStart:true});}});
  view.update({preview:context,stage:stage?context:null,canStart:true});view.open(stage?'stage':'preview');
@@ -127,4 +128,10 @@ test('explicit Off is a bilingual reversible choice, requires stage acknowledgem
  const f=fixture({stage:true,hasTakes:true});f.change('song-mod-assistance-mode','automatic');f.change('song-mod-assistance-reset',true);f.$('song-mod-apply').click();await settle(()=>!f.$('song-mod-dialog').open);const active=f.controller.current(),calls=f.calls.length;
  f.view.open('stage');assert.match(f.$('song-mod-assistance-off').textContent,/Turn off note assistance/);f.$('song-mod-assistance-off').click();assert.equal(f.$('song-mod-assistance-off').getAttribute('aria-pressed'),'true');assert.equal(f.$('song-mod-assistance-check').hidden,true);assert.equal(f.$('song-mod-apply').disabled,true);f.i18n.setLocale('zh-CN');assert.match(f.$('song-mod-assistance-status').textContent,/关闭.*音符辅助/);f.$('song-mod-cancel').click();assert.equal(f.controller.current(),active);
  f.view.open('stage');f.$('song-mod-assistance-off').click();f.change('song-mod-assistance-reset',true);f.$('song-mod-apply').click();await settle(()=>!f.$('song-mod-dialog').open);assert.equal(f.controller.current(),null);assert.equal(f.controller.state().persistence.status,'off');assert.equal(f.calls.length,calls);assert.equal(f.applyOptions.at(-1).assistanceDisabled,true);assert.equal(f.starts,0);assert.match(f.$('song-mod-stage-summary').textContent,/音符辅助已关闭/);
+});
+
+test('first-use denied storage visibly discloses unsaved Original defaults in both languages without opt-in',async()=>{
+ const denied=()=>{throw Error('Storage disabled');},f=fixture({appStore:true,storage:{getItem:denied,setItem:denied}});
+ assert.equal(f.$('song-mod-assistance-persistence').hidden,false);assert.match(f.$('song-mod-assistance-persistence').textContent,/could not be read.*Original full-part.*this tab.*not been saved/);assert.equal(f.$('song-mod-apply').disabled,false);
+ f.i18n.setLocale('zh-CN');assert.match(f.$('song-mod-assistance-persistence').textContent,/无法读取.*当前标签页.*尚未保存/);f.i18n.setLocale('en');f.$('song-mod-all-machine').click();f.$('song-mod-apply').click();await settle(()=>!f.$('song-mod-dialog').open);assert.equal(f.applyOptions[0].assistanceChanged,false);assert.equal(f.calls.length,0);assert.equal(f.controller.current(),null);
 });
