@@ -201,6 +201,12 @@ function nextResponse(path, timeout = 10_000) {
   return page.waitForResponse(response => new URL(response.url()).pathname === path, {timeout});
 }
 
+function compileResponseMatchesScore(response, score) {
+  return new URL(response.url()).pathname === '/api/compile'
+    && response.request().method() === 'POST'
+    && isDeepStrictEqual(response.request().postDataJSON(), score);
+}
+
 function nextTargetResponse(profile, timeline) {
   return page.waitForResponse(response => new URL(response.url()).pathname === '/api/practice-targets'
     && response.request().method() === 'POST'
@@ -2260,12 +2266,30 @@ test('short-landscape following reveals later systems with non-color cues and pr
 });
 
 test(GUITAR_UNION_BROWSER_CASE,{timeout:60_000},async()=>{
-  await page.setViewportSize(GUITAR_UNION_VIEWPORTS[0]);await page.emulateMedia({reducedMotion:'reduce'});await hideNotation();
-  await ui('#instrument').selectOption('guitar');await setSessionMode('listen');await ui('#count-in').uncheck();
-  await ui('#guitar-frets').fill('5');await ui('#instrument-apply').click();await ui('#play-button:not([disabled])').waitFor();
-  const score=originalGuitarUnionStudy(),states=[],snapshots=[],exports=[];
-  const [compiledResponse]=await Promise.all([nextResponse('/api/compile'),ui('#score-file').setInputFiles({name:score.id+'.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))})]);
-  const compilation=await responseJson(compiledResponse);assert.deepEqual(compilation.score,score);await readyForTitle(score.title);await hideNotation();
+  const score=originalGuitarUnionStudy(),states=[],snapshots=[],exports=[],requestStart=requests.length;
+  const initialization={version:1,expectedScore:score,checkpoints:[]};let compilation;
+  async function retainInitialization(phase,details={}){
+    const observed=await page.evaluate(()=>({screen:document.body.dataset.screen,scoreTitle:document.querySelector('#score-title').textContent,stageTitle:document.querySelector('#stage-title').textContent,previewTitle:document.querySelector('#preview-title').textContent,previewStatus:document.querySelector('#song-lobby').dataset.previewStatus,mode:document.querySelector('#session-mode').value,instrument:document.querySelector('#instrument').value,requestedFrets:document.querySelector('#guitar-frets').value,renderedFrets:[...new Set([...document.querySelectorAll('#fretboard .fret-button')].map(node=>Number(node.dataset.fret)))],playDisabled:document.querySelector('#play-button').disabled,notice:document.querySelector('#notice').textContent}));
+    initialization.checkpoints.push({phase,...details,observed,compileRequests:requests.slice(requestStart).filter(request=>request.path==='/api/compile').map(request=>({method:request.method,body:request.body}))});
+    await writeFile(join(artifactDirectory,'worldmusichub-guitar-human-union-initialization.json'),JSON.stringify(initialization,null,2));
+  }
+  try{
+    await retainInitialization('before-setup');
+    await page.setViewportSize(GUITAR_UNION_VIEWPORTS[0]);await page.emulateMedia({reducedMotion:'reduce'});await hideNotation();
+    await ui('#instrument').selectOption('guitar');await setSessionMode('listen');await ui('#count-in').uncheck();
+    await ui('#guitar-frets').fill('5');await ui('#instrument-apply').click();
+    // Listen-mode Play may already be enabled while Apply validates the profile.
+    // The actual rebuilt board proves that the requested five-fret setup committed.
+    await page.waitForFunction(()=>document.querySelector('#fretboard .fret-button[data-fret="5"]')&&!document.querySelector('#fretboard .fret-button[data-fret="6"]'));
+    await retainInitialization('profile-committed');
+    // Setup also recompiles the browsed first-steps preview. Bind the waiter to
+    // this exact upload request, never to whichever /api/compile replies first.
+    const [compiledResponse]=await Promise.all([page.waitForResponse(response=>compileResponseMatchesScore(response,score),{timeout:10_000}),ui('#score-file').setInputFiles({name:score.id+'.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))})]);
+    compilation=await responseJson(compiledResponse);
+    await retainInitialization('upload-compiled',{request:compiledResponse.request().postDataJSON(),httpStatus:compiledResponse.status(),compilation});
+    assert.deepEqual(compilation.score,score);await readyForTitle(score.title);await hideNotation();
+    await retainInitialization('source-active');
+  }catch(error){await retainInitialization('failed',{failure:error.message}).catch(()=>{});throw error;}
   const watch=(ids,locked=false)=>page.waitForResponse(response=>{
     if(new URL(response.url()).pathname!=='/api/fingering/guitar'||response.request().method()!=='POST')return false;
     const body=response.request().postDataJSON();return body.score?.id===score.id&&isDeepStrictEqual(body.selected_part_ids,ids)&&body.locks.length===(locked?1:0);
