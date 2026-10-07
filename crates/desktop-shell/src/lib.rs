@@ -11,6 +11,7 @@ mod native_fingering;
 pub mod native_library;
 mod native_pitch_mod;
 mod native_progression;
+mod native_source_instrument;
 pub use native_library::catalog_product;
 pub mod song_pack;
 use http::{Request, Response};

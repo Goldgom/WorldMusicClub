@@ -23,6 +23,8 @@ pub fn is_song_api_route(path: &str) -> bool {
     matches!(
         path,
         "/api/assistance/create"
+            | "/api/source-instrument-details/canonical"
+            | "/api/source-instrument-details/basic"
             | "/api/pitch-mod/project"
             | "/api/pitch-mod/fingering/piano"
             | "/api/pitch-mod/fingering/guitar"
@@ -172,6 +174,9 @@ pub fn api_response(path: &str, bytes: Vec<u8>) -> ApiResponse {
         return request_limit_response();
     }
     match path {
+        "/api/source-instrument-details/canonical" | "/api/source-instrument-details/basic" => {
+            crate::source_instrument_api::response(&bytes, path.ends_with("/basic"))
+        }
         "/api/pitch-mod/project" => crate::pitch_mod_api::response(&bytes),
         "/api/pitch-mod/fingering/piano" | "/api/pitch-mod/fingering/guitar" => {
             crate::pitch_mod_api::fingering(&bytes, path.ends_with("/piano"))
