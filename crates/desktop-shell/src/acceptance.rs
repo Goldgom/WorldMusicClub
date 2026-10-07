@@ -39,6 +39,12 @@ pub const HUMAN_MOD_TIMBRE_PHASES: [&str; 3] = [
     "human-timbre-migrate",
     "human-timbre-restart",
 ];
+pub const PITCH_SOURCES_PHASES: [&str; 4] = [
+    "pitch-sources-seed",
+    "pitch-sources-restart",
+    "pitch-sources-zero",
+    "pitch-sources-zero-restart",
+];
 pub const PITCH_MOD_PHASES: [&str; 2] = ["pitch-mod-seed", "pitch-mod-restart"];
 pub const ASSISTANCE_PHASES: [&str; 4] = [
     "assistance-seed",
@@ -189,6 +195,7 @@ impl Acceptance {
             .chain(HUMAN_MOD_TIMBRE_PHASES)
             .chain(ASSISTANCE_PHASES)
             .chain(PITCH_MOD_PHASES)
+            .chain(PITCH_SOURCES_PHASES)
             .chain(SKIN_PHASES)
             .chain(BUILD_DIAGNOSTICS_PHASES)
             .chain(CATALOG_PHASES)
@@ -207,6 +214,23 @@ impl Acceptance {
         })
     }
     pub fn script(&self) -> String {
+        if PITCH_SOURCES_PHASES.contains(&self.phase) {
+            let (vsq, _) = include_str!("../vsq-song-acceptance.js")
+                .split_once("(() => {")
+                .expect("VSQ helpers precede runner");
+            let (controls, _) = include_str!("../canonical-practice-acceptance.js")
+                .split_once("(() => {")
+                .expect("Canonical helpers precede runner");
+            return format!(
+                "globalThis.__WMH_ACCEPTANCE_PHASE__={};\n{}\n{}\n{}\n{}\n{}",
+                serde_json::to_string(self.phase).unwrap(),
+                include_str!("../acceptance-wait.js"),
+                include_str!("../reference-acceptance.js"),
+                vsq,
+                controls,
+                include_str!("../../../scripts/native-pitch-sources-renderer.js")
+            );
+        }
         if PITCH_MOD_PHASES.contains(&self.phase) {
             let (vsq, _) = include_str!("../vsq-song-acceptance.js")
                 .split_once("(() => {")
@@ -426,6 +450,7 @@ impl Acceptance {
             || HUMAN_MOD_TIMBRE_PHASES.contains(&self.phase)
             || ASSISTANCE_PHASES.contains(&self.phase)
             || PITCH_MOD_PHASES.contains(&self.phase)
+            || PITCH_SOURCES_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase)
             || SKIN_PHASES.contains(&self.phase)
@@ -443,6 +468,10 @@ impl Acceptance {
             self.directory.join("webview-catalog-profile")
         } else if PHASES.contains(&self.phase) {
             self.directory.join("webview-profile")
+        } else if PITCH_SOURCES_PHASES.contains(&self.phase) {
+            self.directory
+                .join("webview-profiles")
+                .join("pitch-sources-seed")
         } else if PITCH_MOD_PHASES.contains(&self.phase) {
             self.directory
                 .join("webview-profiles")
@@ -484,7 +513,8 @@ impl Acceptance {
             || skin_restart
             || human_timbre_restart
             || (ASSISTANCE_PHASES.contains(&self.phase) && self.phase != "assistance-seed")
-            || self.phase == "pitch-mod-restart";
+            || self.phase == "pitch-mod-restart"
+            || (PITCH_SOURCES_PHASES.contains(&self.phase) && self.phase != "pitch-sources-seed");
         let fresh_required = !PHASES.contains(&self.phase) && !existing_required;
         let prepare = || -> std::io::Result<bool> {
             require_ordinary_directory(&self.directory)?;
@@ -492,7 +522,15 @@ impl Acceptance {
                 // A restart must never manufacture a replacement browser profile.
                 // Require the same ordinary path and bounded earlier host records.
                 require_ordinary_directory(&profile)?;
-                if self.phase == "pitch-mod-restart" {
+                if PITCH_SOURCES_PHASES.contains(&self.phase) {
+                    self.require_catalog_profile_evidence("pitch-sources-seed", true)?;
+                    if self.phase != "pitch-sources-restart" {
+                        self.require_catalog_profile_evidence("pitch-sources-restart", false)?;
+                    }
+                    if self.phase == "pitch-sources-zero-restart" {
+                        self.require_catalog_profile_evidence("pitch-sources-zero", false)?;
+                    }
+                } else if self.phase == "pitch-mod-restart" {
                     self.require_catalog_profile_evidence("pitch-mod-seed", true)?;
                 } else if ASSISTANCE_PHASES.contains(&self.phase) {
                     self.require_catalog_profile_evidence("assistance-seed", true)?;
@@ -611,6 +649,7 @@ impl Acceptance {
             || HUMAN_MOD_TIMBRE_PHASES.contains(&self.phase)
             || ASSISTANCE_PHASES.contains(&self.phase)
             || PITCH_MOD_PHASES.contains(&self.phase)
+            || PITCH_SOURCES_PHASES.contains(&self.phase)
             || BASIC_KEY_PHASES.contains(&self.phase)
             || CATALOG_PHASES.contains(&self.phase)
             || SKIN_PHASES.contains(&self.phase)
@@ -1045,6 +1084,7 @@ pub fn receive_report(
             || HUMAN_MOD_TIMBRE_PHASES.contains(&run.phase)
             || ASSISTANCE_PHASES.contains(&run.phase)
             || PITCH_MOD_PHASES.contains(&run.phase)
+            || PITCH_SOURCES_PHASES.contains(&run.phase)
             || BASIC_KEY_PHASES.contains(&run.phase)
             || CATALOG_PHASES.contains(&run.phase)
             || SKIN_PHASES.contains(&run.phase)
@@ -1106,7 +1146,9 @@ pub fn receive_report(
 // Only these existing scenarios need extra visible Mod setup actions. The
 // native action vocabulary, owned coordinates and payload limits stay closed.
 fn action_limit(phase: &str) -> u64 {
-    if ASSISTANCE_PHASES.contains(&phase) {
+    if PITCH_SOURCES_PHASES.contains(&phase) {
+        128
+    } else if ASSISTANCE_PHASES.contains(&phase) {
         96
     } else if phase == "seed" {
         // 35 import/navigation/Free actions + at most 10 scored-take setup
@@ -1224,6 +1266,22 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
     if BUILD_DIAGNOSTICS_PHASES.contains(&phase) && value["kind"] != "click" {
         return false;
     }
+    let pitch_sources = PITCH_SOURCES_PHASES.contains(&phase);
+    let sources_special =
+        phase == "pitch-sources-seed" && value["kind"] == "pitch-sources-shift-two";
+    if pitch_sources
+        && !sources_special
+        && ![
+            "click",
+            "picker",
+            "select-first",
+            "select-second",
+            "select-last",
+        ]
+        .contains(&value["kind"].as_str().unwrap_or(""))
+    {
+        return false;
+    }
     let pitch_mod = PITCH_MOD_PHASES.contains(&phase);
     let pitch_special = (phase == "pitch-mod-seed" && value["kind"] == "pitch-mod-shift-two")
         || (phase == "pitch-mod-restart" && value["kind"] == "pitch-mod-key-s");
@@ -1299,6 +1357,7 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
     .contains(&value["kind"].as_str().unwrap_or(""))
         && !assistance_special
         && !pitch_special
+        && !sources_special
         && !(phase == "canonical-practice-controls"
             && [
                 "canonical-range-start",
@@ -1327,6 +1386,11 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
     }
     if value["kind"] == "picker" {
         let file = value["file"].as_str().unwrap_or("");
+        if pitch_sources
+            && !(phase == "pitch-sources-seed" && file == "pitch-sources-original.wmhpack")
+        {
+            return false;
+        }
         if pitch_mod && !(phase == "pitch-mod-seed" && file == "pitch-mod-original-c4.json") {
             return false;
         }
@@ -1385,6 +1449,7 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
             || (live_navigation && file == "live-tone-navigation-original.json")
             || (phase == "assistance-seed" && file == "assistance-original-songs.zip")
             || (phase == "pitch-mod-seed" && file == "pitch-mod-original-c4.json")
+            || (phase == "pitch-sources-seed" && file == "pitch-sources-original.wmhpack")
             || (phase == "human-timbre-seed" && file == "human-mod-timbre-original.json")
             || (phase == "skin-seed"
                 && [
@@ -1975,6 +2040,64 @@ mod tests {
         {
             assert!(!valid_action_for_phase(&picker, phase));
         }
+    }
+
+    #[test]
+    fn pitch_sources_require_ordered_profile_predecessors_and_closed_original_actions() {
+        let evidence = Evidence::new();
+        let runs: Vec<_> = PITCH_SOURCES_PHASES
+            .iter()
+            .map(|phase| Acceptance::new(evidence.0.clone(), phase).unwrap())
+            .collect();
+        for run in &runs[1..] {
+            assert!(run.prepare_webview_profile().is_err());
+        }
+        let profile = runs[0].prepare_webview_profile().unwrap();
+        assert_eq!(
+            profile,
+            evidence.0.join("webview-profiles/pitch-sources-seed")
+        );
+        assert!(runs[0].prepare_webview_profile().is_err());
+        assert!(runs[2].prepare_webview_profile().is_err());
+        assert!(runs[3].prepare_webview_profile().is_err());
+        for run in &runs[1..] {
+            assert_eq!(run.prepare_webview_profile().unwrap(), profile);
+        }
+        for run in &runs {
+            assert_eq!(run.report_limit(), MAX_CLEAN_REPORT_BYTES);
+            assert_eq!(action_limit(run.phase), 128);
+            assert!(run.script().contains(include_str!(
+                "../../../scripts/native-pitch-sources-renderer.js"
+            )));
+        }
+        let mut action = json!({"version":1,"sequence":1,"kind":"pitch-sources-shift-two","x":20,"y":30,"width":1280,"height":720});
+        for phase in [
+            "pitch-sources-seed",
+            "pitch-sources-restart",
+            "pitch-sources-zero",
+            "pitch-sources-zero-restart",
+            "pitch-mod-seed",
+            "seed",
+        ] {
+            assert_eq!(
+                valid_action_for_phase(&action, phase),
+                phase == "pitch-sources-seed"
+            );
+        }
+        action["kind"] = json!("picker");
+        action["file"] = json!("pitch-sources-original.wmhpack");
+        assert!(valid_action_for_phase(&action, "pitch-sources-seed"));
+        for phase in [
+            "pitch-sources-restart",
+            "pitch-sources-zero",
+            "pitch-sources-zero-restart",
+            "pitch-mod-seed",
+            "seed",
+        ] {
+            assert!(!valid_action_for_phase(&action, phase));
+        }
+        action["file"] = json!("malformed.json");
+        assert!(!valid_action_for_phase(&action, "pitch-sources-seed"));
     }
 
     #[test]

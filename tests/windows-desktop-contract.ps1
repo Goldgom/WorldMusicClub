@@ -118,6 +118,28 @@ try {
   }
   Remove-Item -LiteralPath $pitchModPath
   Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $pitchModPhases[1] } 'pitch restart rejects removed predecessor evidence'
+  $pitchSourcesPhases=@('pitch-sources-seed','pitch-sources-restart','pitch-sources-zero','pitch-sources-zero-restart')
+  foreach($phase in $pitchSourcesPhases[1..3]){Assert-Rejected {Assert-AcceptanceProfileLaunch $profileRoot $phase} 'source pitch restart requires original profile and ordered evidence'}
+  $pitchSourcesSeed=Assert-AcceptanceProfileLaunch $profileRoot $pitchSourcesPhases[0]
+  Assert-True ($pitchSourcesSeed.fresh_required -and -not $pitchSourcesSeed.existing_required) 'source seed reserves a fresh profile'
+  New-Item -ItemType Directory $pitchSourcesSeed.profile_directory | Out-Null
+  Assert-Rejected {Assert-AcceptanceProfileLaunch $profileRoot $pitchSourcesPhases[0]} 'source seed cannot reuse its cache'
+  foreach($index in 1..3) {
+    $phase=$pitchSourcesPhases[$index]
+    Assert-Rejected {Assert-AcceptanceProfileLaunch $profileRoot $phase} 'every source phase requires preceding process proof'
+    $previous=$pitchSourcesPhases[$index-1]
+    $proof=[ordered]@{version=1;phase=$previous;process_id=(72+$index);profile_directory=$pitchSourcesSeed.profile_directory;library_directory=$pitchSourcesSeed.library_directory;fresh_required=($index -eq 1);created_new=($index -eq 1)}
+    $proofPath=Join-Path $profileRoot "profile-$previous.json"
+    $proof | ConvertTo-Json | Set-Content -LiteralPath $proofPath -Encoding utf8
+    $selected=Assert-AcceptanceProfileLaunch $profileRoot $phase
+    Assert-True ($selected.profile_directory -ceq $pitchSourcesSeed.profile_directory -and $selected.existing_required -and -not $selected.fresh_required) 'source phases reuse exactly their original profile'
+    $old=$proof.profile_directory;$proof.profile_directory=Join-Path $profileRoot 'wrong-source-profile'
+    $proof | ConvertTo-Json | Set-Content -LiteralPath $proofPath -Encoding utf8
+    Assert-Rejected {Assert-AcceptanceProfileLaunch $profileRoot $phase} 'source predecessor cannot identify another profile'
+    $proof.profile_directory=$old;$proof | ConvertTo-Json | Set-Content -LiteralPath $proofPath -Encoding utf8
+  }
+  Remove-Item -LiteralPath (Join-Path $profileRoot 'profile-pitch-sources-seed.json')
+  foreach($phase in $pitchSourcesPhases[1..3]){Assert-Rejected {Assert-AcceptanceProfileLaunch $profileRoot $phase} 'later source phases keep requiring the original seed proof'}
   $completePhases=@('complete-practice-seed','complete-practice-restart')
   Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $completePhases[1] } 'complete restart needs its seed profile'
   $completeSeed=Assert-AcceptanceProfileLaunch $profileRoot $completePhases[0]
@@ -482,3 +504,5 @@ try {
 }
 . (Join-Path $PSScriptRoot 'windows-catalog-contract.ps1')
 Write-Output "$script:checks native picker identity, completion, catalog profile/snapshot and fixture-path contract checks passed without GUI or native calls."
+
+. (Join-Path $PSScriptRoot '../scripts/native-pitch-sources-contract.ps1')
