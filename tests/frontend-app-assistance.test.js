@@ -8,9 +8,11 @@ const fixture=JSON.parse(readFileSync(new URL('./fixtures/assistance-canonical.j
 const control=(app,kind,id='piano')=>app.$('song-mod-parts').querySelector(`[data-mod-${kind}="${id}"]`);
 const set=(app,node,value,type='change')=>{node.value=String(value);app.emit(node,type);};
 const source=app=>app.audioNodes.findLast(node=>node.kind==='audio-worklet'&&node.connected&&node.core.plan?.count!==undefined);
-async function setup({storageValues=new Map(),localStorageDescriptor,hold,failOriginal=false,failAudio=()=>false}={}){
+async function setup({storageValues=new Map(),localStorageDescriptor,hold,route,failOriginal=false,failAudio=()=>false}={}){
  const score=fixture.compilation.score,server=await nativeScoreServer({scores:[score]});let wall=1000;
- server.setRoute(async({path,body})=>{
+ server.setRoute(async request=>{
+  const custom=await route?.(request);if(custom!==undefined)return custom;
+  const {path,body}=request;
   if(path==='/api/compile'&&body.id===score.id)return nativeResponse(fixture.compilation);
   if(path==='/api/canonical-audio-profile'&&body.id===score.id)return failAudio()?nativeResponse({error:'Original test audio preparation failed'},503):nativeResponse(fixture.audio_profile);
   if(failOriginal&&path==='/api/practice-assistance/original')return nativeResponse({code:'assistance_response_limit',error:'Complete assistance response exceeds 16 MiB; no IDs or ownership entries were truncated'},422);
@@ -154,4 +156,21 @@ test('failed Off keeps a tab-only Automatic session when quota prevented saving 
  try{
   await f.automatic();await f.apply();assert.match(app.$('song-mod-preview-summary').textContent,/tab only/i);await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');await app.click('edit-song-mod');const before=await app.exported('export-takes');await offChoice(app);acknowledgeReset(app);await app.click('song-mod-apply');await app.until(()=>app.$('song-mod-error').textContent.includes('could not be saved'));const after=await app.exported('export-takes');assert.deepEqual(after.practice_assistance,before.practice_assistance);assert.deepEqual(after.passes,before.passes);assert.equal([...values.keys()].some(key=>key.startsWith(ASSISTANCE_STORAGE_PREFIX)),false);await app.click('song-mod-cancel');assert.match(app.$('song-mod-stage-summary').textContent,/tab only/i);await app.click('play-button');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');assert.equal(source(app).core.plan.count,1);
  }finally{await app.close();}
+});
+
+for(const outcome of ['rejected','cancelled'])test(`${outcome} source replacement preserves admitted Automatic targets, existing take and resumable audio`,async()=>{
+ const pending=deferred();let request;
+ const f=await setup({route:r=>{if(r.path==='/api/compile'&&r.body.id==='replacement-attempt'){request=r;return pending.promise;}}}),{app}=f;
+ try{
+  await f.automatic();await f.apply();app.$('count-in').checked=false;await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');
+  f.time(app.sourceStartWall()+20);const key=app.document.querySelector('#keyboard [data-midi="60"]');app.emit(key,'pointerdown',{pointerId:101,button:0});app.emit(key,'pointerup',{pointerId:101});await app.click('play-button');await app.click('back-to-library');await app.until(()=>!app.$('start-performance').disabled);
+  const before=await app.exported('export-takes'),stored=[...f.storageValues],original=await app.exported('export-button');assert.equal(before.passes[0].inputs.length,1);
+  app.importFile({...structuredClone(f.score),id:'replacement-attempt',title:'Unaccepted source'});await app.until(()=>Boolean(request));
+  assert.equal(app.$('configure-song-mod').disabled,true);assert.equal(app.$('start-performance').disabled,true);assert.deepEqual((await app.exported('export-takes')).practice_assistance,before.practice_assistance);
+  if(outcome==='rejected')pending.resolve(nativeResponse({error:'Replacement compile rejected'},400));else app.importFile('{broken',{name:'cancel-replacement.json'});
+  await app.until(()=>app.$('notice-message').textContent.includes(outcome==='rejected'?'Replacement compile rejected':'cancel-replacement.json'));
+  assert.equal(app.$('start-performance').disabled,false);assert.equal(app.$('play-button').disabled,false);assert.deepEqual(await app.exported('export-button'),original);assert.deepEqual(await app.exported('export-takes'),before);assert.deepEqual([...f.storageValues],stored);assert.equal(source(app),undefined);
+  if(outcome==='cancelled'){pending.resolve(request.defaultReply());await app.tick();await app.tick();assert.deepEqual(await app.exported('export-button'),original);assert.deepEqual(await app.exported('export-takes'),before);}
+  await app.click('resume-session');await app.click('play-button');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');const resumed=await app.exported('export-takes');assert.equal(resumed.passes.length,1);assert.deepEqual(resumed.target_plan,before.target_plan);assert.deepEqual(resumed.practice_assistance,before.practice_assistance);assert.equal(resumed.passes[0].interpretation.playback_segments.at(-1).assistance_fingerprint,before.passes[0].interpretation.assistance_fingerprint);assert.equal(source(app).core.plan.count,fixture.automatic.checked.machine_occurrence_ids.length);assert.deepEqual(resumed.passes[0].inputs,before.passes[0].inputs);
+ }finally{pending.resolve(nativeResponse({error:'Cancelled test request'},400));await app.close();}
 });

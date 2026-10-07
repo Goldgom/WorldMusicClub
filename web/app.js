@@ -394,7 +394,6 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
   if (expectedIntent === null) {state.loadIntent++;cancelCatalogSelection();}
   if (new TextEncoder().encode(JSON.stringify(score)).byteLength > (isBasicKeysSong(cleanSong)?16:8) * 1024 * 1024) { notice(() => t('app.scoreTooLarge'), true); return false; }
   pausePlayback();
-  stageAssistance.reset();
   state.compileController?.abort();
   const controller = new AbortController();
   state.compileController = controller;
@@ -409,6 +408,9 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
   try {
     const compiled = cleanSong?cleanSong.compilation:await api('/api/compile', score, controller.signal);
     if (generation !== state.generation || controller.signal.aborted || expectedIntent!==null&&expectedIntent!==state.loadIntent) return;
+    // A rejected or cancelled replacement still owns the previous take and
+    // checked assignment. Invalidate them only when a new source is accepted.
+    stageAssistance.reset();
     // Reset before publishing the new score: resetPlayback() can immediately
     // draw and start the new score's lazy cursor request.
     writtenCursor?.reset();
@@ -1618,7 +1620,9 @@ $('workspace').addEventListener('notationlayoutchange', () => { cancelAnimationF
 window.addEventListener('pageshow', event => { if (event.persisted) { if(state.compiled)void checkInstrument();if(preview.value.compiled)refreshPreview();cancelAnimationFrame(state.frame); state.frame = requestAnimationFrame(animate); } });
 
 function cancelCatalogSelection(){
-  preview?.cancel();
+  // Cancelling candidate work does not replace its retained source. Keep that
+  // source's checked assignment usable if the replacement fails or is cancelled.
+  preview?.cancel({preserveAssistance:true});
   if(startingPreview){startRequest++;state.compileController?.abort();startingPreview=false;}
 }
 function cancelPendingStart(){if(startingPreview){state.loadIntent++;cancelCatalogSelection();renderPreview();updateButtons();}}

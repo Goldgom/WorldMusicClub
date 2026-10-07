@@ -59,17 +59,18 @@ test('same-title MusicXML import retains source only after file bytes, import an
     assert.equal(app.$('score-title').textContent,fixture.title);assert.deepEqual((await app.exported('export-button')).source,score.source);
   }finally{read.resolve(bytes.buffer);imported.resolve(nativeResponse(compileBrowserFixture(score)));compiled.resolve(nativeResponse(compileBrowserFixture(score)));await app.close();}
 });
-test('stage Mod closure precedes the second target check and the final out-of-range reason',async()=>{
+test('stage Mod stays cancellable until its single preflight commits the exact out-of-range reason',async()=>{
   const score=structuredClone(fixture);score.title='Original setup range test';score.parts[0].notes[0].pitch={step:'C',alter:0,octave:8};
   const {app,server}=await pausedImport(score);let release,seen=0;
   try{
     server.setRoute(({path,body,defaultReply})=>{
       if(path==='/api/instrument-check')return nativeResponse({lowest_midi:36,highest_midi:96,note_options:body.timeline.notes.map(note=>({note_id:note.id,midi:note.midi,playable:note.midi>=36&&note.midi<=96,positions:[]})),diagnostics:[],changed_source_notes:false});
-      if(path==='/api/practice-targets'&&++seen===2)return new Promise(resolve=>{release=()=>resolve(defaultReply());});
+      if(path==='/api/practice-targets'&&++seen===1)return new Promise(resolve=>{release=()=>resolve(defaultReply());});
     });
-    await app.click('edit-song-mod');await app.click('song-mod-all-human');app.$('song-mod-apply').click();await app.until(()=>Boolean(release),'Second target request must be waiting after Mod closes');
-    assert.equal(app.$('song-mod-dialog').open,false);assert.match(app.$('practice-scope').textContent,/pending/);assert.equal(app.$('play-button').disabled,true);
-    release();await app.until(()=>app.$('practice-gate-reason').textContent==='Selected notes outside this instrument range: 1. Change the range, tuning, part or loop before practicing.','Completed target check must publish the exact blocked reason');
+    const scope=app.$('practice-scope').textContent;
+    await app.click('edit-song-mod');await app.click('song-mod-all-human');app.$('song-mod-apply').click();await app.until(()=>Boolean(release),'Current target preflight must be waiting before Mod closes');
+    assert.equal(app.$('song-mod-dialog').open,true);assert.equal(app.$('song-mod-apply').disabled,true);assert.equal(app.$('song-mod-cancel').disabled,false);assert.equal(app.$('practice-scope').textContent,scope);
+    release();await app.until(()=>!app.$('song-mod-dialog').open&&app.$('practice-gate-reason').textContent==='Selected notes outside this instrument range: 1. Change the range, tuning, part or loop before practicing.','Completed target check must publish the exact blocked reason');assert.equal(seen,1);
     assert.match(app.$('practice-scope').textContent,/2 physical/);assert.equal(app.$('play-button').disabled,true);assert.equal(app.$('assess-button').disabled,true);
   }finally{release?.();await app.close();}
 });

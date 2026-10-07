@@ -116,10 +116,10 @@ test('original Mod reed override and restore preserve exact gates and restore ba
 });
 
 
-// Regression for actual Windows477 action32: Mod closes before the second
-// Rust instrument check settles. These are real app handlers with modeled
+// Preserve the Windows477 readiness regression across atomic Mod preflight:
+// no owned action may run behind its open draft. Real app handlers use modeled
 // backend replies and an untrusted action double, never native acceptance.
-for(const rejects of [false,true])test(`canonical owned controls wait for post-Mod Rust target readiness; rejected=${rejects}`,async()=>{
+for(const rejects of [false,true])test(`canonical owned controls wait for atomic Mod target admission; rejected=${rejects}`,async()=>{
  const {nativeScoreServer,nativeStorageApp,nativeResponse}=await import('./native-storage-app-fixtures.js');
  const {readPlaybackClock}=await import('../web/playback-clock-view.js');
  const original=canonicalPracticeFixture().score,server=await nativeScoreServer({scores:[original]}),app=await nativeStorageApp(server,{now:()=>1000});
@@ -131,20 +131,35 @@ for(const rejects of [false,true])test(`canonical owned controls wait for post-M
   await app.click('configure-song-mod');await app.click('song-mod-all-machine');
   for(const id of ['P1','P2']){const field=app.$('song-mod-parts').querySelector(`[data-mod-performer="${id}"]`);field.value='human';app.emit(field,'change');}
   await app.click('song-mod-apply');await app.until(()=>!app.$('song-mod-dialog').open&&!app.$('start-performance').disabled);await app.click('start-performance');await app.until(()=>app.document.body.dataset.screen==='stage'&&!app.$('play-button').disabled);await app.click('reset-button');await app.until(()=>!app.$('play-button').disabled);
-  let checks=0;const requestStart=server.requests.length;
-  server.setRoute(({path,defaultReply})=>path==='/api/instrument-check'&&++checks===2?new Promise(resolve=>{release=()=>resolve(rejects?nativeResponse({error:'Original delayed compatibility rejection'},503):defaultReply());}):undefined);
-  await app.click('edit-song-mod');await app.click('song-mod-all-human');await app.click('song-mod-apply');await app.until(()=>Boolean(release)&&!app.$('song-mod-dialog').open);
-  assert.equal(app.$('play-button').disabled,true,'The old native assertion fails in this real post-commit window');assert.equal(app.$('practice-gate').hidden,false);assert.equal(app.$('practice-gate-retry').disabled,true);
+  let checks=0;const requestStart=server.requests.length,priorScope=app.$('practice-scope').textContent,priorTake=await app.exported('export-takes');
+  server.setRoute(({path,defaultReply})=>path==='/api/instrument-check'&&++checks===1?new Promise(resolve=>{release=()=>resolve(rejects?nativeResponse({error:'Original delayed compatibility rejection'},503):defaultReply());}):undefined);
+  await app.click('edit-song-mod');await app.click('song-mod-all-human');await app.click('song-mod-apply');await app.until(()=>Boolean(release));
+  assert.equal(app.$('song-mod-dialog').open,true);assert.equal(app.$('song-mod-apply').disabled,true);assert.equal(app.$('song-mod-cancel').disabled,false);assert.equal(app.$('practice-scope').textContent,priorScope);assert.deepEqual(await app.exported('export-takes'),priorTake);
   assert.equal(readPlaybackClock(app.document).phase,'ready');assert.equal(readPlaybackClock(app.document).running,false);assert.equal(app.$('hud-captured').textContent,'0');
   pending=dispatch({document:app.document,until:app.until,readClock:()=>readPlaybackClock(app.document),click:async id=>{assert.equal(app.$(id).disabled,false);assert.equal(app.$('practice-gate').hidden,true);nativeActions.push(id);}});
   await app.tick();await app.tick();assert.deepEqual(nativeActions,[],'No native action may precede the completed target/compatibility check');
   release();
-  if(rejects){await assert.rejects(pending,/Canonical Play blocked:.*could not be verified/);assert.deepEqual(nativeActions,[]);assert.equal(app.$('play-button').disabled,true);}
+  if(rejects){await app.until(()=>app.$('song-mod-error').textContent.includes('Original delayed compatibility rejection'));assert.equal(app.$('song-mod-dialog').open,true);assert.deepEqual(nativeActions,[]);assert.equal(app.$('practice-scope').textContent,priorScope);assert.deepEqual(await app.exported('export-takes'),priorTake);await app.click('song-mod-cancel');await pending;assert.deepEqual(nativeActions,['play-button']);assert.equal(app.$('practice-scope').textContent,priorScope,'Explicit Cancel keeps the old admitted assignment usable');}
   else{await pending;assert.deepEqual(nativeActions,['play-button']);assert.equal(app.$('play-button').disabled,false);assert.equal(app.$('practice-scope').textContent,'All parts · 9 physical attacks from 9 sounding events','The modeled reply is published only after its compatibility check; real Rust tie/unison counts stay in the independent source oracle');}
-  const targets=server.requests.slice(requestStart).filter(row=>row.path==='/api/practice-targets');assert.equal(targets.length,2);for(const row of targets)assert.deepEqual([...new Set(row.body.timeline.notes.map(note=>note.part_id))].sort(),['P1','P2','P3','P4']);
+  const targets=server.requests.slice(requestStart).filter(row=>row.path==='/api/practice-targets');assert.equal(targets.length,1);assert.equal(checks,1);for(const row of targets)assert.deepEqual([...new Set(row.body.timeline.notes.map(note=>note.part_id))].sort(),['P1','P2','P3','P4']);
   assert.equal(server.requests.slice(requestStart).filter(row=>row.path==='/api/assess').length,0);assert.equal(server.records.get(key).score_json,JSON.stringify(original));
   assert.match(source,/async function play\(\)\{await dispatchCanonicalPracticePlay\(\{document,until,click,readClock:clock\}\);await until\(\(\)=>state\(\)==='playing'&&!\$\('play-button'\)\.disabled,'acknowledged play'\)/);
  }finally{release?.();await pending?.catch(()=>{});await app.close();}
+});
+
+test('canonical owned Play still rejects a settled stage compatibility failure without dispatching input',async()=>{
+ const {nativeScoreServer,nativeStorageApp,nativeResponse}=await import('./native-storage-app-fixtures.js');
+ const {readPlaybackClock}=await import('../web/playback-clock-view.js');
+ const server=await nativeScoreServer(),app=await nativeStorageApp(server,{now:()=>1000}),actions=[];
+ const source=readFileSync(new URL('../crates/desktop-shell/canonical-practice-acceptance.js',import.meta.url),'utf8');
+ const dispatch=runInNewContext(source.split('(() => {')[0]+'\ndispatchCanonicalPracticePlay;');
+ try{
+  await app.until(()=>!app.$('start-performance').disabled);await app.click('home-single-player');await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');await app.click('reset-button');
+  server.setRoute(({path})=>path==='/api/instrument-check'?nativeResponse({error:'Current profile compatibility rejected'},503):undefined);
+  app.$('key-count').value='49';app.emit(app.$('key-count'),'change');await app.until(()=>!app.$('practice-gate').hidden&&!app.$('practice-gate-retry').disabled);
+  await assert.rejects(dispatch({document:app.document,until:app.until,readClock:()=>readPlaybackClock(app.document),click:async id=>actions.push(id)}),/Canonical Play blocked:.*could not be verified/);
+  assert.deepEqual(actions,[]);assert.equal(app.$('play-button').disabled,true);assert.equal(app.$('assess-button').disabled,true);
+ }finally{await app.close();}
 });
 
 // Read-only geometry double around the actual production viewport observer.
