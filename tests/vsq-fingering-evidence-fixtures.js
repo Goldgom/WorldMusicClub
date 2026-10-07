@@ -17,7 +17,7 @@ export function syntheticVsqFingering(fixture){
   ];
   const requests=[{path:'/api/library/runtime',body:{key:fixture.key,profile:fixture.score.profile,choice:'base_notes_instrumental'}}];
   const responses=stages.map(([kind,locks],index)=>{
-    const profile=kind==='piano'?piano:guitar,settings={part_id,profile,...(kind==='piano'?defaultPianoSettings():{max_fret_span:3}),locks};
+    const profile=kind==='piano'?piano:guitar,settings={part_id:kind==='piano'?part_id:null,profile,...(kind==='piano'?defaultPianoSettings():{selected_part_ids:[part_id],max_fret_span:3}),locks};
     const path=`/api/library/fingering/${kind}`;requests.push({path,body:{source:structuredClone(source),settings:structuredClone(settings)}});
     const common={version:1,algorithm:`deterministic_${kind}_beam_v1`,score_id,part_id,profile:structuredClone(profile),status:'ready',complete:true,changed_source_notes:false,source_occurrence_count:1,beam_width:64,explored_choices:4,beam_pruned:false,objective_cost:0,requested_locks:structuredClone(locks),diagnostics:[]};
     let plan;
@@ -26,7 +26,7 @@ export function syntheticVsqFingering(fixture){
       plan={...common,left_hand:structuredClone(settings.left_hand),right_hand:structuredClone(settings.right_hand),max_expansions:2000000,physical_target_count:1,targets:[target],assignments:[{...structuredClone(target),hand:'right',finger:locks[0]?.finger||3}],issues:[]};
     }else{
       const choice={occurrence_id:id,source_note_ids:[id],part_id,midi:note.midi,start_ms:note.start_ms,end_ms:note.start_ms+note.duration_ms,onset_index:0,string:2,fret:4,finger:locks[0]?.finger||1,picking_hint:'downstroke_suggestion'};
-      plan={...common,max_fret_span:3,assignments:[choice]};
+      plan={...common,part_id:null,selected_part_ids:[part_id],max_fret_span:3,assignments:[choice]};
       if(index===5)Object.assign(plan,{status:'infeasible_under_model',complete:false,assignments:[],objective_cost:null,diagnostics:[{code:'guitar_fingering_no_position',severity:'warning',message:'Unit-only impossible fret fixture; not a native planner result.',note_id:id}]});
     }
     return {path,status:200,body:{source:structuredClone(source),plan},requestIndex:index+1};

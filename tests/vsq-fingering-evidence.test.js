@@ -6,6 +6,10 @@ import {parseHTML} from 'linkedom';
 import {vsqAcceptanceFixture} from '../scripts/prepare-vsq-song-fixtures.mjs';
 import {validateVsqFingering} from '../scripts/verify-vsq-fingering-evidence.mjs';
 import {syntheticVsqFingering} from './vsq-fingering-evidence-fixtures.js';
+import {prepareCleanSong,prepareVsqPractice} from '../web/clean-song-package.js';
+import {fingeringSource,fingeringResponse} from '../web/fingering-source.js';
+import {validatePianoFingering} from '../web/piano-fingering.js';
+import {validateGuitarFingering} from '../web/guitar-fingering.js';
 
 const fixture=vsqAcceptanceFixture();
 function report(){return {opened:structuredClone(fixture.opened),runtimeResponses:[{path:'/api/library/runtime',status:200,body:structuredClone(fixture.runtime)}],actions:32,...syntheticVsqFingering(fixture)};}
@@ -50,6 +54,38 @@ test('VSQ production validators reject tiny native timing changes, omitted ident
   ['invented search limit',r=>response(r,5).body.plan.status='search_limit'],
   ['partial failed plan',r=>response(r,5).body.plan.assignments=structuredClone(response(r,4).body.plan.assignments)],
 ]));
+
+test('VSQ guitar evidence requires the exact original singleton human union in both request and response',()=>rejects([
+  ...[undefined,null,[],['vsq-track-2'],['vsq-track-1','vsq-track-2'],['vsq-track-1','vsq-track-1']].flatMap(ids=>[
+    [`request selection ${JSON.stringify(ids)}`,r=>r.requests[4].body.settings.selected_part_ids=ids],
+    [`response selection ${JSON.stringify(ids)}`,r=>response(r,3).body.plan.selected_part_ids=ids],
+  ]),
+  ['legacy request part',r=>r.requests[4].body.settings.part_id='vsq-track-1'],
+  ['legacy response part',r=>response(r,3).body.plan.part_id='vsq-track-1'],
+  ['coherently substituted union',r=>{r.requests[4].body.settings.selected_part_ids=['vsq-track-2'];response(r,3).body.plan.selected_part_ids=['vsq-track-2'];}],
+]));
+
+test('native VSQ fingering context preserves exact union, clock, source and profile validation',async()=>{
+  const source=await readFile(new URL('../crates/desktop-shell/vsq-song-acceptance.js',import.meta.url),'utf8');
+  const context=runInNewContext(`${source.slice(0,source.indexOf('(() => {'))}\nnativeVsqFingeringContext`);
+  const admitted=prepareVsqPractice(prepareCleanSong(`native:${fixture.key}`,fixture.opened.clean_package,JSON.parse(fixture.opened.score_json)),fixture.runtime),r=report();
+  for(const row of r.fingering.responses){
+    const settings=r.requests[row.requestIndex].body.settings,instrument=row.path.split('/').at(-1),ctx=context(admitted,settings,instrument);
+    const plan=fingeringResponse(row.body,fingeringSource(ctx));
+    assert.equal(ctx.score,admitted.compilation.score);assert.equal(ctx.timeline,admitted.compilation.timeline);assert.equal(ctx.profile,settings.profile);
+    (instrument==='piano'?validatePianoFingering:validateGuitarFingering)(plan,ctx,settings);
+    if(instrument==='guitar'){
+      assert.equal(ctx.part_id,null);assert.deepEqual([...ctx.selected_part_ids],['vsq-track-1']);
+      for(const ids of [undefined,null,[],['vsq-track-2'],['vsq-track-1','vsq-track-2'],['vsq-track-1','vsq-track-1']])assert.throws(()=>context(admitted,{...settings,selected_part_ids:ids},instrument),/human selection changed/);
+      assert.throws(()=>context(admitted,{...settings,part_id:'vsq-track-1'},instrument),/human selection changed/);
+      for(const alter of [plan=>delete plan.selected_part_ids,plan=>plan.selected_part_ids=['vsq-track-2'],plan=>plan.profile.capo=1]){const changed=structuredClone(plan);alter(changed);assert.throws(()=>validateGuitarFingering(changed,ctx,settings));}
+      if(plan.status==='ready'){const changed=structuredClone(plan);changed.assignments[0].end_ms+=1e-9;assert.throws(()=>validateGuitarFingering(changed,ctx,settings));}
+    }else{
+      assert.equal(ctx.part_id,'vsq-track-1');assert.equal(ctx.selected_part_ids,undefined);
+      assert.throws(()=>context(admitted,{...settings,selected_part_ids:['vsq-track-1']},instrument),/piano fingering part changed/);
+    }
+  }
+});
 
 test('VSQ response ownership requires every consumed appendix request and ordered sampled transitions',()=>rejects([
   ['duplicate response index',r=>response(r,1).requestIndex=1],

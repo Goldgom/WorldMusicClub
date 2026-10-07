@@ -74,6 +74,15 @@ function createVsqJsonObserver({onValue,onError,maxRows=16}) {
  }
  return{observe,snapshot:()=>rows.map(row=>({...row})),restore(){stopped=true;for(const restore of [...restores])restore();}};
 }
+/* The original first part remains the only human owner. Guitar now identifies
+ * that owner through an explicit selected union; it cannot fall back to All. */
+function nativeVsqFingeringContext(admitted,settings,instrument) {
+ const part='vsq-track-1',selection=settings?.selected_part_ids;
+ if(instrument==='guitar'){
+  if(settings?.part_id!==null||!Array.isArray(selection)||selection.length!==1||selection[0]!==part)throw Error('Native guitar fingering human selection changed');
+ }else if(instrument!=='piano'||settings?.part_id!==part||selection!==undefined)throw Error('Native piano fingering part changed');
+ return{score:admitted.compilation.score,timeline:admitted.compilation.timeline,cleanSong:admitted,part_id:settings.part_id,...(instrument==='guitar'?{selected_part_ids:[...selection]}:{}),profile:settings.profile};
+}
 /* Actual rendered identities only; no controller access, UI writes or solved
  * assignments. Rich guitar cards may be collapsed; the live route is separate. */
 function readVsqFingeringState(document,instrument) {
@@ -283,9 +292,9 @@ function requireVsqPointerDown(control) {
    await native('click',$('piano-guidance-settings'));await until(()=>$('settings-dialog').open,'piano settings visible');const editor=document.querySelector('#piano-fingering-settings .piano-lock-editor');if(!editor.open)await native('click',editor.querySelector('summary'));
    const [{prepareCleanSong,prepareVsqPractice},{fingeringSource,fingeringResponse},{validatePianoFingering},{validateGuitarFingering}]=await Promise.all([import('/clean-song-package.js'),import('/fingering-source.js'),import('/piano-fingering.js'),import('/guitar-fingering.js')]);
    const admitted=prepareVsqPractice(prepareCleanSong(`native:${entry.key}`,report.opened.clean_package,JSON.parse(report.opened.score_json)),runtime);
-   const context=settings=>({score:admitted.compilation.score,timeline:admitted.compilation.timeline,cleanSong:admitted,part_id:settings.part_id,profile:settings.profile});
+   const context=(settings,instrument)=>nativeVsqFingeringContext(admitted,settings,instrument);
    async function guidanceAction(kind,id){const control=$(id),before=report.requests.length,n=await native(kind,control);report.fingering.actions.push({sequence:n,kind,id,value:control.value||null});return before;}
-   async function guidanceResponse(from,instrument,status){let row;await until(()=>{assert(report.errors.length===0,report.errors.join('; '));row=report.fingering.responses.filter(row=>row.requestIndex>=from&&row.path===`/api/library/fingering/${instrument}`).at(-1);return row&&$(instrument==='piano'?'piano-fingering-guidance':'guitar-planning').dataset[instrument==='piano'?'phase':'status']===(status==='ready'?'ready':status);},`${instrument} ${status} consumed response and rendered state`);assert(row.status===200,'Native fingering route failed');const request=report.requests[row.requestIndex],ctx=context(request.body.settings),plan=fingeringResponse(row.body,fingeringSource(ctx));assert(request.body.settings.part_id==='vsq-track-1','Native fingering part changed');(instrument==='piano'?validatePianoFingering:validateGuitarFingering)(plan,ctx,request.body.settings);assert(plan.status===status,`Original fixture ${instrument} expected ${status}; received ${plan.status}`);await frame();await frame();return row;}
+   async function guidanceResponse(from,instrument,status){let row;await until(()=>{assert(report.errors.length===0,report.errors.join('; '));row=report.fingering.responses.filter(row=>row.requestIndex>=from&&row.path===`/api/library/fingering/${instrument}`).at(-1);return row&&$(instrument==='piano'?'piano-fingering-guidance':'guitar-planning').dataset[instrument==='piano'?'phase':'status']===(status==='ready'?'ready':status);},`${instrument} ${status} consumed response and rendered state`);assert(row.status===200,'Native fingering route failed');const request=report.requests[row.requestIndex],ctx=context(request.body.settings,instrument),plan=fingeringResponse(row.body,fingeringSource(ctx));(instrument==='piano'?validatePianoFingering:validateGuitarFingering)(plan,ctx,request.body.settings);assert(plan.status===status,`Original fixture ${instrument} expected ${status}; received ${plan.status}`);await frame();await frame();return row;}
    function guidanceSample(label,instrument,row){report.fingering.samples.push({label,requestIndex:row.requestIndex,instrument,positionMs:globalThis.__wmhReadPlaybackClock(document).positionMs,partId:$('clean-song-target').value,dom:readVsqFingeringState(document,instrument)});}
    fingeringObservationActive=true;
    let from=await guidanceAction('click','piano-fingering-replan'),row=await guidanceResponse(from,'piano','ready');guidanceSample('piano-base','piano',row);

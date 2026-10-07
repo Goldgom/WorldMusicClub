@@ -71,7 +71,7 @@ export function validateVsqFingering(report,fixture){
   const source=fingeringSource(context),piano={kind:'piano',key_count:61,lowest_midi:null};
   const guitar={kind:'guitar',tuning:[64,59,55,50,45,40],frets:12,capo:0};
   const pianoSettings=locks=>({part_id:partId,profile:piano,...defaultPianoSettings(),locks});
-  const guitarSettings=locks=>({part_id:partId,profile:guitar,max_fret_span:3,locks});
+  const guitarSettings=locks=>({part_id:null,selected_part_ids:[partId],profile:guitar,max_fret_span:3,locks});
   const states=[
     ['piano',pianoSettings([])],
     ['piano',pianoSettings([{source_note_id:sourceId,hand:'right',finger:null}])],
@@ -93,7 +93,7 @@ export function validateVsqFingering(report,fixture){
     equal(row.path,request.path,'response request route');equal(row.status,200,'response status');
     const matches=index=>index>=0&&index<states.length&&request.path===states[index].path&&equivalent(request.body.settings,states[index].settings);
     if(!matches(stage)){assert.ok(matches(stage+1),'VSQ fingering request settings or order');stage++;}
-    const expected=states[stage],ctx={...context,profile:expected.settings.profile};
+    const expected=states[stage],ctx={...context,part_id:expected.settings.part_id,...(expected.instrument==='guitar'?{selected_part_ids:expected.settings.selected_part_ids}:{}),profile:expected.settings.profile};
     const plan=fingeringResponse(row.body,source);
     (expected.instrument==='piano'?validatePianoFingering:validateGuitarFingering)(plan,ctx,request.body.settings);
     equal(plan.status,stage===5?'infeasible_under_model':'ready','fixture plan status');
