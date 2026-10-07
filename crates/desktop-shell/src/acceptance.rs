@@ -1292,10 +1292,7 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
         return false;
     }
     let direct_midi = DIRECT_MIDI_PHASES.contains(&phase);
-    if direct_midi
-        && !["click", "picker", "select-first", "select-last"]
-            .contains(&value["kind"].as_str().unwrap_or(""))
-    {
+    if direct_midi && !["click", "picker"].contains(&value["kind"].as_str().unwrap_or("")) {
         return false;
     }
     let pitch_sources = PITCH_SOURCES_PHASES.contains(&phase);
@@ -3514,6 +3511,8 @@ mod tests {
                 "escape",
                 "cancel-picker",
                 "capture",
+                "select-first",
+                "select-last",
                 "select-second",
                 "pitch-mod-shift-two",
             ] {

@@ -415,7 +415,7 @@ function Native-Action($App,$Action,[hashtable]$Evidence) {
 function Invoke-NativeAction($App,$Action,[hashtable]$Evidence,$Observation=$null) {
   if($Scenario -ceq 'direct-midi') {
     if($env:WMH_DESKTOP_ACCEPTANCE_PHASE -cnotin @('direct-midi-seed','direct-midi-restart')){throw 'Unknown direct MIDI phase'}
-    if($Action.kind -cnotin @('click','picker','select-first','select-last')){throw 'Unknown closed direct MIDI action'}
+    if($Action.kind -cnotin @('click','picker')){throw 'Unknown closed direct MIDI action'}
     if($Action.kind -ceq 'picker' -and ($env:WMH_DESKTOP_ACCEPTANCE_PHASE -cne 'direct-midi-seed' -or $Action.file -cne 'original-direct-midi-boundary.mid')){throw 'Direct MIDI picker requires the exact original seed fixture'}
   }
   $sourcesNumeric=$Scenario -ceq 'pitch-sources' -and $Action.kind -ceq 'pitch-sources-shift-two'
