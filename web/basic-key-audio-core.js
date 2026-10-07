@@ -1,4 +1,4 @@
-import {BASIC_KEY_AUDIO_LIMITS as LIMITS, BASIC_KEY_TIMBRE_PROFILE, BASIC_KEY_SYNTHETIC_INSTRUMENTS, BasicKeyAudioError, basicKeySampleRate, openBasicKeyAudioTransfer, VSQ_AUDIO_IDENTITY, VSQ_TRIANGLE_SIZE, audioTransferIdentity, compareAudioTransferIdentity, basicKeyTimbreHasher, hashBasicKeyTimbreRow} from './basic-key-audio-plan.js';
+import {BASIC_KEY_AUDIO_LIMITS as LIMITS, BASIC_KEY_TIMBRE_PROFILE, BASIC_KEY_SYNTHETIC_INSTRUMENTS, BasicKeyAudioError, basicKeySampleRate, openBasicKeyAudioTransfer, VSQ_AUDIO_IDENTITY, VSQ_TRIANGLE_SIZE, audioTransferIdentity, compareAudioTransferIdentity, basicKeyTimbreHasher, hashBasicKeyTimbreRow, basicKeyAssistanceHasher, hashBasicKeyAssistanceRow} from './basic-key-audio-plan.js';
 
 const integer = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
 const reject = (code, message, details) => { throw new BasicKeyAudioError(code, message, details); };
@@ -7,6 +7,9 @@ const TAU = 2 * Math.PI;
 const TRIANGLE = Object.freeze([0, 1, 0, -1 / 9, 0, 1 / 25, 0, -1 / 49, 0, 1 / 81]);
 const REED = Object.freeze([0, 1, .55, .4, .2, .15, .1, .08, .05, .03]);
 function validateTimbreCommand(message, plan) {
+  if (message.expectedAssistanceFingerprint !== undefined || message.expectedAssistancePlanFingerprint !== undefined) {
+    if (message.expectedAssistanceFingerprint !== (plan.assistanceFingerprint ?? null) || message.expectedAssistancePlanFingerprint !== (plan.assistancePlanFingerprint ?? null)) reject('audio_assistance_fingerprint', 'The prepared ownership identity differs from the requested assistance selection.');
+  }
   // The host's independent command binding must survive removal of the
   // optional wire extension. ACKs also carry the actual validated identity.
   if (message.expectedTimbreProfile === undefined && message.expectedTimbreFingerprint === undefined) return;
@@ -35,7 +38,7 @@ export class BasicKeyAudioCore {
   }
   resetSlots() { this.activeCount = 0; this.freeCount = this.limits.maxVoices; for (let i = 0; i < this.limits.maxVoices; i++) this.freeSlots[i] = this.limits.maxVoices - 1 - i; }
   snapshot(frame) {
-    return {generation: this.generation, planGeneration: this.planGeneration, state: this.state, sourceSha256: this.plan?.sourceSha256 ?? null, policyId: this.plan?.policyId ?? null, identityKind: this.plan?.identityKind ?? 'midi-source-coordinate', ...(this.plan?.timbreProfile ? {timbreProfile: this.plan.timbreProfile, timbreFingerprint: this.plan.timbreFingerprint} : {}), sampleRate: this.sampleRate, frame, anchorFrame: this.anchorFrame ?? null, positionFrame: this.positionFrame ?? null, durationFrames: this.plan?.durationFrames ?? 0, sourceNotes: this.plan?.sourceNotes ?? 0, notes: this.plan?.count ?? 0, eligibleNotes: this.eligibleCount, started: this.startedCount, ended: this.endedCount, skipped: this.skippedCount, active: this.activeCount};
+    return {generation: this.generation, planGeneration: this.planGeneration, state: this.state, sourceSha256: this.plan?.sourceSha256 ?? null, policyId: this.plan?.policyId ?? null, identityKind: this.plan?.identityKind ?? 'midi-source-coordinate', ...(this.plan?.timbreProfile ? {timbreProfile: this.plan.timbreProfile, timbreFingerprint: this.plan.timbreFingerprint} : {}), ...(this.plan?.assistanceFingerprint ? {assistanceFingerprint: this.plan.assistanceFingerprint, assistancePlanFingerprint: this.plan.assistancePlanFingerprint} : {}), sampleRate: this.sampleRate, frame, anchorFrame: this.anchorFrame ?? null, positionFrame: this.positionFrame ?? null, durationFrames: this.plan?.durationFrames ?? 0, sourceNotes: this.plan?.sourceNotes ?? 0, notes: this.plan?.count ?? 0, eligibleNotes: this.eligibleCount, started: this.startedCount, ended: this.endedCount, skipped: this.skippedCount, active: this.activeCount};
   }
   emitCompletion(type, frame, extra = {}) {
     const ledger = this.validated && this.actualStarts ? {actualStarts: this.actualStarts, actualEnds: this.actualEnds} : null;
@@ -83,6 +86,7 @@ export class BasicKeyAudioCore {
         this.profile?.validatePosition?.(plan, message.positionFrame);
         this.profileValidation = this.profile?.beginValidation?.(plan);
         this.timbreValidation = plan.timbreProfile === BASIC_KEY_TIMBRE_PROFILE ? basicKeyTimbreHasher(plan) : null;
+        this.assistanceValidation = plan.assistanceFingerprint ? basicKeyAssistanceHasher(plan) : null;
         this.plan = plan; this.positionFrame = message.positionFrame; this.anchorFrame = null;
         this.order = plan.playOrder; this.actualStarts = plan.actualStarts; this.actualEnds = plan.actualEnds; this.steps = plan.steps;
         this.preparePhase = plan.triangles ? -1 : 0; this.prepareCursor = 0; this.prepareRequestId = requestId; this.heapLength = 0;
@@ -133,6 +137,7 @@ export class BasicKeyAudioCore {
         if (this.preparePhase === 0) { this.preparePhase = 1; this.prepareCursor = 0; continue; }
         this.profile?.finishValidation?.(p, this.profileValidation);
         if (this.timbreValidation && this.timbreValidation.hex() !== p.timbreFingerprint) reject('audio_timbre_fingerprint', 'Transferred synthetic colors do not match their prepared source gates.');
+        if (this.assistanceValidation && this.assistanceValidation.hex() !== p.assistancePlanFingerprint) reject('audio_assistance_fingerprint', 'Transferred machine gates do not match their prepared assistance ownership.');
         this.validated = true; this.state = 'ready'; this.emit({type: 'ready', requestId: this.prepareRequestId, ...this.snapshot(frame + blockLength)}); break;
       }
       const index = this.prepareCursor++; worked++;
@@ -146,6 +151,7 @@ export class BasicKeyAudioCore {
       const timbre = p.timbreProfile === BASIC_KEY_TIMBRE_PROFILE ? p.timbres[index] : 0;
       if (!integer(timbre, 0, BASIC_KEY_SYNTHETIC_INSTRUMENTS.length)) reject('invalid_audio_plan', 'A transferred synthetic color is unsupported.');
       if (this.timbreValidation) hashBasicKeyTimbreRow(this.timbreValidation, p, index);
+      if (this.assistanceValidation) hashBasicKeyAssistanceRow(this.assistanceValidation, p, index);
       const frequency = 440 * 2 ** ((key - 69) / 12);
       if ((timbre || role !== 1) && frequency * (vsq && !timbre ? role : 1) > this.sampleRate * .45) reject('unsupported_audio_sample_rate', 'The audio device cannot represent every retained key and declared harmonic without clamping.');
       this.steps[index] = TAU * frequency / this.sampleRate;

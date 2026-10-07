@@ -1,3 +1,4 @@
+import {assistanceAudioMask, emptyAssistedListen} from './practice-assistance-audio.js';
 import {resolvePracticeSelection} from './practice-selection.js';
 import {CanonicalFingerprint,canonicalFingerprint,canonicalUtf8} from './canonical-audio-fingerprint.js';
 import {BasicKeyAudioError,basicKeySampleRate} from './basic-key-audio-plan.js';
@@ -30,7 +31,7 @@ export function canonicalGateFrames(startMs,durationMs,sampleRate){
 
 /** Verify the separate Rust evidence against the selected canonical Compilation.
  * This never compiles notation or calls the physical-input target deduper. */
-export function buildCanonicalAudioPlan(compilation,profile,{sampleRate,mode='practice',practiceSelection,acceptedPolicyId,audiblePartIds,instrumentOverrides,mutedPartIds,range,countInMs,loop=false,resumePositionMs}={}){
+export function buildCanonicalAudioPlan(compilation,profile,{sampleRate,mode='practice',practiceSelection,acceptedPolicyId,audiblePartIds,instrumentOverrides,mutedPartIds,range,countInMs,loop=false,resumePositionMs,assistance,assistanceContext}={}){
   basicKeySampleRate(sampleRate);
   if(acceptedPolicyId!==CANONICAL_AUDIO_POLICY)fail('Accept the disclosed sine interpretation of compiled canonical notes before playback.','reference_policy_required');
   if(!compilation?.score||!Array.isArray(compilation.timeline?.notes)||!profile||profile.profile!==CANONICAL_AUDIO_PROFILE||profile.policy_id!==CANONICAL_AUDIO_POLICY||!hash(profile.source_fingerprint)||!hash(profile.compiled_fingerprint))fail('A canonical compilation and matching Rust audio profile are required.');
@@ -46,7 +47,8 @@ export function buildCanonicalAudioPlan(compilation,profile,{sampleRate,mode='pr
   if(canonicalFingerprint('wmh-canonical-score-v1',score)!==profile.source_fingerprint)fail('The canonical profile belongs to a different full score.');
   const {compiled_fingerprint,...unsigned}=profile;
   if(canonicalFingerprint(CANONICAL_AUDIO_PROFILE,unsigned)!==compiled_fingerprint)fail('The compiled canonical fingerprint is inconsistent.');
-  const selection=mode==='practice'?resolvePracticeSelection(score.parts,practiceSelection):{kind:'listen',part_ids:[]};
+  const selection=emptyAssistedListen(assistance,mode,practiceSelection)?{kind:'parts',part_ids:[]}:mode==='practice'||assistance!=null?resolvePracticeSelection(score.parts,practiceSelection):{kind:'listen',part_ids:[]};
+  const mask=assistanceAudioMask(assistance,assistanceContext,{sourceToken:compilation,runtimeToken:timeline,sourceProfile:'wmc-canonical-score-v1',runtimePolicy:'wmc-canonical-practice-v1',partIds:selection.part_ids,notes:timeline.notes});
   if(instrumentOverrides!==undefined&&(!instrumentOverrides||![Object.prototype,null].includes(Object.getPrototypeOf(instrumentOverrides))||Reflect.ownKeys(instrumentOverrides).some(partId=>{const descriptor=Object.getOwnPropertyDescriptor(instrumentOverrides,partId);return !profile.part_ids.includes(partId)||!descriptor.enumerable||!Object.hasOwn(descriptor,'value')||!CANONICAL_SYNTHETIC_INSTRUMENTS.includes(descriptor.value);})))fail('Synthetic instrument overrides must name existing parts and sine, triangle, or reed.');
   if(mutedPartIds!==undefined&&(!Array.isArray(mutedPartIds)||mutedPartIds.length>L.maxParts||new Set(mutedPartIds).size!==mutedPartIds.length||[...mutedPartIds].some(partId=>!profile.part_ids.includes(partId))))fail('Muted parts must be a unique list of existing canonical parts.');
   const overrides=Object.freeze(Object.fromEntries(profile.part_ids.filter(partId=>instrumentOverrides&&Object.hasOwn(instrumentOverrides,partId)).map(partId=>[partId,instrumentOverrides[partId]])));
@@ -61,7 +63,7 @@ export function buildCanonicalAudioPlan(compilation,profile,{sampleRate,mode='pr
     if(refs>L.maxReferences||o.source_indices.some((s,j)=>!int(s,0,sourceIds.length-1)||sourceIds[s]!==n.source_note_ids[j])||n.source_note_id!==n.source_note_ids[0])fail('The canonical tie/repeat source references do not match.');
     const [start,end]=canonicalGateFrames(o.start_ms,o.duration_ms,sampleRate);durationFrames=Math.max(durationFrames,end);
     mapping.push(Object.freeze({id:o.id,partId:n.part_id,sourceIndices:Object.freeze([...o.source_indices])}));
-    if(!human.has(n.part_id)&&!mutedSet.has(n.part_id)&&(!audibleSet||audibleSet.has(n.part_id))){
+    if((mask?mask.isMachine(o.id):!human.has(n.part_id))&&!mutedSet.has(n.part_id)&&(!audibleSet||audibleSet.has(n.part_id))){
       if(440*2**((o.midi-69)/12)>sampleRate*.45)fail('This sample rate cannot represent every retained canonical pitch.','unsupported_audio_sample_rate');
       notes.push(Object.freeze([i,start,end,o.midi,o.velocity]));
     }
@@ -98,6 +100,7 @@ export function buildCanonicalAudioPlan(compilation,profile,{sampleRate,mode='pr
   // fingerprints. Only renderer choices extend the selection identity.
   plan.instrumentOverrides=overrides;plan.mutedPartIds=muted;
   if(hasInstruments||muted.length)plan.selectionFingerprint=canonicalFingerprint('wmh-canonical-human-selection-v1',{mode,selection,audiblePartIds:audible,instrumentOverrides:overrides,mutedPartIds:muted});
+  if(mask){plan.assistanceFingerprint=mask.fingerprint;plan.selectionFingerprint=canonicalFingerprint('wmc-assisted-canonical-selection-v1',{selectionFingerprint:plan.selectionFingerprint,assistanceFingerprint:mask.fingerprint});}
   if(hasInstruments){plan.synthesisPolicyId=CANONICAL_SYNTHESIS_POLICY;plan.instruments=Object.freeze(notes.map(n=>{const partId=mapping[n[0]].partId;return CANONICAL_SYNTHETIC_INSTRUMENTS.indexOf(Object.hasOwn(overrides,partId)?overrides[partId]:'sine');}));}
   const h=canonicalPlanHasher(plan);for(let i=0;i<notes.length;i++){h.gate(...notes[i]);if(hasInstruments)h.number(plan.instruments[i]);}plan.planFingerprint=h.hex();
   Object.freeze(plan);admitted.add(plan);return plan;

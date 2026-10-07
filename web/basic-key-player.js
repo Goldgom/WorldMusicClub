@@ -1,3 +1,4 @@
+import {assertAssistanceAudioCurrent} from './practice-assistance-audio.js';
 import {CleanSongError,isBasicKeysSong} from './clean-song-package.js';
 import {BASIC_KEY_RENDITION} from './basic-key-rendition.js';
 import {buildBasicKeyAudioPlan} from './basic-key-audio-plan.js';
@@ -12,17 +13,18 @@ export class BasicKeyPlayer {
     Object.assign(this,{getPositionMs,onError,lookAheadMs});this.epoch=0;this.song=null;this.receiver=null;this.running=false;this.preparing=false;this.anchor=null;
   }
   select(song){this.stop();this.song=song;}
-  buildPlan({context,mode='listen',targetPart=null,practiceSelection,mutedParts=null,soloParts=null,instrumentOverrides={},acceptedPolicyId}={}) {
+  buildPlan({context,mode='listen',targetPart=null,practiceSelection,mutedParts=null,soloParts=null,instrumentOverrides={},acceptedPolicyId,assistance,assistanceContext}={}) {
     const song=this.song,rendition=song?.runtime?.rendition;
     if(!isBasicKeysSong(song)||!rendition||rendition.policy_id!==BASIC_KEY_RENDITION)throw new CleanSongError('clean_renderer_unsupported','A native complete basic-key rendition is required.');
     if(acceptedPolicyId!==rendition.policy_id)throw new CleanSongError('reference_policy_required','Select the disclosed basic-key interpretation before playback.');
     if(this.lookAheadMs!==rendition.policy.allocation_lookahead_ms)throw new CleanSongError('reference_policy_required','The renderer allocation budget must match the declared native policy.');
-    return buildBasicKeyAudioPlan(song,{sampleRate:context.sampleRate,mode,targetPart,practiceSelection,mutedParts:mutedParts||[],soloParts:soloParts||[],instrumentOverrides});
+    return buildBasicKeyAudioPlan(song,{sampleRate:context.sampleRate,mode,targetPart,practiceSelection,mutedParts:mutedParts||[],soloParts:soloParts||[],instrumentOverrides,assistance,assistanceContext});
   }
+  assertAssistanceCurrent(){return assertAssistanceAudioCurrent(this.assistance,this.assistanceContext,this.song,this.song?.runtime);}
   async prepare(options={}) {
     this.stop();const epoch=this.epoch,{context,output,resumePositionMs=0}=options;
     if(!context||context.state!=='running'||!output)throw new CleanSongError('clean_audio_unavailable','Audio must be unlocked by a user gesture.');
-    this.preparing=true;this.context=context;
+    this.preparing=true;this.context=context;this.assistance=options.assistance;this.assistanceContext=options.assistanceContext;
     // A suspended then resumed device during module loading is still an interruption.
     this.contextListener=()=>{if(epoch===this.epoch&&context.state!=='running'){this.stop();this.onError(new CleanSongError('clean_clock_unavailable','The audio device stopped during playback preparation.'));}};
     context.addEventListener?.('statechange',this.contextListener);
@@ -32,20 +34,21 @@ export class BasicKeyPlayer {
       const plan=this.buildPlan(options);
       receiver=await BasicKeyAudioReceiver.create(context,output,{onError:error=>{if(epoch!==this.epoch)return;this.stop();this.onError(error);},onEnded:()=>{if(epoch===this.epoch)this.running=false;}});
       if(epoch!==this.epoch){receiver.dispose();return null;}
+      this.assertAssistanceCurrent();
       context.removeEventListener?.('statechange',this.contextListener);this.contextListener=null;
       this.receiver=receiver;
       const prepared=await receiver.prepare(plan,{positionMs:resumePositionMs??0});
       if(epoch!==this.epoch){receiver.dispose();return null;}
-      this.preparing=false;this.plan=plan;return prepared;
+      this.assertAssistanceCurrent();this.preparing=false;this.plan=plan;return prepared;
     }catch(error){receiver?.dispose();if(epoch!==this.epoch)return null;this.stop();throw error;}
   }
   async startPrepared({anchorTime=this.context?.currentTime+.05}={}) {
     const epoch=this.epoch,receiver=this.receiver;
     if(!receiver||this.preparing)throw new CleanSongError('clean_audio_unavailable','Prepare the audio-thread rendition before playback.');
     try{
-      const anchor=await receiver.start({anchorTime});
+      this.assertAssistanceCurrent();const anchor=await receiver.start({anchorTime});
       if(epoch!==this.epoch||receiver!==this.receiver)return null;
-      if(this.context.state!=='running'){throw new CleanSongError('clean_clock_unavailable','Playback clock or audio context stopped.');}
+      this.assertAssistanceCurrent();if(this.context.state!=='running'){throw new CleanSongError('clean_clock_unavailable','Playback clock or audio context stopped.');}
       if(this.context.currentTime>=anchor.anchorTime)throw new CleanSongError('clean_late_start','The audio anchor elapsed before shared transport admission.');
       this.anchor=anchor;this.running=true;return anchor;
     }catch(error){if(epoch!==this.epoch)return null;this.stop();throw error;}
@@ -55,5 +58,5 @@ export class BasicKeyPlayer {
     const prepared=await preparing;if(!prepared||epoch!==this.epoch)return null;
     return this.startPrepared({anchorTime:options.anchorTime??this.context.currentTime+.05});
   }
-  stop(){this.epoch++;this.running=false;this.preparing=false;this.context?.removeEventListener?.('statechange',this.contextListener);this.contextListener=null;this.receiver?.dispose();this.receiver=null;this.plan=null;this.anchor=null;}
+  stop(){this.epoch++;this.running=false;this.preparing=false;this.context?.removeEventListener?.('statechange',this.contextListener);this.contextListener=null;this.receiver?.dispose();this.receiver=null;this.plan=null;this.anchor=null;this.assistance=null;this.assistanceContext=null;}
 }

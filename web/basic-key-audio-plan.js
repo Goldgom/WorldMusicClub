@@ -1,3 +1,4 @@
+import {assistanceAudioMask, emptyAssistedListen} from './practice-assistance-audio.js';
 import {humanPracticePartIds} from './practice-selection.js';
 import {BASIC_KEY_RENDITION, BASIC_KEY_MAX_VOICES, basicKeyRenditionNotes, basicKeyExactMilliseconds} from './basic-key-rendition.js';
 import {CanonicalFingerprint} from './canonical-audio-fingerprint.js';
@@ -47,6 +48,17 @@ export function hashBasicKeyTimbreRow(hash, plan, index) {
   hash.gate(index, plan.starts[index], plan.ends[index], plan.keys[index], plan.velocities[index]);
   hash.number(plan.roles[index]); hash.number(plan.timbres[index]);
 }
+// Assistance extends only assisted plans. Its native receipt/selection identity
+// and every retained machine gate are checked again during bounded preparation.
+export function basicKeyAssistanceHasher(plan) {
+  return new CanonicalFingerprint('wmc-assistance-audio-gates-v1').value([plan.protocol, plan.policyId, plan.identityKind ?? null, plan.sourceSha256, plan.assistanceFingerprint, plan.sampleRate, plan.durationFrames, plan.sourceNotes, plan.count, plan.timbreProfile ?? null]);
+}
+export function hashBasicKeyAssistanceRow(hash, plan, index) {
+  if (plan.identityKind === VSQ_AUDIO_IDENTITY) { hash.number(plan.sourceTracks[index]); hash.number(plan.authoredIds[index]); hash.number(plan.authoredIdDigits[index]); }
+  else { hash.number(plan.tracks[index]); hash.number(plan.events[index]); }
+  hash.gate(index, plan.starts[index], plan.ends[index], plan.keys[index], plan.velocities[index]);
+  hash.number(plan.roles[index]); hash.number(plan.timbres?.[index] ?? 0);
+}
 export function audioTransferIdentity(plan, index) {
   if (plan.identityKind === VSQ_AUDIO_IDENTITY) {
     const id = `ID#${String(plan.authoredIds[index]).padStart(plan.authoredIdDigits[index], '0')}`, track = plan.sourceTracks[index];
@@ -82,13 +94,13 @@ export function basicKeyGateFrames(start, end, sampleRate) {
 }
 
 /** Accept an already admitted Rust rendition, never reinterpret source events. */
-export function buildBasicKeyAudioPlan(song, {sampleRate, mode = 'listen', targetPart = null, practiceSelection, mutedParts = [], soloParts = [], instrumentOverrides = {}} = {}) {
+export function buildBasicKeyAudioPlan(song, {sampleRate, mode = 'listen', targetPart = null, practiceSelection, mutedParts = [], soloParts = [], instrumentOverrides = {}, assistance, assistanceContext} = {}) {
   basicKeySampleRate(sampleRate);
   const rendition = song?.runtime?.rendition, timeline = song?.compilation?.timeline?.notes;
   if (rendition?.policy_id !== BASIC_KEY_RENDITION || rendition.source_sha256 !== song?.score?.source?.sha256 || !Array.isArray(timeline) || !Array.isArray(rendition.notes)) audioFail('invalid_audio_plan', 'An admitted native basic-key rendition is required.');
   if (rendition.policy?.allocation_lookahead_ms !== 100 || rendition.policy?.voice_limit !== 128 || rendition.policy?.receiver_gate_tail_ms !== 0) audioFail('reference_policy_required', 'The basic audio receiver requires the declared 100 ms, 128-voice, zero-tail policy.');
   if (!['listen', 'practice'].includes(mode)) audioFail('invalid_audio_plan', 'Unknown basic-key playback mode.');
-  const humanParts = humanPracticePartIds(song.runtime.parts,{mode,practiceSelection,targetPart});
+  const humanParts = emptyAssistedListen(assistance, mode, practiceSelection) ? new Set() : humanPracticePartIds(song.runtime.parts,{mode:assistance == null ? mode : 'practice',practiceSelection,targetPart});
   const overrides = basicKeyInstrumentOverrides(song.runtime.parts.map(part => part.id), instrumentOverrides), timbres = new Map();
   if (timeline.length !== rendition.notes.length || timeline.length > BASIC_KEY_AUDIO_LIMITS.maxNotes) audioFail('audio_plan_limit', 'The complete source exceeds the bounded audio plan note count.', {maxNotes: BASIC_KEY_AUDIO_LIMITS.maxNotes});
   const muted = new Set(mutedParts), solo = new Set(soloParts), evidence = new Map();
@@ -96,23 +108,25 @@ export function buildBasicKeyAudioPlan(song, {sampleRate, mode = 'listen', targe
     if (evidence.has(note.note_id)) audioFail('invalid_audio_plan', 'A native source ID was repeated.');
     evidence.set(note.note_id, note);
   }
-  const notes = [], seen = new Set();
+  const mask = assistanceAudioMask(assistance, assistanceContext, {sourceToken: song, runtimeToken: song.runtime, sourceProfile: song.profile, runtimePolicy: rendition.policy_id, savedPackageSha256: song.identity, partIds: [...humanParts], notes: timeline});
+  const notes = [], seen = new Set(); let completeDurationFrames = Math.ceil(rendition.duration_ms * sampleRate / 1000);
   for (const target of timeline) {
     const note = evidence.get(target.id);
     if (!note || seen.has(target.id)) audioFail('invalid_audio_plan', 'The audio timeline does not join every native gate exactly once.');
     seen.add(target.id);
     const [start, end] = basicKeyGateFrames(note.start, note.end, sampleRate);
+    completeDurationFrames = Math.max(completeDurationFrames, end);
     if (!['melodic_key', 'percussion_selector'].includes(note.role)) audioFail('invalid_audio_plan', 'The native gate has an unknown sound role.');
     if (!integer(target.midi,0,127) || !integer(target.velocity,1,127) || target.source_note_id !== target.id || target.source_note_ids?.length !== 1 || target.source_note_ids[0] !== target.id || target.id !== `midi-t${note.attack.track + 1}-e${note.attack.event + 1}` || !song.runtime.parts.some(part => part.id === target.part_id) || !Number.isFinite(target.start_ms) || !Number.isFinite(target.duration_ms) || Math.abs(target.start_ms-basicKeyExactMilliseconds(note.start)) > .001 || Math.abs(target.duration_ms-(basicKeyExactMilliseconds(note.end)-basicKeyExactMilliseconds(note.start))) > .001) audioFail('invalid_audio_plan', 'A native basic-key identity or gate does not match its target projection.');
-    if (muted.has(target.part_id) || (solo.size && !solo.has(target.part_id)) || humanParts.has(target.part_id)) continue;
+    if (muted.has(target.part_id) || (solo.size && !solo.has(target.part_id)) || (mask ? !mask.isMachine(target.id) : humanParts.has(target.part_id))) continue;
     notes.push([target.id, `midi:${rendition.source_sha256}:t${note.attack.track}:e${note.attack.event}`, start, end, target.midi, target.velocity, note.role === 'percussion_selector' ? 1 : 0]);
     if (overrides.has(target.part_id)) timbres.set(target.id, overrides.get(target.part_id));
   }
   // Native ordering is retained among equal sample boundaries.
   notes.sort((a, b) => a[2] - b[2]);
-  let durationFrames = Math.ceil(rendition.duration_ms * sampleRate / 1000);
+  let durationFrames = mask ? completeDurationFrames : Math.ceil(rendition.duration_ms * sampleRate / 1000);
   for (const note of notes) durationFrames = Math.max(durationFrames, note[3]);
-  return validateBasicKeyAudioPlan({protocol: BASIC_KEY_AUDIO_PROTOCOL, sourceSha256: rendition.source_sha256, policyId: rendition.policy_id, sampleRate, durationFrames, sourceNotes: timeline.length, notes, ...basicKeyTimbrePlan(notes, timbres)});
+  return validateBasicKeyAudioPlan({protocol: BASIC_KEY_AUDIO_PROTOCOL, sourceSha256: rendition.source_sha256, policyId: rendition.policy_id, sampleRate, durationFrames, sourceNotes: timeline.length, notes, ...basicKeyTimbrePlan(notes, timbres), ...(mask ? {assistanceFingerprint: mask.fingerprint} : {})});
 }
 
 /** Validate and defensively copy; callers cannot mutate a prepared plan. */
@@ -120,6 +134,7 @@ export function validateBasicKeyAudioPlan(input) {
   const limits = BASIC_KEY_AUDIO_LIMITS;
   if (!input || input.protocol !== BASIC_KEY_AUDIO_PROTOCOL || !admittedPolicy(input) || !/^[a-f0-9]{64}$/.test(input.sourceSha256) || !Array.isArray(input.notes) || input.notes.length > limits.maxNotes || !integer(input.sourceNotes, input.notes.length, limits.maxNotes) || !integer(input.durationFrames, 0, limits.maxFrame)) audioFail('invalid_audio_plan', 'The complete basic audio plan is invalid or exceeds its note bound.');
   const vsq = vsqPlan(input);
+  if (input.assistanceFingerprint !== undefined && !/^[a-f0-9]{64}$/.test(input.assistanceFingerprint)) audioFail('invalid_audio_plan', 'The assistance identity must bind a current checked ownership receipt.');
   const selected = input.timbreProfile !== undefined || input.timbres !== undefined;
   if (selected && (input.timbreProfile !== BASIC_KEY_TIMBRE_PROFILE || !Array.isArray(input.timbres) || input.timbres.length !== input.notes.length || [...input.timbres].some(value => !integer(value, 0, BASIC_KEY_SYNTHETIC_INSTRUMENTS.length)))) audioFail('invalid_audio_plan', 'The source-bound synthetic color selection is invalid.');
   const sampleRate = basicKeySampleRate(input.sampleRate), seen = new Set(), events = new Set(), edges = [], notes = [];
@@ -142,7 +157,7 @@ export function validateBasicKeyAudioPlan(input) {
   let active = 0, maximum = 0;
   for (const [, delta] of edges) { active += delta; maximum = Math.max(maximum, active); }
   if (maximum > limits.maxVoices) audioFail('voice_budget_exceeded', 'The sample-frame gates exceed 128 simultaneous voices; no voice is stolen.', {voices: maximum, maxVoices: limits.maxVoices});
-  const plan = {protocol: input.protocol, sourceSha256: input.sourceSha256, policyId: input.policyId, ...(vsq ? {identityKind: VSQ_AUDIO_IDENTITY} : {}), sampleRate, durationFrames: input.durationFrames, sourceNotes: input.sourceNotes, notes: Object.freeze(notes), ...(selected ? {timbreProfile: BASIC_KEY_TIMBRE_PROFILE, timbres: Object.freeze([...input.timbres])} : {})};
+  const plan = {protocol: input.protocol, sourceSha256: input.sourceSha256, policyId: input.policyId, ...(vsq ? {identityKind: VSQ_AUDIO_IDENTITY} : {}), sampleRate, durationFrames: input.durationFrames, sourceNotes: input.sourceNotes, notes: Object.freeze(notes), ...(selected ? {timbreProfile: BASIC_KEY_TIMBRE_PROFILE, timbres: Object.freeze([...input.timbres])} : {}), ...(input.assistanceFingerprint !== undefined ? {assistanceFingerprint: input.assistanceFingerprint} : {})};
   // All wire fields are ASCII. JSON escaping can only increase length here;
   // this is an exact UTF-8 wire-byte bound, not a claimed JS heap-byte bound.
   if (JSON.stringify(plan).length > limits.maxBytes) audioFail('audio_plan_limit', 'The complete audio plan exceeds 16 MiB of wire data.', {maxBytes: limits.maxBytes});
@@ -195,6 +210,12 @@ export function createBasicKeyAudioTransfer(input) {
   arrays.idOrder.set(order);
   const wire = {protocol: plan.protocol, policyId: plan.policyId, ...(vsq ? {identityKind: VSQ_AUDIO_IDENTITY} : {}), sourceSha256: plan.sourceSha256, sampleRate: plan.sampleRate, durationFrames: plan.durationFrames, sourceNotes: plan.sourceNotes, count, ...(plan.timbreProfile ? {timbreProfile: plan.timbreProfile} : {}), buffers};
   if (plan.timbreProfile) { const bound = {...wire, ...arrays}, hash = basicKeyTimbreHasher(bound); for (let index = 0; index < count; index++) hashBasicKeyTimbreRow(hash, bound, index); wire.timbreFingerprint = hash.hex(); }
+  if (plan.assistanceFingerprint !== undefined) {
+    wire.assistanceFingerprint = plan.assistanceFingerprint;
+    const bound = {...wire, ...arrays}, hash = basicKeyAssistanceHasher(bound);
+    for (let index = 0; index < count; index++) hashBasicKeyAssistanceRow(hash, bound, index);
+    wire.assistancePlanFingerprint = hash.hex();
+  }
   return {wire, transfer: Object.values(buffers)};
 }
 
@@ -204,6 +225,7 @@ export function createBasicKeyAudioTransfer(input) {
 export function openBasicKeyAudioTransfer(wire, sampleRate) {
   if (!wire || wire.protocol !== BASIC_KEY_AUDIO_PROTOCOL || !admittedPolicy(wire) || !/^[a-f0-9]{64}$/.test(wire.sourceSha256) || wire.sampleRate !== sampleRate || !integer(wire.count, 0, BASIC_KEY_AUDIO_LIMITS.maxNotes) || !integer(wire.sourceNotes, wire.count, BASIC_KEY_AUDIO_LIMITS.maxNotes) || !integer(wire.durationFrames, 0, BASIC_KEY_AUDIO_LIMITS.maxFrame) || !wire.buffers) audioFail('invalid_audio_plan', 'The transferable audio plan envelope is invalid.');
   if (wire.timbreProfile !== undefined && wire.timbreProfile !== BASIC_KEY_TIMBRE_PROFILE || (wire.timbreProfile === BASIC_KEY_TIMBRE_PROFILE) !== Object.hasOwn(wire.buffers, 'timbres') || (wire.timbreProfile ? !/^[a-f0-9]{64}$/.test(wire.timbreFingerprint) : wire.timbreFingerprint !== undefined)) audioFail('invalid_audio_plan', 'The transferable synthetic color profile or fingerprint is invalid.');
+  if (wire.assistanceFingerprint !== undefined ? !/^[a-f0-9]{64}$/.test(wire.assistanceFingerprint) || !/^[a-f0-9]{64}$/.test(wire.assistancePlanFingerprint) : wire.assistancePlanFingerprint !== undefined) audioFail('invalid_audio_plan', 'The transferable assistance identity or gate fingerprint is invalid.');
   const arrays = {}; let bytes = 0;
   const unique = new Set();
   for (const [name, Type] of Object.entries(transferFields(wire))) {
@@ -212,5 +234,5 @@ export function openBasicKeyAudioTransfer(wire, sampleRate) {
     unique.add(buffer); bytes += buffer.byteLength; arrays[name] = new Type(buffer);
   }
   if (bytes > BASIC_KEY_AUDIO_LIMITS.maxBytes) audioFail('audio_plan_limit', 'The transferable audio plan exceeds its byte bound.');
-  return {protocol: wire.protocol, policyId: wire.policyId, identityKind: wire.identityKind, sourceSha256: wire.sourceSha256, sampleRate, durationFrames: wire.durationFrames, sourceNotes: wire.sourceNotes, count: wire.count, ...(wire.timbreProfile ? {timbreProfile: wire.timbreProfile, timbreFingerprint: wire.timbreFingerprint} : {}), ...arrays};
+  return {protocol: wire.protocol, policyId: wire.policyId, identityKind: wire.identityKind, sourceSha256: wire.sourceSha256, sampleRate, durationFrames: wire.durationFrames, sourceNotes: wire.sourceNotes, count: wire.count, ...(wire.timbreProfile ? {timbreProfile: wire.timbreProfile, timbreFingerprint: wire.timbreFingerprint} : {}), ...(wire.assistanceFingerprint !== undefined ? {assistanceFingerprint: wire.assistanceFingerprint, assistancePlanFingerprint: wire.assistancePlanFingerprint} : {}), ...arrays};
 }

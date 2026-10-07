@@ -33,14 +33,14 @@ export class CanonicalPracticeSession {
   get paused(){return this.phase==='paused';}
   get pausePending(){return this.phase==='pausing';}
   wallAtFrame(frame){return this.clockOrigin?this.clockOrigin.wallTime+(frame/this.clockOrigin.sampleRate-this.clockOrigin.audioTime)*1000:null;}
-  async prepare({soundEnabled=true,context,output,mode='practice',practiceSelection,audiblePartIds,instrumentOverrides,mutedPartIds,range,countInMs=0,loop,resumePositionMs=undefined}={}) {
+  async prepare({soundEnabled=true,context,output,mode='practice',practiceSelection,audiblePartIds,instrumentOverrides,mutedPartIds,range,countInMs=0,loop,resumePositionMs=undefined,assistance,assistanceContext}={}) {
     this.stop();const epoch=this.epoch,compilation=this.compilation,controller=new AbortController();this.controller=controller;this.preparing=true;
     const current=()=>epoch===this.epoch&&!controller.signal.aborted&&compilation===this.compilation;
     try {
       let profile=this.profile;
       if(!profile)try{profile=await this.api('/api/canonical-audio-profile',compilation.score,controller.signal);}catch(error){if(error.name==='AbortError')throw error;throw Object.assign(new Error('The canonical source audio profile could not be prepared.',{cause:error}),{code:error.code||'canonical_audio_profile'});}
       if(!current())return null;
-      const options={context,output,mode,practiceSelection,audiblePartIds,instrumentOverrides,mutedPartIds,range,...(range?{countInMs}:{}),loop,resumePositionMs,acceptedPolicyId:CANONICAL_AUDIO_POLICY};
+      const options={context,output,mode,practiceSelection,audiblePartIds,instrumentOverrides,mutedPartIds,range,...(range?{countInMs}:{}),loop,resumePositionMs,assistance,assistanceContext,acceptedPolicyId:CANONICAL_AUDIO_POLICY};
       // Silent practice still validates exact compiler evidence and keeps the
       // complete source clock. It never manufactures an audio-device claim.
       let plan;
@@ -49,6 +49,7 @@ export class CanonicalPracticeSession {
       if(!current())return null;
       this.profile=profile;this.silentPlan=soundEnabled?null:plan;this.passReceipts=[];
       this.interpretation={source_fingerprint:profile.source_fingerprint,source_fingerprint_scope:'normalized_canonical_score',compiled_fingerprint:profile.compiled_fingerprint,runtime_profile:profile.profile,policy_id:CANONICAL_AUDIO_POLICY,selection_fingerprint:plan.selectionFingerprint,plan_fingerprint:plan.planFingerprint,source_clock_available:true,source_duration_ms:profile.duration_ms,sound_enabled:soundEnabled,reference_timbre:'sine',source_timbres_preserved:false,timing:'Rust compiled binary64 milliseconds; floor attacks and ceil ends to device sample frames',sample_rate:plan.sampleRate,range:range?structuredClone(range):null,loop:loop?structuredClone(loop):null,count_in_ms:countInMs};
+      if(plan.assistanceFingerprint)this.interpretation.assistance_fingerprint=plan.assistanceFingerprint;
       if(plan.synthesisPolicyId){this.interpretation.synthesis_policy_id=plan.synthesisPolicyId;this.interpretation.instrument_overrides={...plan.instrumentOverrides};this.interpretation.reference_timbre='per-part synthetic';this.interpretation.timbre_description='Basic sine, triangle-like, and reed-like additive synthesis; not acoustic instrument reproduction';}
       if(plan.mutedPartIds.length)this.interpretation.muted_part_ids=[...plan.mutedPartIds];
       if(plan.rangeMode)this.interpretation.loop_budget={requested_passes:plan.requestedPasses,max_passes:plan.maxPasses,budget_limited:plan.budgetLimited,range_gate_count:plan.rangeGateCount,first_gate_count:plan.firstGateCount,record_capacity:plan.recordCapacity,range_start_frame:plan.rangeStartFrame,range_end_frame:plan.rangeEndFrame,count_in_frames:plan.countInFrames,initial_position_frame:plan.initialPositionFrame,initial_count_in_frames:plan.initialCountInFrames};

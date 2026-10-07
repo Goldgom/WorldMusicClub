@@ -112,7 +112,7 @@ export class BasicKeyAudioReceiver {
   takePending(requestId) { const pending = this.pending.get(requestId); if (pending) { this.clearTimer(pending.timer); this.pending.delete(requestId); } return pending; }
   timbreCommandBinding() {
     const binding = this.timbreBindings.get(this.planGeneration);
-    return binding ? {expectedTimbreProfile: binding.timbreProfile, expectedTimbreFingerprint: binding.timbreFingerprint} : {};
+    return binding ? {expectedTimbreProfile: binding.timbreProfile, expectedTimbreFingerprint: binding.timbreFingerprint, ...(binding.assistanceFingerprint ? {expectedAssistanceFingerprint: binding.assistanceFingerprint, expectedAssistancePlanFingerprint: binding.assistancePlanFingerprint} : {})} : {};
   }
   mute() { this.outputGate.gain.cancelScheduledValues(this.context.currentTime); this.outputGate.gain.setValueAtTime(0, this.context.currentTime); }
   detach() { this.mute(); if (this.connected) { try { this.node.disconnect(); } finally { this.connected = false; } } }
@@ -143,7 +143,7 @@ export class BasicKeyAudioReceiver {
     this.nextGeneration(); this.planGeneration = this.generation; this.plan = plan; this.positionFrame = positionFrame; this.state = 'preparing'; this.prepareInFlight = this.generation;
     // Retain scalars independently of the transferred envelope so stripping
     // every optional wire field cannot downgrade an override into source sound.
-    this.timbreBindings.set(this.planGeneration, Object.freeze({timbreProfile: packed.wire.timbreProfile ?? null, timbreFingerprint: packed.wire.timbreFingerprint ?? null, sourceSha256: plan.sourceSha256, policyId: plan.policyId, identityKind: plan.identityKind ?? 'midi-source-coordinate', sampleRate: plan.sampleRate}));
+    this.timbreBindings.set(this.planGeneration, Object.freeze({timbreProfile: packed.wire.timbreProfile ?? null, timbreFingerprint: packed.wire.timbreFingerprint ?? null, assistanceFingerprint: packed.wire.assistanceFingerprint ?? null, assistancePlanFingerprint: packed.wire.assistancePlanFingerprint ?? null, sourceSha256: plan.sourceSha256, policyId: plan.policyId, identityKind: plan.identityKind ?? 'midi-source-coordinate', sampleRate: plan.sampleRate}));
     while (this.timbreBindings.size > 2) this.timbreBindings.delete(this.timbreBindings.keys().next().value);
     this.node.connect(this.outputGate); this.connected = true;
     return this.request('prepare', {wire: packed.wire, positionFrame, ...this.timbreCommandBinding()}, packed.transfer);
@@ -208,6 +208,9 @@ export class BasicKeyAudioReceiver {
     if (message.type === 'canceled' && message.generation > this.prepareInFlight) this.prepareInFlight = null;
     if (this.timbreBindings.size && ['ready', 'started', 'snapshot', 'audit', 'audit_transferred', 'ended', 'canceled'].includes(message.type) && (message.type !== 'canceled' || message.ledger || this.disposing)) {
       const binding = this.timbreBindings.get(message.planGeneration);
+      if (binding && ((message.assistanceFingerprint ?? null) !== binding.assistanceFingerprint || (message.assistancePlanFingerprint ?? null) !== binding.assistancePlanFingerprint)) {
+        this.fail(error('audio_assistance_fingerprint', 'The audio acknowledgement belongs to another assistance ownership selection.')); return;
+      }
       if (message.generation === this.generation && message.type !== 'canceled' && message.planGeneration !== this.planGeneration || binding && ((message.timbreProfile ?? null) !== binding.timbreProfile || (message.timbreFingerprint ?? null) !== binding.timbreFingerprint || ['sourceSha256', 'policyId', 'identityKind', 'sampleRate'].some(key => message[key] !== binding[key]))) {
         if (message.type === 'canceled' && (this.state === 'error' || this.disposing)) { if (this.disposing && this.disposeFromError && message.generation === this.generation) this.closePort({reportFailure: false}); return; }
         this.fail(error('audio_timbre_fingerprint', 'The audio acknowledgement belongs to another source or synthetic color selection.')); return;

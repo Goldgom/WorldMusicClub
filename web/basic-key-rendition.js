@@ -1,3 +1,5 @@
+import {assistanceAudioMask, emptyAssistedListen} from './practice-assistance-audio.js';
+
 export const BASIC_KEY_RUNTIME_PROFILE='wmh-basic-key-practice-v2';
 export const BASIC_KEY_RENDITION='wmh-basic-key-rendition-fifo-v1';
 export const BASIC_KEY_MAX_VOICES=128;
@@ -16,12 +18,15 @@ export function basicKeyAllocationBudget(notes,{lookAheadMs=100,include=()=>true
   edges.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);let active=0,maximum=0;for(const[,delta]of edges){active+=delta;maximum=Math.max(maximum,active);}return maximum;
 }
 const previewBudgets=new WeakMap();
-export function referencePreviewBudget(notes,targetPart=null,rendition=null){
+export function referencePreviewBudget(notes,targetPart=null,rendition=null,{assistance,assistanceContext,sourceToken,mutedParts=[],soloParts=[]}={}){
   if(!previewBudgets.has(notes))previewBudgets.set(notes,new Map());const cache=previewBudgets.get(notes);
   const selection=targetPart!==null&&typeof targetPart==='object'?targetPart:null;
-  if(selection&&(!['all','parts'].includes(selection.kind)||!Array.isArray(selection.part_ids)||!selection.part_ids.length||new Set(selection.part_ids).size!==selection.part_ids.length||selection.part_ids.some(id=>typeof id!=='string'||!id)||selection.kind==='all'&&notes.some(note=>!selection.part_ids.includes(note.part_id))))throw new TypeError('Resolve the human practice selection before checking accompaniment capacity.');
-  const humanParts=new Set(selection?selection.part_ids:targetPart===null?[]:[targetPart]),key=JSON.stringify([...humanParts].sort());
-  if(!cache.has(key)){const excluded=new Set(notes.filter(note=>humanParts.has(note.part_id)).map(note=>note.id));cache.set(key,rendition?exactBasicKeyAllocationBudget(rendition,{include:id=>!excluded.has(id)}):basicKeyAllocationBudget(notes,{include:note=>!humanParts.has(note.part_id)}));}return cache.get(key);
+  if(selection&&!emptyAssistedListen(assistance,'listen',selection)&&(!['all','parts'].includes(selection.kind)||!Array.isArray(selection.part_ids)||!selection.part_ids.length||new Set(selection.part_ids).size!==selection.part_ids.length||selection.part_ids.some(id=>typeof id!=='string'||!id)||selection.kind==='all'&&notes.some(note=>!selection.part_ids.includes(note.part_id))))throw new TypeError('Resolve the human practice selection before checking accompaniment capacity.');
+  const humanParts=new Set(selection?selection.part_ids:targetPart===null?[]:[targetPart]),muted=new Set(mutedParts),solo=new Set(soloParts);
+  if(assistance!=null&&(sourceToken?.compilation?.timeline?.notes!==notes||sourceToken?.runtime?.rendition!==rendition&&!(rendition==null&&sourceToken?.runtime?.profile==='wmh-vsq-base-note-practice-v1')))throw new TypeError('Assistance capacity must use the admitted complete runtime.');
+  const mask=assistanceAudioMask(assistance,assistanceContext,{sourceToken,runtimeToken:sourceToken?.runtime,sourceProfile:sourceToken?.profile,runtimePolicy:rendition?.policy_id??sourceToken?.runtime?.profile,choice:sourceToken?.runtime?.choice??null,savedPackageSha256:sourceToken?.identity,partIds:[...humanParts],notes});
+  const key=JSON.stringify({human:[...humanParts].sort(),assistance:mask?.fingerprint??null,muted:[...muted].sort(),solo:[...solo].sort()});
+  if(!cache.has(key)){const included=new Set(notes.filter(note=>(mask?mask.isMachine(note.id):!humanParts.has(note.part_id))&&!muted.has(note.part_id)&&(!solo.size||solo.has(note.part_id))).map(note=>note.id));cache.set(key,rendition?exactBasicKeyAllocationBudget(rendition,{include:id=>included.has(id)}):basicKeyAllocationBudget(notes,{include:note=>included.has(note.id)}));}return cache.get(key);
 }
 export function exactBasicKeyAllocationBudget(rendition,{include=()=>true}={}){
   const edges=[],lead=BigInt(rendition.policy.allocation_lookahead_ms)*1000n;
