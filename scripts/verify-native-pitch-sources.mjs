@@ -20,6 +20,7 @@ export const PITCH_SOURCES_SOURCE_FILES=Object.freeze([...new Set([...ASSISTANCE
  '.github/workflows/native-pitch-sources.yml','scripts/native-pitch-sources-fixtures.mjs','scripts/native-pitch-sources-proof.mjs',
  'scripts/native-pitch-sources-renderer.js','scripts/native-pitch-sources-input.cs','scripts/native-pitch-sources-contract.ps1',
  'scripts/verify-native-pitch-sources.mjs','tests/native-pitch-sources-proof.test.js','tests/native-pitch-sources-evidence.test.js',
+ 'scripts/collect-native-pitch-review.mjs','tests/native-pitch-review.test.js',
  'tests/fixtures/pitch-mod-handler-vectors.json',
 ])].sort());
 export async function pitchSourcesSourceBinding(root=rootDefault){

@@ -34,7 +34,7 @@ jobs:
       - run: python -m pip install PyYAML==6.0.3
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
-      - run: node --test tests/native-pitch-sources-evidence.test.js tests/native-pitch-sources-proof.test.js
+      - run: node --test tests/native-pitch-sources-evidence.test.js tests/native-pitch-sources-proof.test.js tests/native-pitch-review.test.js
       - run: cargo fmt --all --check
       - run: cargo test -p worldmusichub-desktop --lib acceptance::tests --release --locked
       - name: Verify original Rust pitch vectors without regenerating them
@@ -55,6 +55,21 @@ jobs:
         run: |
           node scripts/verify-native-pitch-sources.mjs --check "$env:RUNNER_TEMP/pitch-sources-windows"
           if ($LASTEXITCODE -ne 0) { throw 'Native pitch Mod proof failed' }
+      - name: Prepare additive bounded original screenshot and executable review outputs
+        shell: pwsh
+        run: |
+          node scripts/collect-native-pitch-review.mjs "$env:RUNNER_TEMP/pitch-sources-windows" target/release/worldmusichub-desktop.exe "$env:RUNNER_TEMP/pitch-sources-review" "$env:RUNNER_TEMP/pitch-sources-executable"
+          if ($LASTEXITCODE -ne 0) { throw 'Bounded native pitch review collection failed' }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-pitch-sources-review-${{ github.sha }}
+          path: ${{ runner.temp }}/pitch-sources-review/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-pitch-sources-executable-${{ github.sha }}
+          path: ${{ runner.temp }}/pitch-sources-executable/
+          if-no-files-found: error
       - name: Preserve bounded partial JSON on success or failure
         if: always()
         run: >-
