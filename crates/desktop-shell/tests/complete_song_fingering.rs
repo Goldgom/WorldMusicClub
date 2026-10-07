@@ -821,3 +821,146 @@ fn native_fingering_routes_use_large_operation_admission_and_reject_get() {
         assert_eq!(error["code"], "library_method_not_allowed");
     }
 }
+
+#[test]
+fn selected_union_native_all_preserves_saved_midi_and_explicit_vsq_source_clocks() {
+    for (files, profile) in [
+        (midi_files(), "wmh-semantic-midi1-v1"),
+        (vsq_files(), "wmh-vsq-clean-v1"),
+    ] {
+        let sandbox = Sandbox::new();
+        let library = sandbox.library();
+        let source = save(&library, &files, profile);
+        let before = sandbox.bytes();
+        let runtime = if profile == "wmh-vsq-clean-v1" {
+            let selected = vsq_runtime(&library, &source);
+            json!({"notes":selected["runtime"]["notes"],"compilation":selected["compilation"]})
+        } else {
+            loaded_midi_runtime(&library, &source)
+        };
+        let selected: Vec<_> = runtime["compilation"]["score"]["parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|part| part["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(selected.len(), 2);
+        let mut settings = guitar(None);
+        settings["selected_part_ids"] = json!(selected.iter().rev().collect::<Vec<_>>());
+        settings["max_fret_span"] = json!(12);
+        if profile == "wmh-vsq-clean-v1" {
+            // These authored simultaneous equal pitches require two distinct strings.
+            settings["profile"] = json!({"kind":"guitar","tuning":[60,60],"frets":5,"capo":0});
+        }
+        let joint = plan(&library, GUITAR, &source, &settings);
+        assert_eq!(joint["selected_part_ids"], json!(selected));
+        assert_eq!(joint["part_id"], Value::Null);
+        assert_native_times(&joint, &runtime, false);
+        assert_eq!(
+            ids(joint["assignments"].as_array().unwrap(), "occurrence_id"),
+            ids(
+                runtime["compilation"]["timeline"]["notes"]
+                    .as_array()
+                    .unwrap(),
+                "id"
+            )
+        );
+        if profile == "wmh-vsq-clean-v1" {
+            assert_eq!(joint["assignments"][0]["start_ms"], 0.0);
+            let notation: score_core::Score =
+                serde_json::from_value(runtime["compilation"]["score"].clone()).unwrap();
+            assert_eq!(
+                score_core::compile(notation).unwrap().timeline.notes[0].start_ms,
+                2000.0
+            );
+            assert_ne!(
+                joint["assignments"][0]["string"],
+                joint["assignments"][1]["string"]
+            );
+        }
+        settings["selected_part_ids"] = json!([selected[1]]);
+        let solo = plan(&library, GUITAR, &source, &settings);
+        let mut legacy = settings.clone();
+        legacy.as_object_mut().unwrap().remove("selected_part_ids");
+        legacy["part_id"] = json!(selected[1]);
+        assert_eq!(
+            solo["assignments"],
+            plan(&library, GUITAR, &source, &legacy)["assignments"]
+        );
+        for invalid in [
+            json!([]),
+            json!([selected[0], selected[0]]),
+            json!([selected[0], "missing"]),
+        ] {
+            settings["selected_part_ids"] = invalid;
+            reject(
+                &library,
+                GUITAR,
+                &json!({"source":source,"settings":settings}),
+                Some(422),
+            );
+        }
+        settings["selected_part_ids"] = Value::Null;
+        reject(
+            &library,
+            GUITAR,
+            &json!({"source":source,"settings":settings}),
+            Some(400),
+        );
+        settings["selected_part_ids"] = json!([selected[0]]);
+        settings["part_id"] = json!(selected[0]);
+        reject(
+            &library,
+            GUITAR,
+            &json!({"source":source,"settings":settings}),
+            Some(422),
+        );
+        assert_eq!(sandbox.bytes(), before);
+    }
+}
+
+#[test]
+fn selected_native_midi_union_solves_cross_part_holds_without_machine_notes() {
+    let midi = authored_midi(
+        &[
+            (0, &[0x90, 64, 90]),
+            (480, &[0x91, 67, 90]),
+            (0, &[0x92, 127, 90]),
+            (480, &[0x80, 64, 0]),
+            (0, &[0x81, 67, 0]),
+            (0, &[0x82, 127, 0]),
+            (0, &[0xff, 47, 0]),
+        ],
+        480,
+    );
+    let sandbox = Sandbox::new();
+    let library = sandbox.library();
+    let source = save(
+        &library,
+        &complete_midi_files(&midi),
+        "wmh-semantic-midi1-v1",
+    );
+    let before = sandbox.bytes();
+    let runtime = loaded_midi_runtime(&library, &source);
+    let mut settings = guitar(None);
+    settings["profile"]["frets"] = json!(5);
+    settings["selected_part_ids"] = json!(["midi-t1-c2", "midi-t1-c1"]);
+    let joint = plan(&library, GUITAR, &source, &settings);
+    assert_native_times(&joint, &runtime, false);
+    assert_eq!(joint["source_occurrence_count"], 2);
+    assert_eq!(
+        joint["selected_part_ids"],
+        json!(["midi-t1-c1", "midi-t1-c2"])
+    );
+    assert_eq!(joint["assignments"][0]["string"], 5);
+    assert_eq!(joint["assignments"][1]["string"], 6);
+    assert!(joint["assignments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|assignment| assignment["part_id"] != "midi-t1-c3"));
+    settings["selected_part_ids"] = json!(["midi-t1-c1"]);
+    let solo = plan(&library, GUITAR, &source, &settings);
+    assert_eq!(solo["assignments"][0]["string"], 6);
+    assert_eq!(sandbox.bytes(), before);
+}

@@ -1,6 +1,6 @@
 //! Advisory whole-phrase guitar planning; it never changes score or assessment.
 use crate::{
-    fingering_clock::{exact_notes, ExactNote, Moment},
+    fingering_clock::{exact_notes_for_parts, resolve_fingering_parts, ExactNote, Moment},
     instruments::{analyze_instrument, InstrumentProfile},
     Beat, Diagnostic, Score,
 };
@@ -48,6 +48,9 @@ pub struct GuitarPlanningInventory {
 pub struct GuitarFingeringRequest {
     pub score: Score,
     pub part_id: Option<String>,
+    /// Explicit human-part union. Absence keeps the legacy single-part/All API.
+    #[serde(default, deserialize_with = "selected_parts")]
+    pub selected_part_ids: Option<Vec<String>>,
     pub profile: InstrumentProfile,
     #[serde(default = "default_span")]
     pub max_fret_span: u8,
@@ -57,6 +60,12 @@ pub struct GuitarFingeringRequest {
     /// Resolve exact scope membership before a client submits selected locks.
     #[serde(default)]
     pub inventory_only: bool,
+}
+// A present null is not an omitted selection and must not silently become All.
+fn selected_parts<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Vec<String>>, D::Error> {
+    Vec::<String>::deserialize(deserializer).map(Some)
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct GuitarAssignment {
@@ -82,6 +91,8 @@ pub struct GuitarFingeringPlan {
     pub algorithm: String,
     pub score_id: String,
     pub part_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selected_part_ids: Option<Vec<String>>,
     pub status: String,
     pub profile: InstrumentProfile,
     pub complete: bool,
@@ -382,6 +393,11 @@ fn plan_source(
         return Err("Guitar fingering needs a guitar profile".into());
     };
     let compiled = &source.compilation;
+    let selection = resolve_fingering_parts(
+        &compiled.score,
+        request.part_id.as_deref(),
+        request.selected_part_ids.as_deref(),
+    )?;
     if request.inventory_only && (request.planning_scope.is_none() || !request.locks.is_empty()) {
         return Err("A scope inventory requires an explicit phrase and no locks".into());
     }
@@ -389,12 +405,7 @@ fn plan_source(
         .timeline
         .notes
         .iter()
-        .filter(|note| {
-            request
-                .part_id
-                .as_ref()
-                .is_none_or(|id| &note.part_id == id)
-        })
+        .filter(|note| selection.contains(&note.part_id))
         .count();
     // Keep the default whole-score path and its early budgets unchanged.
     let mut scoped_notes = None;
@@ -417,7 +428,7 @@ fn plan_source(
         {
             return Err("Guitar phrase extends past the end of the score".into());
         }
-        let notes: Vec<_> = exact_notes(compiled, request.part_id.as_deref())?
+        let notes: Vec<_> = exact_notes_for_parts(compiled, &selection)?
             .into_iter()
             .filter(|n| {
                 n.start.at.compare(scope.to).is_lt() && n.end.at.compare(scope.from).is_gt()
@@ -454,12 +465,7 @@ fn plan_source(
             .timeline
             .notes
             .iter()
-            .filter(|note| {
-                request
-                    .part_id
-                    .as_ref()
-                    .is_none_or(|id| &note.part_id == id)
-            })
+            .filter(|note| selection.contains(&note.part_id))
             .map(|note| note.source_note_ids.len())
             .sum()
     };
@@ -468,6 +474,10 @@ fn plan_source(
         algorithm: "deterministic_guitar_beam_v1".into(),
         score_id: compiled.score.id.clone(),
         part_id: request.part_id.clone(),
+        selected_part_ids: request
+            .selected_part_ids
+            .as_ref()
+            .map(|_| selection.ids.clone()),
         status: "unavailable".into(),
         profile: request.profile.clone(),
         complete: false,
@@ -509,7 +519,7 @@ fn plan_source(
     }
     let notes = match scoped_notes {
         Some(notes) => notes,
-        None => exact_notes(compiled, request.part_id.as_deref())?,
+        None => exact_notes_for_parts(compiled, &selection)?,
     };
     let selected = crate::Timeline {
         notes: notes.iter().map(|n| n.note.clone()).collect(),
@@ -759,6 +769,7 @@ mod tests {
         GuitarFingeringRequest {
             score,
             part_id: None,
+            selected_part_ids: None,
             profile: InstrumentProfile::Guitar {
                 tuning,
                 frets,
@@ -772,6 +783,248 @@ mod tests {
     }
     fn standard(events: &[(u8, i64, i64)], frets: u8) -> GuitarFingeringRequest {
         request(events, vec![40, 45, 50, 55, 59, 64], frets, 0)
+    }
+    fn split_parts(input: &mut GuitarFingeringRequest, groups: &[&[usize]]) {
+        let source = input.score.parts[0].clone();
+        input.score.parts = groups
+            .iter()
+            .enumerate()
+            .map(|(index, indices)| {
+                let mut part = source.clone();
+                part.id = format!("part-{index}");
+                part.name = format!("Part {index}");
+                part.notes = indices.iter().map(|i| source.notes[*i].clone()).collect();
+                part
+            })
+            .collect();
+    }
+    fn select(input: &mut GuitarFingeringRequest, ids: &[&str]) {
+        input.selected_part_ids = Some(ids.iter().map(|id| (*id).into()).collect());
+    }
+    #[test]
+    fn selected_union_jointly_reserves_strings_and_excludes_machine_accompaniment() {
+        let mut input = standard(&[(64, 0, 2), (67, 1, 1), (127, 0, 2)], 5);
+        split_parts(&mut input, &[&[0], &[1], &[2]]);
+        let before = serde_json::to_value(&input.score).unwrap();
+        input.part_id = Some("part-0".into());
+        let solo = plan_guitar_fingering(input.clone()).unwrap();
+        assert_eq!(
+            (solo.assignments[0].string, solo.assignments[0].fret),
+            (6, 0)
+        );
+        input.part_id = None;
+        select(&mut input, &["part-1", "part-0"]);
+        let union = plan_guitar_fingering(input.clone()).unwrap();
+        assert_eq!(union.status, "ready");
+        assert_eq!(
+            union.selected_part_ids.as_ref().unwrap(),
+            &["part-0", "part-1"]
+        );
+        assert_eq!(union.source_occurrence_count, 2);
+        assert_eq!(
+            union
+                .assignments
+                .iter()
+                .map(|note| (note.string, note.fret))
+                .collect::<Vec<_>>(),
+            [(5, 5), (6, 3)]
+        );
+        let compiled = crate::compile(input.score.clone()).unwrap();
+        for choice in &union.assignments {
+            let original = compiled
+                .timeline
+                .notes
+                .iter()
+                .find(|note| note.id == choice.occurrence_id)
+                .unwrap();
+            assert_ne!(choice.part_id, "part-2");
+            assert_eq!(choice.part_id, original.part_id);
+            assert_eq!(choice.source_note_ids, original.source_note_ids);
+            assert_eq!(
+                (choice.start_ms, choice.end_ms),
+                (original.start_ms, original.start_ms + original.duration_ms)
+            );
+        }
+        select(&mut input, &["part-0", "part-1"]);
+        assert_eq!(
+            serde_json::to_value(&union).unwrap(),
+            serde_json::to_value(plan_guitar_fingering(input.clone()).unwrap()).unwrap()
+        );
+        assert_eq!(serde_json::to_value(input.score).unwrap(), before);
+    }
+    #[test]
+    fn selected_union_conflict_is_not_two_solo_plans_and_exact_release_is_legal() {
+        let mut input = request(&[(60, 0, 2), (62, 1, 1)], vec![60], 4, 0);
+        split_parts(&mut input, &[&[0], &[1]]);
+        for part in ["part-0", "part-1"] {
+            select(&mut input, &[part]);
+            assert_eq!(
+                plan_guitar_fingering(input.clone()).unwrap().status,
+                "ready"
+            );
+        }
+        select(&mut input, &["part-0", "part-1"]);
+        let blocked = plan_guitar_fingering(input.clone()).unwrap();
+        assert_eq!(blocked.status, "infeasible_under_model");
+        assert!(!blocked.complete);
+        assert!(blocked.assignments.is_empty());
+        assert_eq!(blocked.objective_cost, None);
+        input.score.parts[0].notes[0].duration = Beat::new(1, 3);
+        input.score.parts[1].notes[0].at = Beat::new(2, 6);
+        let ready = plan_guitar_fingering(input).unwrap();
+        assert_eq!(ready.status, "ready");
+        assert!(ready.assignments.iter().all(|note| note.string == 1));
+    }
+    #[test]
+    fn selected_union_keeps_unisons_ties_repeats_and_each_original_lock_identity() {
+        let mut input = request(
+            &[(62, 0, 1), (62, 1, 1), (62, 0, 2), (127, 0, 2)],
+            vec![60, 60],
+            4,
+            0,
+        );
+        input.score.parts[0].notes[0].tie_start = true;
+        input.score.parts[0].notes[1].tie_stop = true;
+        split_parts(&mut input, &[&[0, 1], &[2], &[3]]);
+        input.score.repeats = vec![Repeat {
+            from: Beat::ZERO,
+            to: Beat::new(2, 1),
+            times: 2,
+        }];
+        select(&mut input, &["part-0", "part-1"]);
+        input.locks = vec![GuitarFingeringLock {
+            source_note_id: "source-1".into(),
+            string: Some(1),
+            fret: Some(2),
+            finger: Some(1),
+        }];
+        let compiled = crate::compile(input.score.clone()).unwrap();
+        let ready = plan_guitar_fingering(input.clone()).unwrap();
+        assert_eq!(ready.status, "ready");
+        assert_eq!(ready.assignments.len(), 4);
+        for choice in &ready.assignments {
+            let original = compiled
+                .timeline
+                .notes
+                .iter()
+                .find(|note| note.id == choice.occurrence_id)
+                .unwrap();
+            assert_eq!(choice.source_note_ids, original.source_note_ids);
+            assert_eq!(choice.start_ms, original.start_ms);
+            if choice.part_id == "part-0" {
+                assert_eq!(choice.source_note_ids, ["source-0", "source-1"]);
+                assert_eq!(choice.string, 1);
+            } else {
+                assert_eq!(choice.string, 2);
+            }
+        }
+        input.locks.push(GuitarFingeringLock {
+            source_note_id: "source-0".into(),
+            string: Some(2),
+            fret: None,
+            finger: None,
+        });
+        let conflict = plan_guitar_fingering(input).unwrap();
+        assert_eq!(conflict.status, "infeasible_under_model");
+        assert!(conflict.assignments.is_empty());
+        assert!(conflict.diagnostics.iter().any(|diagnostic| diagnostic
+            .note_id
+            .as_deref()
+            .is_some_and(|id| compiled
+                .timeline
+                .notes
+                .iter()
+                .any(|note| note.id == id && note.source_note_ids == ["source-0", "source-1"]))));
+    }
+    #[test]
+    fn selected_union_phrase_keeps_both_entry_holds_and_complete_tails() {
+        let mut input = request(&[(60, 0, 4), (60, 1, 4), (127, 2, 1)], vec![60, 60], 0, 0);
+        split_parts(&mut input, &[&[0], &[1], &[2]]);
+        select(&mut input, &["part-1", "part-0"]);
+        phrase(&mut input, Beat::new(2, 1), Beat::new(3, 1));
+        let ready = plan_guitar_fingering(input.clone()).unwrap();
+        assert_eq!(ready.status, "ready");
+        let inventory = ready.planning_scope.as_ref().unwrap();
+        assert_eq!(inventory.full_occurrence_count, 2);
+        assert_eq!(
+            inventory.entry_hold_occurrence_ids,
+            ["source-0", "source-1"]
+        );
+        assert_eq!(
+            ready
+                .assignments
+                .iter()
+                .map(|note| note.end_ms)
+                .collect::<Vec<_>>(),
+            [2000., 2500.]
+        );
+        input.inventory_only = true;
+        let preflight = plan_guitar_fingering(input).unwrap();
+        assert_eq!(preflight.selected_part_ids, ready.selected_part_ids);
+        assert_eq!(
+            serde_json::to_value(preflight.planning_scope).unwrap(),
+            serde_json::to_value(ready.planning_scope).unwrap()
+        );
+    }
+    #[test]
+    fn selection_budgets_ignore_machine_parts_but_never_truncate_a_large_human_union() {
+        let events: Vec<_> = (0..1003).map(|index| (60, index, 1)).collect();
+        let mut input = request(&events, vec![60], 0, 0);
+        let machine: Vec<_> = (2..1003).collect();
+        split_parts(&mut input, &[&[0], &[1], &machine]);
+        select(&mut input, &["part-0", "part-1"]);
+        assert_eq!(
+            plan_guitar_fingering(input.clone())
+                .unwrap()
+                .assignments
+                .len(),
+            2
+        );
+        select(&mut input, &["part-0", "part-2"]);
+        let limited = plan_guitar_fingering(input).unwrap();
+        assert_eq!(limited.status, "unavailable");
+        assert_eq!(limited.source_occurrence_count, 1002);
+        assert!(limited.assignments.is_empty());
+    }
+    #[test]
+    fn strict_selection_and_legacy_absence_keep_unambiguous_scope() {
+        let mut input = standard(&[(64, 0, 1), (67, 1, 1)], 5);
+        split_parts(&mut input, &[&[0], &[1]]);
+        for ids in [
+            vec![],
+            vec!["part-0", "part-0"],
+            vec!["missing"],
+            vec!["part-0", "missing"],
+        ] {
+            select(&mut input, &ids);
+            assert!(plan_guitar_fingering(input.clone()).is_err());
+        }
+        select(&mut input, &["part-0"]);
+        input.part_id = Some("part-0".into());
+        assert!(plan_guitar_fingering(input.clone()).is_err());
+        input.selected_part_ids = None;
+        let legacy = plan_guitar_fingering(input.clone()).unwrap();
+        assert!(serde_json::to_value(&legacy)
+            .unwrap()
+            .get("selected_part_ids")
+            .is_none());
+        input.part_id = None;
+        select(&mut input, &["part-0"]);
+        let selected = plan_guitar_fingering(input.clone()).unwrap();
+        assert_eq!(
+            serde_json::to_value(legacy.assignments).unwrap(),
+            serde_json::to_value(selected.assignments).unwrap()
+        );
+        input.selected_part_ids = None;
+        let all = plan_guitar_fingering(input.clone()).unwrap();
+        select(&mut input, &["part-1", "part-0"]);
+        let union = plan_guitar_fingering(input.clone()).unwrap();
+        assert_eq!(
+            serde_json::to_value(all.assignments).unwrap(),
+            serde_json::to_value(union.assignments).unwrap()
+        );
+        let body = serde_json::json!({"score": input.score, "profile": input.profile, "selected_part_ids": null});
+        assert!(serde_json::from_value::<GuitarFingeringRequest>(body).is_err());
     }
     #[test]
     fn whole_phrase_chooses_a_costlier_first_position_to_keep_a_later_string_free() {

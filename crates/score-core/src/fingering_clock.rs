@@ -1,7 +1,7 @@
 //! Exact occupancy order for advisory fingering. Playback still uses Compilation.
-use crate::{Beat, Compilation, TimedNote};
+use crate::{Beat, Compilation, Score, TimedNote};
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Moment {
@@ -34,15 +34,73 @@ pub(crate) struct ExactNote {
     pub end: Moment,
 }
 
-/// Resolve compiled repeat occurrences through their complete source IDs. No
-/// occurrence-ID parsing, float epsilon, quantization or tied rearticulation.
+/// Validated part ownership boundary, normalized in immutable source order.
+/// Exact occurrence resolution and budgets must all consume this same selection.
+pub(crate) struct FingeringParts {
+    pub ids: Vec<String>,
+}
+impl FingeringParts {
+    pub fn contains(&self, id: &str) -> bool {
+        self.ids.iter().any(|part| part == id)
+    }
+}
+pub(crate) fn resolve_fingering_parts(
+    score: &Score,
+    legacy_part: Option<&str>,
+    selected: Option<&[String]>,
+) -> Result<FingeringParts, String> {
+    if let Some(selected) = selected {
+        if legacy_part.is_some() {
+            return Err("Use selected_part_ids or a non-null part_id, never both".into());
+        }
+        let ids: HashSet<_> = selected.iter().map(String::as_str).collect();
+        if selected.is_empty()
+            || ids.len() != selected.len()
+            || selected
+                .iter()
+                .any(|id| !score.parts.iter().any(|part| &part.id == id))
+        {
+            return Err(
+                "selected_part_ids must be a nonempty set of unique existing part IDs".into(),
+            );
+        }
+        return Ok(FingeringParts {
+            ids: score
+                .parts
+                .iter()
+                .filter(|part| ids.contains(part.id.as_str()))
+                .map(|part| part.id.clone())
+                .collect(),
+        });
+    }
+    if legacy_part.is_some_and(|id| !score.parts.iter().any(|part| part.id == id)) {
+        return Err("Choose an existing part for fingering guidance".into());
+    }
+    Ok(FingeringParts {
+        ids: score
+            .parts
+            .iter()
+            .filter(|part| legacy_part.is_none_or(|id| part.id == id))
+            .map(|part| part.id.clone())
+            .collect(),
+    })
+}
+
+/// Preserve the legacy single-part/All boundary for existing piano callers.
 pub(crate) fn exact_notes(
     compiled: &Compilation,
     part: Option<&str>,
 ) -> Result<Vec<ExactNote>, String> {
-    if part.is_some_and(|id| !compiled.score.parts.iter().any(|p| p.id == id)) {
-        return Err("Choose an existing part for fingering guidance".into());
-    }
+    let selection = resolve_fingering_parts(&compiled.score, part, None)?;
+    exact_notes_for_parts(compiled, &selection)
+}
+
+/// Resolve compiled repeat occurrences through their complete source IDs. No
+/// occurrence-ID parsing, float epsilon, quantization or tied rearticulation.
+pub(crate) fn exact_notes_for_parts(
+    compiled: &Compilation,
+    selection: &FingeringParts,
+) -> Result<Vec<ExactNote>, String> {
     let source: HashMap<_, _> = compiled
         .score
         .parts
@@ -52,7 +110,7 @@ pub(crate) fn exact_notes(
         .collect();
     let mut groups: HashMap<&str, Vec<&TimedNote>> = HashMap::new();
     for note in &compiled.timeline.notes {
-        if part.is_some_and(|id| note.part_id != id) {
+        if !selection.contains(&note.part_id) {
             continue;
         }
         let first = note
