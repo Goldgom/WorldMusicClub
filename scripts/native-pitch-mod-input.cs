@@ -1,4 +1,4 @@
-// Only the explicit pitch acceptance seed may enter its fixed +2 draft.
+// Closed test-owned +2 seed edit and one fixed S press after pitch restart.
 // No caller-supplied text, virtual key, phase, path or arbitrary target.
 using System;
 using System.Runtime.InteropServices;
@@ -14,5 +14,13 @@ public static class NativePitchModInput {
  public static void Edit(string phase, string kind) {
   Validate(phase, kind); Down(0x11); try { Key(0x41); } finally { Up(0x11); }
   Key(0x32); Key(0x09);
+ }
+ public static void ValidateKey(string phase, string kind) {
+  if (phase != "pitch-mod-restart" || kind != "pitch-mod-key-s") throw new InvalidOperationException("Fixed S requires the exact pitch restart action");
+ }
+ public static void PlayS(string phase, string kind) {
+  ValidateKey(phase, kind); Down(0x53);
+  try { System.Threading.Thread.Sleep(40); }
+  finally { Up(0x53); }
  }
 }

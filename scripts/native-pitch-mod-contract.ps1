@@ -6,6 +6,9 @@ function Assert-PitchRejected([scriptblock]$Action) { $rejected=$false;try{& $Ac
 [NativePitchModInput]::Validate('pitch-mod-seed','pitch-mod-shift-two')
 foreach($phase in @('pitch-mod-restart','seed','assistance-seed','canonical-practice-controls','')) { Assert-PitchRejected {[NativePitchModInput]::Validate($phase,'pitch-mod-shift-two')} }
 foreach($kind in @('2','pitch-mod-key-s','arbitrary','')) { Assert-PitchRejected {[NativePitchModInput]::Validate('pitch-mod-seed',$kind)} }
+[NativePitchModInput]::ValidateKey('pitch-mod-restart','pitch-mod-key-s')
+foreach($phase in @('pitch-mod-seed','pitch-sources-seed','pitch-sources-restart','assistance-restart','canonical-practice-controls','PITCH-MOD-RESTART',"pitch-mod-restart`n",'')) { Assert-PitchRejected {[NativePitchModInput]::ValidateKey($phase,'pitch-mod-key-s')} }
+foreach($kind in @('pitch-mod-shift-two','key-s','KeyS','S','pitch-mod-key-c5','arbitrary',"pitch-mod-key-s`n",'')) { Assert-PitchRejected {[NativePitchModInput]::ValidateKey('pitch-mod-restart',$kind)} }
 $directory=Join-Path ([IO.Path]::GetTempPath()) ('wmc-pitch-contract-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $directory | Out-Null
 try {

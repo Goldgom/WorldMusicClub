@@ -23,6 +23,17 @@ test('native pitch workflow preserves exact pins, fresh evidence and independent
   for(const token of ["node-version: '22.23.3'","python-version: '3.12.10'","toolchain: '1.99.0'",'PyYAML==6.0.3','--test native_pitch_mod','-Scenario pitch-mod','verify-native-pitch-mod-evidence.mjs --check','if: always()'])assert.ok(workflow.includes(token),token);
   for(const token of ['createNativePitchRequestObserver',"row.observation='consumed'",'observeBasicKeyReceiver','CanonicalAudioReceiver','report.mapping=mapping()',"report.mapping.midi===62","native('pitch-mod-key-s'",'receiver.quiet()'])assert.ok(renderer.includes(token),token);
   for(const token of ['PITCH_MOD_PHASES','pitch_mod_phases_keep_closed_actions_and_exact_saved_profile','pitch-mod-shift-two','pitch-mod-key-s','pitch-mod-original-c4.json'])assert.ok(registration.includes(token),token);
-  assert.ok(host.includes("[NativeAcceptance]::HeldPerformanceKey(0x53)"));assert.ok(host.includes("profile_reused=$profileSelection.existing_required"));
+  assert.ok(host.includes('[NativePitchModInput]::PlayS($env:WMH_DESKTOP_ACCEPTANCE_PHASE,[string]$Action.kind)'));assert.ok(host.includes("profile_reused=$profileSelection.existing_required"));
+  assert.equal(host.includes('[NativeAcceptance]::HeldPerformanceKey(0x53)'),false);
   assert.equal(workflow.includes('releases:'),false);assert.equal(workflow.includes('branches: [main]'),false);
+});
+
+test('native pitch S uses a dedicated phase/action guard and preserves the unrelated generic key boundary', () => {
+  const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8');
+  const helper=read('scripts/native-pitch-mod-input.cs'),contract=read('scripts/native-pitch-mod-contract.ps1'),generic=read('scripts/windows-desktop-native.cs');
+  assert.ok(helper.includes('phase != "pitch-mod-restart" || kind != "pitch-mod-key-s"'));
+  assert.match(helper,/ValidateKey\(phase, kind\); Down\(0x53\);\s*try \{ System\.Threading\.Thread\.Sleep\(40\); \}\s*finally \{ Up\(0x53\); \}/);
+  assert.ok(contract.includes("[NativePitchModInput]::ValidateKey('pitch-mod-restart','pitch-mod-key-s')"));
+  for(const value of ['pitch-mod-seed','pitch-sources-restart','assistance-restart','PITCH-MOD-RESTART','pitch-mod-key-c5'])assert.ok(contract.includes(value));
+  assert.ok(generic.includes('if(key!=0x32 && key!=0x55)throw new ArgumentOutOfRangeException'));
 });

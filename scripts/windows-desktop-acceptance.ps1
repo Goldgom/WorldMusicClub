@@ -479,7 +479,7 @@ function Invoke-NativeAction($App,$Action,[hashtable]$Evidence,$Observation=$nul
     $foreground=[NativeAcceptance]::GetForegroundWindow();$enabled=[NativeAcceptance]::IsWindowEnabled($window)
     if($foreground -ne $window -or -not $enabled){throw 'Prepared physical S foreground ownership lost'}
     $Evidence.native_key=[ordered]@{app_hwnd=$window.ToInt64();foreground=$foreground.ToInt64();app_process_id=$App.Id;app_enabled=$enabled;code='KeyS';virtual_key=0x53;hold_ms=40;focus_reacquired=$false;pointer_clicked=$false}
-    [NativeAcceptance]::HeldPerformanceKey(0x53);return
+    [NativePitchModInput]::PlayS($env:WMH_DESKTOP_ACCEPTANCE_PHASE,[string]$Action.kind);return
   }
   if($Action.kind -ceq 'assistance-key-c5') {
     if($Scenario -cne 'assistance' -or $env:WMH_DESKTOP_ACCEPTANCE_PHASE -cnotin @('assistance-restart','assistance-progression')){throw 'Only the closed assistance human-take phases allow C5'}
