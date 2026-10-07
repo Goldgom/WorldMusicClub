@@ -11,6 +11,8 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 #[cfg(test)]
+mod direct_midi_tests;
+#[cfg(test)]
 mod tests;
 mod vsq;
 pub(crate) fn contains_vsq_project(bytes: &[u8], source_sha256: &str) -> bool {
