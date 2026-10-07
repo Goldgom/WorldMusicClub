@@ -1,0 +1,961 @@
+{
+  "automatic": {
+    "checked": {
+      "all_selected_human": true,
+      "coverage": {
+        "human_occurrence_count": 2,
+        "human_source_unit_count": 2,
+        "human_target_count": 1,
+        "machine_occurrence_count": 0,
+        "machine_selected_target_count": 0,
+        "machine_source_unit_count": 0,
+        "occurrence_count": 2,
+        "selected_source_unit_count": 2,
+        "selected_target_count": 1,
+        "source_unit_count": 2
+      },
+      "diagnostics": [
+        {
+          "code": "assistance_scope_limits",
+          "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible.",
+          "note_id": null,
+          "severity": "warning"
+        }
+      ],
+      "exclusion_reasons": [],
+      "human_targets": {
+        "diagnostics": [
+          {
+            "code": "piano_unison_targets",
+            "message": "1 exact simultaneous same-key events share a physical piano attack. Every source occurrence and tied segment remains mapped; playback and the original score are unchanged. Timing grades measure attacks only, not independent voice releases.",
+            "note_id": null,
+            "severity": "warning"
+          }
+        ],
+        "groups": [
+          {
+            "part_ids": [
+              "vsq-track-1",
+              "vsq-track-2"
+            ],
+            "source_note_ids": [
+              "vsq-t1-ID#0001",
+              "vsq-t2-ID#0001"
+            ],
+            "source_occurrence_ids": [
+              "vsq-t1-ID#0001",
+              "vsq-t2-ID#0001"
+            ],
+            "target_id": "vsq-t1-ID#0001"
+          }
+        ],
+        "playable": true,
+        "source_note_count": 2,
+        "target_count": 1,
+        "timeline": {
+          "duration_ms": 4083.3371666666667,
+          "notes": [
+            {
+              "duration_ms": 1418.75116875,
+              "id": "vsq-t1-ID#0001",
+              "midi": 63,
+              "part_id": "vsq-track-1",
+              "source_note_id": "vsq-t1-ID#0001",
+              "source_note_ids": [
+                "vsq-t1-ID#0001",
+                "vsq-t2-ID#0001"
+              ],
+              "staff": 1,
+              "start_ms": 0.0,
+              "velocity": 90,
+              "voice": "ID#0000"
+            }
+          ]
+        }
+      },
+      "machine_occurrence_ids": [],
+      "plan": {
+        "format": "wmc-practice-assistance",
+        "human_source_ids": [
+          "vsq-t1-ID#0001",
+          "vsq-t2-ID#0001"
+        ],
+        "mode": "automatic",
+        "planner_revision": 1,
+        "receipt": {
+          "choice": "base_notes_instrumental",
+          "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+          "runtime_policy": "wmh-vsq-base-note-practice-v1",
+          "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+          "source_binding": {
+            "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+            "domain": "wmc-vsq-complete-serde-json",
+            "serialization_revision": 1
+          },
+          "source_profile": "wmh-vsq-clean-v1"
+        },
+        "revision": 1,
+        "schema_version": 1,
+        "selection": {
+          "profile": {
+            "key_count": 88,
+            "kind": "piano",
+            "lowest_midi": 21
+          },
+          "selected_part_ids": [
+            "vsq-track-1",
+            "vsq-track-2"
+          ]
+        },
+        "selection_digest": "258c181b1e49caeb62158e23663685bc88acb69272c5797cfde99105ad6503a8",
+        "settings": {
+          "algorithm_id": "wmc-keyboard-assistance-v1",
+          "max_held_span_semitones": 7,
+          "max_simultaneous_keys": 2,
+          "max_targets_per_onset": 1,
+          "min_onset_interval_ms": 100
+        }
+      },
+      "receipt": {
+        "choice": "base_notes_instrumental",
+        "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+        "runtime_policy": "wmh-vsq-base-note-practice-v1",
+        "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+        "source_binding": {
+          "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+          "domain": "wmc-vsq-complete-serde-json",
+          "serialization_revision": 1
+        },
+        "source_profile": "wmh-vsq-clean-v1"
+      },
+      "scored_mode_allowed": true,
+      "source_ownership": [
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "vsq-track-1",
+          "source_id": "vsq-t1-ID#0001"
+        },
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "vsq-track-2",
+          "source_id": "vsq-t2-ID#0001"
+        }
+      ]
+    },
+    "source": {
+      "choice": "base_notes_instrumental",
+      "content_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+      "key": "song-cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+      "profile": "wmh-vsq-clean-v1",
+      "runtime_policy": "wmh-vsq-base-note-practice-v1"
+    }
+  },
+  "empty": {
+    "checked": {
+      "all_selected_human": false,
+      "coverage": {
+        "human_occurrence_count": 0,
+        "human_source_unit_count": 0,
+        "human_target_count": 0,
+        "machine_occurrence_count": 2,
+        "machine_selected_target_count": 1,
+        "machine_source_unit_count": 2,
+        "occurrence_count": 2,
+        "selected_source_unit_count": 2,
+        "selected_target_count": 1,
+        "source_unit_count": 2
+      },
+      "diagnostics": [
+        {
+          "code": "assistance_scope_limits",
+          "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible.",
+          "note_id": null,
+          "severity": "warning"
+        }
+      ],
+      "exclusion_reasons": [
+        {
+          "code": "explicit_machine",
+          "source_ids": [
+            "vsq-t1-ID#0001",
+            "vsq-t2-ID#0001"
+          ]
+        }
+      ],
+      "human_targets": {
+        "diagnostics": [],
+        "groups": [],
+        "playable": false,
+        "source_note_count": 0,
+        "target_count": 0,
+        "timeline": {
+          "duration_ms": 4083.3371666666667,
+          "notes": []
+        }
+      },
+      "machine_occurrence_ids": [
+        "vsq-t1-ID#0001",
+        "vsq-t2-ID#0001"
+      ],
+      "plan": {
+        "format": "wmc-practice-assistance",
+        "human_source_ids": [],
+        "mode": "explicit",
+        "planner_revision": 1,
+        "receipt": {
+          "choice": "base_notes_instrumental",
+          "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+          "runtime_policy": "wmh-vsq-base-note-practice-v1",
+          "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+          "source_binding": {
+            "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+            "domain": "wmc-vsq-complete-serde-json",
+            "serialization_revision": 1
+          },
+          "source_profile": "wmh-vsq-clean-v1"
+        },
+        "revision": 1,
+        "schema_version": 1,
+        "selection": {
+          "profile": {
+            "key_count": 88,
+            "kind": "piano",
+            "lowest_midi": 21
+          },
+          "selected_part_ids": [
+            "vsq-track-1",
+            "vsq-track-2"
+          ]
+        },
+        "selection_digest": "81bc4ea36980e7c4cd634c1d9d470ffa90ffe4d51a79d82890d4cdff7b9deb03",
+        "settings": null
+      },
+      "receipt": {
+        "choice": "base_notes_instrumental",
+        "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+        "runtime_policy": "wmh-vsq-base-note-practice-v1",
+        "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+        "source_binding": {
+          "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+          "domain": "wmc-vsq-complete-serde-json",
+          "serialization_revision": 1
+        },
+        "source_profile": "wmh-vsq-clean-v1"
+      },
+      "scored_mode_allowed": false,
+      "source_ownership": [
+        {
+          "in_selected_scope": true,
+          "owner": "machine",
+          "part_id": "vsq-track-1",
+          "source_id": "vsq-t1-ID#0001"
+        },
+        {
+          "in_selected_scope": true,
+          "owner": "machine",
+          "part_id": "vsq-track-2",
+          "source_id": "vsq-t2-ID#0001"
+        }
+      ]
+    },
+    "source": {
+      "choice": "base_notes_instrumental",
+      "content_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+      "key": "song-cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+      "profile": "wmh-vsq-clean-v1",
+      "runtime_policy": "wmh-vsq-base-note-practice-v1"
+    }
+  },
+  "narrow_scope": {
+    "checked": {
+      "all_selected_human": false,
+      "coverage": {
+        "human_occurrence_count": 0,
+        "human_source_unit_count": 0,
+        "human_target_count": 0,
+        "machine_occurrence_count": 2,
+        "machine_selected_target_count": 1,
+        "machine_source_unit_count": 2,
+        "occurrence_count": 2,
+        "selected_source_unit_count": 1,
+        "selected_target_count": 1,
+        "source_unit_count": 2
+      },
+      "diagnostics": [
+        {
+          "code": "assistance_scope_limits",
+          "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible.",
+          "note_id": null,
+          "severity": "warning"
+        }
+      ],
+      "exclusion_reasons": [
+        {
+          "code": "cross_scope_physical_group",
+          "source_ids": [
+            "vsq-t1-ID#0001",
+            "vsq-t2-ID#0001"
+          ]
+        }
+      ],
+      "human_targets": {
+        "diagnostics": [],
+        "groups": [],
+        "playable": false,
+        "source_note_count": 0,
+        "target_count": 0,
+        "timeline": {
+          "duration_ms": 4083.3371666666667,
+          "notes": []
+        }
+      },
+      "machine_occurrence_ids": [
+        "vsq-t1-ID#0001",
+        "vsq-t2-ID#0001"
+      ],
+      "plan": {
+        "format": "wmc-practice-assistance",
+        "human_source_ids": [],
+        "mode": "automatic",
+        "planner_revision": 1,
+        "receipt": {
+          "choice": "base_notes_instrumental",
+          "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+          "runtime_policy": "wmh-vsq-base-note-practice-v1",
+          "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+          "source_binding": {
+            "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+            "domain": "wmc-vsq-complete-serde-json",
+            "serialization_revision": 1
+          },
+          "source_profile": "wmh-vsq-clean-v1"
+        },
+        "revision": 1,
+        "schema_version": 1,
+        "selection": {
+          "profile": {
+            "key_count": 88,
+            "kind": "piano",
+            "lowest_midi": 21
+          },
+          "selected_part_ids": [
+            "vsq-track-1"
+          ]
+        },
+        "selection_digest": "cfd640ef55e2857daf925e4968ab91b432a18334eccc50f2e01ba3ffc036ab7c",
+        "settings": {
+          "algorithm_id": "wmc-keyboard-assistance-v1",
+          "max_held_span_semitones": 7,
+          "max_simultaneous_keys": 2,
+          "max_targets_per_onset": 1,
+          "min_onset_interval_ms": 100
+        }
+      },
+      "receipt": {
+        "choice": "base_notes_instrumental",
+        "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+        "runtime_policy": "wmh-vsq-base-note-practice-v1",
+        "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+        "source_binding": {
+          "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+          "domain": "wmc-vsq-complete-serde-json",
+          "serialization_revision": 1
+        },
+        "source_profile": "wmh-vsq-clean-v1"
+      },
+      "scored_mode_allowed": false,
+      "source_ownership": [
+        {
+          "in_selected_scope": true,
+          "owner": "machine",
+          "part_id": "vsq-track-1",
+          "source_id": "vsq-t1-ID#0001"
+        },
+        {
+          "in_selected_scope": false,
+          "owner": "machine",
+          "part_id": "vsq-track-2",
+          "source_id": "vsq-t2-ID#0001"
+        }
+      ]
+    },
+    "source": {
+      "choice": "base_notes_instrumental",
+      "content_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+      "key": "song-cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+      "profile": "wmh-vsq-clean-v1",
+      "runtime_policy": "wmh-vsq-base-note-practice-v1"
+    }
+  },
+  "original": {
+    "checked": {
+      "all_selected_human": true,
+      "coverage": {
+        "human_occurrence_count": 2,
+        "human_source_unit_count": 2,
+        "human_target_count": 1,
+        "machine_occurrence_count": 0,
+        "machine_selected_target_count": 0,
+        "machine_source_unit_count": 0,
+        "occurrence_count": 2,
+        "selected_source_unit_count": 2,
+        "selected_target_count": 1,
+        "source_unit_count": 2
+      },
+      "diagnostics": [
+        {
+          "code": "assistance_scope_limits",
+          "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible.",
+          "note_id": null,
+          "severity": "warning"
+        }
+      ],
+      "exclusion_reasons": [],
+      "human_targets": {
+        "diagnostics": [
+          {
+            "code": "piano_unison_targets",
+            "message": "1 exact simultaneous same-key events share a physical piano attack. Every source occurrence and tied segment remains mapped; playback and the original score are unchanged. Timing grades measure attacks only, not independent voice releases.",
+            "note_id": null,
+            "severity": "warning"
+          }
+        ],
+        "groups": [
+          {
+            "part_ids": [
+              "vsq-track-1",
+              "vsq-track-2"
+            ],
+            "source_note_ids": [
+              "vsq-t1-ID#0001",
+              "vsq-t2-ID#0001"
+            ],
+            "source_occurrence_ids": [
+              "vsq-t1-ID#0001",
+              "vsq-t2-ID#0001"
+            ],
+            "target_id": "vsq-t1-ID#0001"
+          }
+        ],
+        "playable": true,
+        "source_note_count": 2,
+        "target_count": 1,
+        "timeline": {
+          "duration_ms": 4083.3371666666667,
+          "notes": [
+            {
+              "duration_ms": 1418.75116875,
+              "id": "vsq-t1-ID#0001",
+              "midi": 63,
+              "part_id": "vsq-track-1",
+              "source_note_id": "vsq-t1-ID#0001",
+              "source_note_ids": [
+                "vsq-t1-ID#0001",
+                "vsq-t2-ID#0001"
+              ],
+              "staff": 1,
+              "start_ms": 0.0,
+              "velocity": 90,
+              "voice": "ID#0000"
+            }
+          ]
+        }
+      },
+      "machine_occurrence_ids": [],
+      "plan": {
+        "format": "wmc-practice-assistance",
+        "human_source_ids": [
+          "vsq-t1-ID#0001",
+          "vsq-t2-ID#0001"
+        ],
+        "mode": "original",
+        "planner_revision": 1,
+        "receipt": {
+          "choice": "base_notes_instrumental",
+          "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+          "runtime_policy": "wmh-vsq-base-note-practice-v1",
+          "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+          "source_binding": {
+            "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+            "domain": "wmc-vsq-complete-serde-json",
+            "serialization_revision": 1
+          },
+          "source_profile": "wmh-vsq-clean-v1"
+        },
+        "revision": 1,
+        "schema_version": 1,
+        "selection": {
+          "profile": {
+            "key_count": 88,
+            "kind": "piano",
+            "lowest_midi": 21
+          },
+          "selected_part_ids": [
+            "vsq-track-1",
+            "vsq-track-2"
+          ]
+        },
+        "selection_digest": "09e8cc198d7c20d115f19c49cba3b5106a0f252605e3ad4bfc473c12b75e2947",
+        "settings": null
+      },
+      "receipt": {
+        "choice": "base_notes_instrumental",
+        "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+        "runtime_policy": "wmh-vsq-base-note-practice-v1",
+        "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+        "source_binding": {
+          "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+          "domain": "wmc-vsq-complete-serde-json",
+          "serialization_revision": 1
+        },
+        "source_profile": "wmh-vsq-clean-v1"
+      },
+      "scored_mode_allowed": true,
+      "source_ownership": [
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "vsq-track-1",
+          "source_id": "vsq-t1-ID#0001"
+        },
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "vsq-track-2",
+          "source_id": "vsq-t2-ID#0001"
+        }
+      ]
+    },
+    "source": {
+      "choice": "base_notes_instrumental",
+      "content_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+      "key": "song-cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+      "profile": "wmh-vsq-clean-v1",
+      "runtime_policy": "wmh-vsq-base-note-practice-v1"
+    }
+  },
+  "selected_runtime": {
+    "compilation": {
+      "diagnostics": [],
+      "score": {
+        "composer": "",
+        "format_metadata": {
+          "producer": "WorldMusicHub",
+          "producer_version": "0.2.0-alpha.1",
+          "schema_revision": 2
+        },
+        "id": "vsq-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "keys": [],
+        "measures": [
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 0
+            },
+            "length": {
+              "denominator": 1,
+              "numerator": 4
+            },
+            "number": 1
+          },
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 4
+            },
+            "length": {
+              "denominator": 1,
+              "numerator": 4
+            },
+            "number": 2
+          }
+        ],
+        "meters": [
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 0
+            },
+            "denominator": 4,
+            "numerator": 4
+          }
+        ],
+        "parts": [
+          {
+            "id": "vsq-track-1",
+            "instrument": "voice",
+            "name": "Test voice",
+            "notes": [
+              {
+                "at": {
+                  "denominator": 1,
+                  "numerator": 4
+                },
+                "duration": {
+                  "denominator": 160,
+                  "numerator": 267
+                },
+                "id": "vsq-t1-ID#0001",
+                "pitch": {
+                  "alter": 1,
+                  "octave": 4,
+                  "step": "D"
+                },
+                "staff": 1,
+                "tie_start": false,
+                "tie_stop": false,
+                "velocity": 0,
+                "voice": "ID#0000"
+              }
+            ]
+          },
+          {
+            "id": "vsq-track-2",
+            "instrument": "voice",
+            "name": "Original muted voice",
+            "notes": [
+              {
+                "at": {
+                  "denominator": 1,
+                  "numerator": 4
+                },
+                "duration": {
+                  "denominator": 160,
+                  "numerator": 267
+                },
+                "id": "vsq-t2-ID#0001",
+                "pitch": {
+                  "alter": 1,
+                  "octave": 4,
+                  "step": "D"
+                },
+                "staff": 1,
+                "tie_start": false,
+                "tie_stop": false,
+                "velocity": 0,
+                "voice": "ID#0000"
+              }
+            ]
+          }
+        ],
+        "provenance": {
+          "attribution": "VSQ authored notes; derived base-pitch audition only; vocal synthesis and voicebank equivalence are unverified",
+          "kind": "user-import",
+          "license": null,
+          "source_url": null
+        },
+        "repeats": [],
+        "source": null,
+        "tempo": [
+          {
+            "at": {
+              "denominator": 1,
+              "numerator": 0
+            },
+            "bpm": 120.0
+          },
+          {
+            "at": {
+              "denominator": 2,
+              "numerator": 9
+            },
+            "bpm": 59.99994000006
+          }
+        ],
+        "title": "Original VSQ native bridge fixture",
+        "version": 1
+      },
+      "timeline": {
+        "duration_ms": 4083.3371666666667,
+        "notes": [
+          {
+            "duration_ms": 1418.75116875,
+            "id": "vsq-t1-ID#0001",
+            "midi": 63,
+            "part_id": "vsq-track-1",
+            "source_note_id": "vsq-t1-ID#0001",
+            "source_note_ids": [
+              "vsq-t1-ID#0001"
+            ],
+            "staff": 1,
+            "start_ms": 0.0,
+            "velocity": 90,
+            "voice": "ID#0000"
+          },
+          {
+            "duration_ms": 1418.75116875,
+            "id": "vsq-t2-ID#0001",
+            "midi": 63,
+            "part_id": "vsq-track-2",
+            "source_note_id": "vsq-t2-ID#0001",
+            "source_note_ids": [
+              "vsq-t2-ID#0001"
+            ],
+            "staff": 1,
+            "start_ms": 0.0,
+            "velocity": 90,
+            "voice": "ID#0000"
+          }
+        ]
+      }
+    },
+    "navigation": {
+      "choice": "base_notes_instrumental",
+      "clock_start_ms": -2000.0,
+      "content_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+      "diagnostics": [
+        {
+          "code": "vsq_practice_navigation_scope",
+          "message": "Display-only source measures use the exact native VSQ practice clock. Premeasure intervals remain before time zero. Written extent may differ from declared playback end; no measures or acoustic tails are invented. Authoring, unknown source key and practice targets are unchanged.",
+          "note_id": null,
+          "severity": "warning"
+        }
+      ],
+      "duration_ms": 4083.3371666666667,
+      "occurrences": [
+        {
+          "continuing_note_ids": [],
+          "end_ms": 0.0,
+          "id": "measure-occurrence-0",
+          "measure_number": 1,
+          "repeat_pass": null,
+          "repeat_region_index": null,
+          "repeat_times": null,
+          "source_from": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "source_measure_index": 0,
+          "source_to": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "start_ms": -2000.0,
+          "written_note_ids": []
+        },
+        {
+          "continuing_note_ids": [],
+          "end_ms": 3750.0035,
+          "id": "measure-occurrence-1",
+          "measure_number": 2,
+          "repeat_pass": null,
+          "repeat_region_index": null,
+          "repeat_times": null,
+          "source_from": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "source_measure_index": 1,
+          "source_to": {
+            "denominator": 1,
+            "numerator": 8
+          },
+          "start_ms": 0.0,
+          "written_note_ids": [
+            "vsq-t1-ID#0001",
+            "vsq-t2-ID#0001"
+          ]
+        }
+      ],
+      "practice_origin_tick": 1920,
+      "profile": "wmh-vsq-practice-navigation-v1",
+      "runtime_profile": "wmh-vsq-base-note-practice-v1",
+      "sounding_groups": [
+        {
+          "end_ms": 1418.75116875,
+          "occurrence_id": "vsq-t1-ID#0001",
+          "part_id": "vsq-track-1",
+          "source_note_ids": [
+            "vsq-t1-ID#0001"
+          ],
+          "start_ms": 0.0
+        },
+        {
+          "end_ms": 1418.75116875,
+          "occurrence_id": "vsq-t2-ID#0001",
+          "part_id": "vsq-track-2",
+          "source_note_ids": [
+            "vsq-t2-ID#0001"
+          ],
+          "start_ms": 0.0
+        }
+      ],
+      "source_measure_count": 2,
+      "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "version": 1,
+      "written_cursor": {
+        "source_note_ids": [
+          "vsq-t1-ID#0001",
+          "vsq-t2-ID#0001"
+        ],
+        "spans": [
+          {
+            "end_ms": 1418.75116875,
+            "measure_occurrence_index": 1,
+            "source_note_index": 0,
+            "start_ms": 0.0
+          },
+          {
+            "end_ms": 1418.75116875,
+            "measure_occurrence_index": 1,
+            "source_note_index": 1,
+            "start_ms": 0.0
+          }
+        ],
+        "version": 1
+      },
+      "written_end_ms": 3750.0035
+    },
+    "navigation_unavailable": null,
+    "reference_velocity": 90,
+    "runtime": {
+      "choice": "base_notes_instrumental",
+      "end_microseconds": {
+        "denominator": 6,
+        "numerator": "24500023"
+      },
+      "end_ms": 4083.3371666666667,
+      "interpretation_limits": [
+        "whole_vocal_rendering_unavailable",
+        "practice_uses_authored_base_notes_only",
+        "pitch_bend_and_sensitivity_not_rendered",
+        "vibrato_and_expression_not_rendered",
+        "lyrics_and_phonetics_not_synthesized",
+        "source_voice_program_is_descriptor_not_general_midi",
+        "mixer_gain_pan_and_output_mode_not_interpreted",
+        "engine_dispatch_timing_and_acoustic_tails_not_rendered"
+      ],
+      "master_mix": {
+        "fader": -3,
+        "mute": false,
+        "output_mode": 0,
+        "panpot": 2
+      },
+      "notes": [
+        {
+          "audible": true,
+          "authored_note_id": "ID#0001",
+          "dynamics": 0,
+          "end_microseconds": {
+            "denominator": 160,
+            "numerator": "227000187"
+          },
+          "end_ms": 1418.75116875,
+          "key": 63,
+          "note_id": "vsq-t1-ID#0001",
+          "part_id": "vsq-track-1",
+          "project_end_tick": 2721,
+          "project_start_tick": 1920,
+          "singer_event_id": "ID#0000",
+          "source_track_index": 1,
+          "start_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "start_ms": 0.0
+        },
+        {
+          "audible": false,
+          "authored_note_id": "ID#0001",
+          "dynamics": 0,
+          "end_microseconds": {
+            "denominator": 160,
+            "numerator": "227000187"
+          },
+          "end_ms": 1418.75116875,
+          "key": 63,
+          "note_id": "vsq-t2-ID#0001",
+          "part_id": "vsq-track-2",
+          "project_end_tick": 2721,
+          "project_start_tick": 1920,
+          "singer_event_id": "ID#0000",
+          "source_track_index": 2,
+          "start_microseconds": {
+            "denominator": 1,
+            "numerator": "0"
+          },
+          "start_ms": 0.0
+        }
+      ],
+      "parts": [
+        {
+          "audible": true,
+          "mix": {
+            "fader": 4,
+            "mute": false,
+            "panpot": -9,
+            "solo": false
+          },
+          "name": "Test voice",
+          "part_id": "vsq-track-1",
+          "singer_descriptors": [
+            {
+              "event_order": 0,
+              "handle_id": "h#0000",
+              "id": "ID#0000",
+              "tick": 0,
+              "voice": {
+                "caption": "Descriptor only",
+                "icon_id": "$07010000",
+                "ids": "Synthetic voice",
+                "language": 0,
+                "length": 1,
+                "original": 0,
+                "program": 7
+              }
+            }
+          ],
+          "source_track_index": 1
+        },
+        {
+          "audible": false,
+          "mix": {
+            "fader": 4,
+            "mute": true,
+            "panpot": -9,
+            "solo": false
+          },
+          "name": "Original muted voice",
+          "part_id": "vsq-track-2",
+          "singer_descriptors": [
+            {
+              "event_order": 0,
+              "handle_id": "h#0000",
+              "id": "ID#0000",
+              "tick": 0,
+              "voice": {
+                "caption": "Descriptor only",
+                "icon_id": "$07010000",
+                "ids": "Synthetic voice",
+                "language": 0,
+                "length": 1,
+                "original": 0,
+                "program": 7
+              }
+            }
+          ],
+          "source_track_index": 2
+        }
+      ],
+      "practice_origin_project_microseconds": {
+        "denominator": 1,
+        "numerator": "2000000"
+      },
+      "practice_origin_tick": 1920,
+      "premeasure_bars": 1,
+      "profile": "wmh-vsq-base-note-practice-v1",
+      "project_end_tick": 4000,
+      "project_ppq": 480,
+      "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "source": {
+    "choice": "base_notes_instrumental",
+    "content_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+    "key": "song-cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+    "profile": "wmh-vsq-clean-v1",
+    "runtime_policy": "wmh-vsq-base-note-practice-v1"
+  }
+}

@@ -110,6 +110,16 @@ async fn route(
             "Local same-origin requests only",
         );
     }
+    if request.method() != Method::POST
+        && path.starts_with("/api/practice-assistance/")
+        && song_route
+    {
+        return engine_reply(song_api_error(
+            405,
+            "method_not_allowed",
+            "Practice assistance operations require POST",
+        ));
+    }
     if request.method() == Method::GET {
         return match path.as_str() {
             "/api/health" => json_reply(Ok(

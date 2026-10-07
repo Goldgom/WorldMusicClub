@@ -212,6 +212,10 @@ pub fn is_large_operation(path: &str) -> bool {
                 | "/api/library/runtime"
                 | "/api/library/fingering/piano"
                 | "/api/library/fingering/guitar"
+                | "/api/library/assistance/original"
+                | "/api/library/assistance/generate"
+                | "/api/library/assistance/create"
+                | "/api/library/assistance/validate"
         )
 }
 pub fn valid_history_query(uri: &http::Uri) -> bool {

@@ -1,0 +1,803 @@
+{
+  "audio_profile": {
+    "compiled_fingerprint": "8442f32e0e32b4a41bf4e1b7c68ea8d60c5473b49c3b254e63724e1caac00fb8",
+    "duration_ms": 10666.666666666666,
+    "occurrences": [
+      {
+        "duration_ms": 666.6666666666666,
+        "id": "machine-note",
+        "midi": 60,
+        "part_index": 0,
+        "source_indices": [
+          0
+        ],
+        "start_ms": 0.0,
+        "velocity": 90
+      },
+      {
+        "duration_ms": 666.6666666666667,
+        "id": "human-note",
+        "midi": 60,
+        "part_index": 0,
+        "source_indices": [
+          1
+        ],
+        "start_ms": 6.666666666666667,
+        "velocity": 90
+      }
+    ],
+    "part_ids": [
+      "piano"
+    ],
+    "policy_id": "wmh-canonical-sine-ms-v1",
+    "profile": "wmh-canonical-compiled-audio-v1",
+    "source_fingerprint": "c30dec598554f1b674a64f85c9be246693f4b15aea7415ac8c3a000eb8310299",
+    "source_note_ids": [
+      "machine-note",
+      "human-note"
+    ],
+    "source_references": 2
+  },
+  "automatic": {
+    "checked": {
+      "all_selected_human": false,
+      "coverage": {
+        "human_occurrence_count": 1,
+        "human_source_unit_count": 1,
+        "human_target_count": 1,
+        "machine_occurrence_count": 1,
+        "machine_selected_target_count": 1,
+        "machine_source_unit_count": 1,
+        "occurrence_count": 2,
+        "selected_source_unit_count": 2,
+        "selected_target_count": 2,
+        "source_unit_count": 2
+      },
+      "diagnostics": [
+        {
+          "code": "assistance_scope_limits",
+          "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible.",
+          "note_id": null,
+          "severity": "warning"
+        }
+      ],
+      "exclusion_reasons": [
+        {
+          "code": "onset_density",
+          "source_ids": [
+            "human-note"
+          ]
+        }
+      ],
+      "human_targets": {
+        "diagnostics": [],
+        "groups": [
+          {
+            "part_ids": [
+              "piano"
+            ],
+            "source_note_ids": [
+              "machine-note"
+            ],
+            "source_occurrence_ids": [
+              "machine-note"
+            ],
+            "target_id": "machine-note"
+          }
+        ],
+        "playable": true,
+        "source_note_count": 1,
+        "target_count": 1,
+        "timeline": {
+          "duration_ms": 10666.666666666666,
+          "notes": [
+            {
+              "duration_ms": 666.6666666666666,
+              "id": "machine-note",
+              "midi": 60,
+              "part_id": "piano",
+              "source_note_id": "machine-note",
+              "source_note_ids": [
+                "machine-note"
+              ],
+              "staff": 1,
+              "start_ms": 0.0,
+              "velocity": 90,
+              "voice": "1"
+            }
+          ]
+        }
+      },
+      "machine_occurrence_ids": [
+        "human-note"
+      ],
+      "plan": {
+        "format": "wmc-practice-assistance",
+        "human_source_ids": [
+          "machine-note"
+        ],
+        "mode": "automatic",
+        "planner_revision": 1,
+        "receipt": {
+          "choice": null,
+          "runtime_digest": "90ebf9bb009aaebc9d9c9fa2fe9d8f0239bfb5a0fedc879627a2709e6d075d22",
+          "runtime_policy": "wmc-canonical-practice-v1",
+          "saved_package_sha256": null,
+          "source_binding": {
+            "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+            "domain": "wmc-canonical-score-serde-json",
+            "serialization_revision": 1
+          },
+          "source_profile": "wmc-canonical-score-v1"
+        },
+        "revision": 1,
+        "schema_version": 1,
+        "selection": {
+          "profile": {
+            "key_count": 88,
+            "kind": "piano",
+            "lowest_midi": null
+          },
+          "selected_part_ids": [
+            "piano"
+          ]
+        },
+        "selection_digest": "03443716bdbcd7cfb5dcdc5f8dd9cad9027d84eb92ea8078eb82a2dfc3f26cf7",
+        "settings": {
+          "algorithm_id": "wmc-keyboard-assistance-v1",
+          "max_held_span_semitones": 7,
+          "max_simultaneous_keys": 2,
+          "max_targets_per_onset": 1,
+          "min_onset_interval_ms": 250
+        }
+      },
+      "receipt": {
+        "choice": null,
+        "runtime_digest": "90ebf9bb009aaebc9d9c9fa2fe9d8f0239bfb5a0fedc879627a2709e6d075d22",
+        "runtime_policy": "wmc-canonical-practice-v1",
+        "saved_package_sha256": null,
+        "source_binding": {
+          "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+          "domain": "wmc-canonical-score-serde-json",
+          "serialization_revision": 1
+        },
+        "source_profile": "wmc-canonical-score-v1"
+      },
+      "scored_mode_allowed": true,
+      "source_ownership": [
+        {
+          "in_selected_scope": true,
+          "owner": "machine",
+          "part_id": "piano",
+          "source_id": "human-note"
+        },
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "piano",
+          "source_id": "machine-note"
+        }
+      ]
+    },
+    "source": {
+      "choice": null,
+      "kind": "canonical",
+      "profile": "wmc-canonical-score-v1",
+      "runtime_policy": "wmc-canonical-practice-v1",
+      "source_binding": {
+        "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+        "domain": "wmc-canonical-score-serde-json",
+        "serialization_revision": 1
+      }
+    }
+  },
+  "compilation": {
+    "diagnostics": [],
+    "score": {
+      "composer": "WorldMusicHub original exercise",
+      "format_metadata": {
+        "producer": "WorldMusicHub",
+        "producer_version": "0.2.0-alpha.1",
+        "schema_revision": 2
+      },
+      "id": "original-assistance-api-fixture",
+      "keys": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "fifths": 0,
+          "mode": "major"
+        }
+      ],
+      "measures": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 1
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 2
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 8
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 3
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 12
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 4
+        }
+      ],
+      "meters": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "denominator": 4,
+          "numerator": 4
+        }
+      ],
+      "parts": [
+        {
+          "id": "piano",
+          "instrument": "piano",
+          "name": "Piano",
+          "notes": [
+            {
+              "at": {
+                "denominator": 1,
+                "numerator": 0
+              },
+              "duration": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "id": "machine-note",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "C"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 100,
+                "numerator": 1
+              },
+              "duration": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "id": "human-note",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "C"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "attribution": "Newly authored pedagogical scale exercise for WorldMusicHub; not a transcription of a song",
+        "kind": "original_exercise",
+        "license": "CC0-1.0",
+        "source_url": null
+      },
+      "repeats": [],
+      "source": null,
+      "tempo": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "bpm": 90.0
+        }
+      ],
+      "title": "初见 · First Steps",
+      "version": 1
+    },
+    "timeline": {
+      "duration_ms": 10666.666666666666,
+      "notes": [
+        {
+          "duration_ms": 666.6666666666666,
+          "id": "machine-note",
+          "midi": 60,
+          "part_id": "piano",
+          "source_note_id": "machine-note",
+          "source_note_ids": [
+            "machine-note"
+          ],
+          "staff": 1,
+          "start_ms": 0.0,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 666.6666666666667,
+          "id": "human-note",
+          "midi": 60,
+          "part_id": "piano",
+          "source_note_id": "human-note",
+          "source_note_ids": [
+            "human-note"
+          ],
+          "staff": 1,
+          "start_ms": 6.666666666666667,
+          "velocity": 90,
+          "voice": "1"
+        }
+      ]
+    }
+  },
+  "explicit": {
+    "checked": {
+      "all_selected_human": false,
+      "coverage": {
+        "human_occurrence_count": 1,
+        "human_source_unit_count": 1,
+        "human_target_count": 1,
+        "machine_occurrence_count": 1,
+        "machine_selected_target_count": 1,
+        "machine_source_unit_count": 1,
+        "occurrence_count": 2,
+        "selected_source_unit_count": 2,
+        "selected_target_count": 2,
+        "source_unit_count": 2
+      },
+      "diagnostics": [
+        {
+          "code": "assistance_scope_limits",
+          "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible.",
+          "note_id": null,
+          "severity": "warning"
+        }
+      ],
+      "exclusion_reasons": [
+        {
+          "code": "explicit_machine",
+          "source_ids": [
+            "machine-note"
+          ]
+        }
+      ],
+      "human_targets": {
+        "diagnostics": [],
+        "groups": [
+          {
+            "part_ids": [
+              "piano"
+            ],
+            "source_note_ids": [
+              "human-note"
+            ],
+            "source_occurrence_ids": [
+              "human-note"
+            ],
+            "target_id": "human-note"
+          }
+        ],
+        "playable": true,
+        "source_note_count": 1,
+        "target_count": 1,
+        "timeline": {
+          "duration_ms": 10666.666666666666,
+          "notes": [
+            {
+              "duration_ms": 666.6666666666667,
+              "id": "human-note",
+              "midi": 60,
+              "part_id": "piano",
+              "source_note_id": "human-note",
+              "source_note_ids": [
+                "human-note"
+              ],
+              "staff": 1,
+              "start_ms": 6.666666666666667,
+              "velocity": 90,
+              "voice": "1"
+            }
+          ]
+        }
+      },
+      "machine_occurrence_ids": [
+        "machine-note"
+      ],
+      "plan": {
+        "format": "wmc-practice-assistance",
+        "human_source_ids": [
+          "human-note"
+        ],
+        "mode": "explicit",
+        "planner_revision": 1,
+        "receipt": {
+          "choice": null,
+          "runtime_digest": "90ebf9bb009aaebc9d9c9fa2fe9d8f0239bfb5a0fedc879627a2709e6d075d22",
+          "runtime_policy": "wmc-canonical-practice-v1",
+          "saved_package_sha256": null,
+          "source_binding": {
+            "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+            "domain": "wmc-canonical-score-serde-json",
+            "serialization_revision": 1
+          },
+          "source_profile": "wmc-canonical-score-v1"
+        },
+        "revision": 1,
+        "schema_version": 1,
+        "selection": {
+          "profile": {
+            "key_count": 88,
+            "kind": "piano",
+            "lowest_midi": null
+          },
+          "selected_part_ids": [
+            "piano"
+          ]
+        },
+        "selection_digest": "2bfa54629157450d01a40dc831999358df2a462388dcff5b0f34a84efa525c79",
+        "settings": null
+      },
+      "receipt": {
+        "choice": null,
+        "runtime_digest": "90ebf9bb009aaebc9d9c9fa2fe9d8f0239bfb5a0fedc879627a2709e6d075d22",
+        "runtime_policy": "wmc-canonical-practice-v1",
+        "saved_package_sha256": null,
+        "source_binding": {
+          "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+          "domain": "wmc-canonical-score-serde-json",
+          "serialization_revision": 1
+        },
+        "source_profile": "wmc-canonical-score-v1"
+      },
+      "scored_mode_allowed": true,
+      "source_ownership": [
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "piano",
+          "source_id": "human-note"
+        },
+        {
+          "in_selected_scope": true,
+          "owner": "machine",
+          "part_id": "piano",
+          "source_id": "machine-note"
+        }
+      ]
+    },
+    "source": {
+      "choice": null,
+      "kind": "canonical",
+      "profile": "wmc-canonical-score-v1",
+      "runtime_policy": "wmc-canonical-practice-v1",
+      "source_binding": {
+        "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+        "domain": "wmc-canonical-score-serde-json",
+        "serialization_revision": 1
+      }
+    }
+  },
+  "listen": {
+    "checked": {
+      "all_selected_human": false,
+      "coverage": {
+        "human_occurrence_count": 0,
+        "human_source_unit_count": 0,
+        "human_target_count": 0,
+        "machine_occurrence_count": 2,
+        "machine_selected_target_count": 0,
+        "machine_source_unit_count": 2,
+        "occurrence_count": 2,
+        "selected_source_unit_count": 0,
+        "selected_target_count": 0,
+        "source_unit_count": 2
+      },
+      "diagnostics": [
+        {
+          "code": "assistance_scope_limits",
+          "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible.",
+          "note_id": null,
+          "severity": "warning"
+        }
+      ],
+      "exclusion_reasons": [],
+      "human_targets": {
+        "diagnostics": [],
+        "groups": [],
+        "playable": false,
+        "source_note_count": 0,
+        "target_count": 0,
+        "timeline": {
+          "duration_ms": 10666.666666666666,
+          "notes": []
+        }
+      },
+      "machine_occurrence_ids": [
+        "human-note",
+        "machine-note"
+      ],
+      "plan": {
+        "format": "wmc-practice-assistance",
+        "human_source_ids": [],
+        "mode": "original",
+        "planner_revision": 1,
+        "receipt": {
+          "choice": null,
+          "runtime_digest": "90ebf9bb009aaebc9d9c9fa2fe9d8f0239bfb5a0fedc879627a2709e6d075d22",
+          "runtime_policy": "wmc-canonical-practice-v1",
+          "saved_package_sha256": null,
+          "source_binding": {
+            "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+            "domain": "wmc-canonical-score-serde-json",
+            "serialization_revision": 1
+          },
+          "source_profile": "wmc-canonical-score-v1"
+        },
+        "revision": 1,
+        "schema_version": 1,
+        "selection": {
+          "profile": {
+            "key_count": 88,
+            "kind": "piano",
+            "lowest_midi": null
+          },
+          "selected_part_ids": []
+        },
+        "selection_digest": "95a379d9893578b78cd899740df68f45e5a4eff93aa4394563b80c0b435040df",
+        "settings": null
+      },
+      "receipt": {
+        "choice": null,
+        "runtime_digest": "90ebf9bb009aaebc9d9c9fa2fe9d8f0239bfb5a0fedc879627a2709e6d075d22",
+        "runtime_policy": "wmc-canonical-practice-v1",
+        "saved_package_sha256": null,
+        "source_binding": {
+          "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+          "domain": "wmc-canonical-score-serde-json",
+          "serialization_revision": 1
+        },
+        "source_profile": "wmc-canonical-score-v1"
+      },
+      "scored_mode_allowed": false,
+      "source_ownership": [
+        {
+          "in_selected_scope": false,
+          "owner": "machine",
+          "part_id": "piano",
+          "source_id": "human-note"
+        },
+        {
+          "in_selected_scope": false,
+          "owner": "machine",
+          "part_id": "piano",
+          "source_id": "machine-note"
+        }
+      ]
+    },
+    "source": {
+      "choice": null,
+      "kind": "canonical",
+      "profile": "wmc-canonical-score-v1",
+      "runtime_policy": "wmc-canonical-practice-v1",
+      "source_binding": {
+        "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+        "domain": "wmc-canonical-score-serde-json",
+        "serialization_revision": 1
+      }
+    }
+  },
+  "original": {
+    "checked": {
+      "all_selected_human": true,
+      "coverage": {
+        "human_occurrence_count": 2,
+        "human_source_unit_count": 2,
+        "human_target_count": 2,
+        "machine_occurrence_count": 0,
+        "machine_selected_target_count": 0,
+        "machine_source_unit_count": 0,
+        "occurrence_count": 2,
+        "selected_source_unit_count": 2,
+        "selected_target_count": 2,
+        "source_unit_count": 2
+      },
+      "diagnostics": [
+        {
+          "code": "assistance_scope_limits",
+          "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible.",
+          "note_id": null,
+          "severity": "warning"
+        }
+      ],
+      "exclusion_reasons": [],
+      "human_targets": {
+        "diagnostics": [
+          {
+            "code": "piano_overlapping_key_gates",
+            "message": "MIDI key 60 target human-note starts at 6.666666666666667 ms while target machine-note continues until 666.6666666666666 ms. These separate attacks remain scored; independent same-key holds are not certified, and neither source duration is changed.",
+            "note_id": "human-note",
+            "severity": "warning"
+          }
+        ],
+        "groups": [
+          {
+            "part_ids": [
+              "piano"
+            ],
+            "source_note_ids": [
+              "machine-note"
+            ],
+            "source_occurrence_ids": [
+              "machine-note"
+            ],
+            "target_id": "machine-note"
+          },
+          {
+            "part_ids": [
+              "piano"
+            ],
+            "source_note_ids": [
+              "human-note"
+            ],
+            "source_occurrence_ids": [
+              "human-note"
+            ],
+            "target_id": "human-note"
+          }
+        ],
+        "playable": true,
+        "source_note_count": 2,
+        "target_count": 2,
+        "timeline": {
+          "duration_ms": 10666.666666666666,
+          "notes": [
+            {
+              "duration_ms": 666.6666666666666,
+              "id": "machine-note",
+              "midi": 60,
+              "part_id": "piano",
+              "source_note_id": "machine-note",
+              "source_note_ids": [
+                "machine-note"
+              ],
+              "staff": 1,
+              "start_ms": 0.0,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "duration_ms": 666.6666666666667,
+              "id": "human-note",
+              "midi": 60,
+              "part_id": "piano",
+              "source_note_id": "human-note",
+              "source_note_ids": [
+                "human-note"
+              ],
+              "staff": 1,
+              "start_ms": 6.666666666666667,
+              "velocity": 90,
+              "voice": "1"
+            }
+          ]
+        }
+      },
+      "machine_occurrence_ids": [],
+      "plan": {
+        "format": "wmc-practice-assistance",
+        "human_source_ids": [
+          "human-note",
+          "machine-note"
+        ],
+        "mode": "original",
+        "planner_revision": 1,
+        "receipt": {
+          "choice": null,
+          "runtime_digest": "90ebf9bb009aaebc9d9c9fa2fe9d8f0239bfb5a0fedc879627a2709e6d075d22",
+          "runtime_policy": "wmc-canonical-practice-v1",
+          "saved_package_sha256": null,
+          "source_binding": {
+            "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+            "domain": "wmc-canonical-score-serde-json",
+            "serialization_revision": 1
+          },
+          "source_profile": "wmc-canonical-score-v1"
+        },
+        "revision": 1,
+        "schema_version": 1,
+        "selection": {
+          "profile": {
+            "key_count": 88,
+            "kind": "piano",
+            "lowest_midi": null
+          },
+          "selected_part_ids": [
+            "piano"
+          ]
+        },
+        "selection_digest": "22c2f5fce519f05f2a444f0e36868e91441fb5efe75512a45c3863def6ae4389",
+        "settings": null
+      },
+      "receipt": {
+        "choice": null,
+        "runtime_digest": "90ebf9bb009aaebc9d9c9fa2fe9d8f0239bfb5a0fedc879627a2709e6d075d22",
+        "runtime_policy": "wmc-canonical-practice-v1",
+        "saved_package_sha256": null,
+        "source_binding": {
+          "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+          "domain": "wmc-canonical-score-serde-json",
+          "serialization_revision": 1
+        },
+        "source_profile": "wmc-canonical-score-v1"
+      },
+      "scored_mode_allowed": true,
+      "source_ownership": [
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "piano",
+          "source_id": "human-note"
+        },
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "piano",
+          "source_id": "machine-note"
+        }
+      ]
+    },
+    "source": {
+      "choice": null,
+      "kind": "canonical",
+      "profile": "wmc-canonical-score-v1",
+      "runtime_policy": "wmc-canonical-practice-v1",
+      "source_binding": {
+        "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+        "domain": "wmc-canonical-score-serde-json",
+        "serialization_revision": 1
+      }
+    }
+  }
+}

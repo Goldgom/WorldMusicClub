@@ -5,6 +5,7 @@ mod acceptance_publication;
 pub mod catalog;
 #[doc(hidden)]
 pub mod catalog_journal;
+mod native_assistance;
 mod native_basic_keys;
 mod native_fingering;
 pub mod native_library;
@@ -227,6 +228,16 @@ fn dispatch_inner(
                 "Native filesystem storage is not attached to this adapter",
             ),
         };
+    }
+    if request.method() != "POST"
+        && path.starts_with("/api/practice-assistance/")
+        && practice_server::is_song_api_route(path)
+    {
+        return engine_response(practice_server::song_api_error(
+            405,
+            "method_not_allowed",
+            "Practice assistance operations require POST",
+        ));
     }
     if request.method() == "GET" {
         return match path {

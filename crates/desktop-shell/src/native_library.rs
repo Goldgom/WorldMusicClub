@@ -1032,6 +1032,10 @@ pub fn dispatch(
         ("POST", "/api/library/save") => decode(bytes).and_then(|request| library.save(request)).and_then(|entry| serde_json::to_value(entry).map_err(|error| corrupt(error.to_string()))),
         ("POST", "/api/library/basic-keys/notation") => crate::native_basic_keys::notation(library, bytes),
         ("POST", "/api/library/fingering/piano" | "/api/library/fingering/guitar") => crate::native_fingering::plan(library, bytes, path.ends_with("/piano")),
+        ("POST", "/api/library/assistance/original") => crate::native_assistance::original(library, bytes),
+        ("POST", "/api/library/assistance/generate") => crate::native_assistance::generate(library, bytes),
+        ("POST", "/api/library/assistance/create") => crate::native_assistance::create(library, bytes),
+        ("POST", "/api/library/assistance/validate") => crate::native_assistance::validate(library, bytes),
         ("POST", "/api/library/runtime") => decode::<RuntimeRequest>(bytes).and_then(|request| selected_runtime(library, request)),
         ("POST", "/api/library/load" | "/api/library/export") => decode::<KeyRequest>(bytes).and_then(|request| library.load(&request.key)).and_then(|loaded| {
             if path.ends_with("/export") && loaded.clean_package.is_some() {
@@ -1042,7 +1046,7 @@ pub fn dispatch(
                 serde_json::to_value(loaded).map_err(|e| corrupt(e.to_string()))
             }
         }),
-        (_, "/api/library/manage/query" | "/api/library/list" | "/api/library/save" | "/api/library/load" | "/api/library/export" | "/api/library/asset" | "/api/library/runtime" | "/api/library/basic-keys/notation" | "/api/library/fingering/piano" | "/api/library/fingering/guitar") => Err(fail(405, "library_method_not_allowed", "Unsupported method for this library operation")),
+        (_, "/api/library/manage/query" | "/api/library/list" | "/api/library/save" | "/api/library/load" | "/api/library/export" | "/api/library/asset" | "/api/library/runtime" | "/api/library/basic-keys/notation" | "/api/library/fingering/piano" | "/api/library/fingering/guitar" | "/api/library/assistance/original" | "/api/library/assistance/generate" | "/api/library/assistance/create" | "/api/library/assistance/validate") => Err(fail(405, "library_method_not_allowed", "Unsupported method for this library operation")),
         _ => Err(fail(404, "library_unknown_route", "Unknown native library operation")),
     };
     match result {
