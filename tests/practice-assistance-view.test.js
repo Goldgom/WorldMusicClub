@@ -102,9 +102,10 @@ test('idle stage Original union and sound changes preserve the ordinary path wit
  assert.equal(f.$('song-mod-assistance-reset-label').hidden,true);assert.equal(f.$('song-mod-assistance-reset').checked,false);assert.equal(f.$('song-mod-apply').disabled,false);f.$('song-mod-apply').click();await settle(()=>!f.$('song-mod-dialog').open);
  assert.equal(f.calls.length,0);assert.equal(f.storage.values.size,0);assert.equal(f.applyOptions[0].assistanceChanged,false);assert.equal(f.applyOptions[0].resetConfirmed,true);assert.equal(f.starts,0);
 });
-test('an in-progress ordinary Original stage change still requires explicit reset and Cancel preserves the Mod',()=>{
- const f=fixture({stage:true,hasTakes:true}),before=structuredClone(f.context.mod);const human=f.document.querySelector('[data-mod-performer="bass"]');human.value='human';f.emit(human,'change');
- assert.equal(f.$('song-mod-assistance-reset-label').hidden,false);assert.equal(f.$('song-mod-apply').disabled,true);f.$('song-mod-cancel').click();assert.deepEqual(f.context.mod,before);assert.equal(f.calls.length,0);assert.equal(f.storage.values.size,0);
+test('an in-progress ordinary Original stage edit keeps warning plus Apply without opting into assistance',async()=>{
+ const f=fixture({stage:true,hasTakes:true}),before=structuredClone(f.context.mod);let human=f.document.querySelector('[data-mod-performer="bass"]');human.value='human';f.emit(human,'change');
+ assert.match(f.$('song-mod-warning').textContent,/restarts this session/);assert.equal(f.$('song-mod-assistance-reset-label').hidden,true);assert.equal(f.$('song-mod-assistance-reset').checked,false);assert.equal(f.$('song-mod-apply').disabled,false);f.$('song-mod-cancel').click();assert.deepEqual(f.context.mod,before);
+ f.view.open('stage');human=f.document.querySelector('[data-mod-performer="bass"]');human.value='human';f.emit(human,'change');f.$('song-mod-apply').click();await settle(()=>!f.$('song-mod-dialog').open);assert.equal(f.context.mod.config.parts[1].performer,'human');assert.equal(f.applyOptions[0].assistanceChanged,false);assert.equal(f.calls.length,0);assert.equal(f.storage.values.size,0);assert.equal(f.starts,0);
 });
 test('an idle active assistance recipe replacement still requires explicit reset',async()=>{
  const f=fixture({stage:true,hasTakes:false});f.change('song-mod-assistance-mode','automatic');assert.equal(f.$('song-mod-assistance-reset-label').hidden,true);assert.equal(f.$('song-mod-apply').disabled,false);f.$('song-mod-apply').click();await settle(()=>!f.$('song-mod-dialog').open);const active=f.controller.current();
@@ -114,4 +115,10 @@ test('an idle saved recipe awaiting restore still requires reset confirmation fo
  const source=fixture();source.change('song-mod-assistance-mode','automatic');source.$('song-mod-apply').click();await settle(()=>!source.$('song-mod-dialog').open);
  const f=fixture({stage:true,hasTakes:false,storage:source.storage});assert.equal(f.controller.state().active,null);assert.ok(f.controller.state().persistence.recipe);f.change('song-mod-assistance-mode','original');assert.equal(f.$('song-mod-assistance-reset-label').hidden,false);assert.equal(f.$('song-mod-apply').disabled,true);
  f.change('song-mod-assistance-reset',true);f.$('song-mod-apply').click();await settle(()=>!f.$('song-mod-dialog').open);assert.equal(f.controller.current().plan.mode,'original');assert.equal(f.starts,0);
+});
+
+
+test('changing sound with an active checked recipe still requires the assistance reset acknowledgement',async()=>{
+ const f=fixture({stage:true,hasTakes:true});f.change('song-mod-assistance-mode','automatic');f.change('song-mod-assistance-reset',true);f.$('song-mod-apply').click();await settle(()=>!f.$('song-mod-dialog').open);const active=f.controller.current();
+ f.view.open('stage');const live=f.document.querySelector('[data-mod-live-instrument="piano"]');live.value='guitar';f.emit(live,'change');assert.equal(f.$('song-mod-assistance-reset-label').hidden,false);assert.equal(f.$('song-mod-apply').disabled,true);f.$('song-mod-cancel').click();assert.equal(f.controller.current(),active);
 });

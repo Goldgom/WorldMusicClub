@@ -571,7 +571,7 @@ async function applySongMod({origin,context,mod,assistance=null,assistanceChange
   validateSongMod(mod,{identity:songMods.identity(context),parts:context.score.parts});assertSongModSupported(mod,songModCapabilities(context),{assistance});assertModLiveAudioSupported(mod);
   const prospective={...context,songMod:mod,mod,assistance},livePolicy=assertPartInstrumentPolicyReady(modInputPolicy(mod,prospective),context.score.parts,i18n.locale);
   const options=songModOptions(mod,{assistance}),changes=songModChanges(context.mod,mod),requiresReset=changes.requiresReset||assistanceChanged;
-  if(origin==='stage'&&requiresReset&&(context.hasTakes||context.assistance||context.assistanceController?.state().persistence.recipe)&&!resetConfirmed)throw new Error('Confirm that changing this assignment restarts the session and clears its takes.');
+  if(origin==='stage'&&requiresReset&&(assistanceChanged||context.assistance||context.assistanceController?.state().persistence.recipe)&&(context.hasTakes||context.assistance||context.assistanceController?.state().persistence.recipe)&&!resetConfirmed)throw new Error('Confirm that changing this assignment restarts the session and clears its takes.');
   const profileSnapshot=JSON.stringify(currentProfile());
   const current=()=>isCurrent()&&profileSnapshot===JSON.stringify(currentProfile())&&!scoreAdmissionPending()&&context.generation===state.generation&&!document.hidden&&context.navigation===scoreSaveNavigation&&(origin==='stage'?context.mode===state.mode&&context.score===state.score&&shell.screen()==='stage':context.score===preview.value.score&&context.identity===preview.value.identity&&context.previewVersion===preview.version&&shell.screen()==='library');
   function assertCandidate(){

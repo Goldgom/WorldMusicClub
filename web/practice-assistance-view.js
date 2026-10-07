@@ -30,7 +30,7 @@ export function setupPracticeAssistanceView({document,parent,i18n,onChange=()=>{
   }
   function checked(){const s=state();return s?.prepared||(!changed()?s?.active:null)||null;}
   function hasMachine(partId){const plan=checked();if(!plan)return false;let parts=machineParts.get(plan);if(!parts){parts=new Set(plan.source_ownership.filter(source=>source.owner==='machine').map(source=>source.part_id));machineParts.set(plan,parts);}return parts.has(partId);}
-  function resetRequired(){const s=state();return origin==='stage'&&Boolean(hasTakes||s?.active||s?.persistence.recipe)&&(modReset||changed());}
+  function resetRequired(){const s=state(),assistanceChange=changed(),assisted=Boolean(s?.active||s?.persistence.recipe||assistanceChange);return origin==='stage'&&assisted&&Boolean(hasTakes||s?.active||s?.persistence.recipe)&&(modReset||assistanceChange);}
   function render(){
     if(rendering)return;rendering=true;
     try{
