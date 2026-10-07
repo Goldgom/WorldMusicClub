@@ -43,6 +43,7 @@ import {densePianoforte} from './numbered-layout-fixtures.js';
 import {originalGuitarChordTransitions} from './guitar-live-fixtures.js';
 import {originalGuitarUnionStudy} from './guitar-union-fixture.js';
 import {GUITAR_UNION_BROWSER_CASE,GUITAR_UNION_REPORT,GUITAR_UNION_VIEWPORTS,guitarUnionScreenshot,assertGuitarUnionState,assertGuitarUnionReport} from './guitar-union-browser-proof.js';
+import {registerGuitarPhraseBrowserRegression} from '../scripts/ui-preview-guitar-phrase.mjs';
 import {connectionDiagnostics} from './browser-connection-diagnostics.js';
 import {prepareAudioAdmissionDiagnostics, installAudioAdmissionDiagnostics, readAudioAdmissionDiagnostics, readPlaybackFailureState} from './browser-audio-admission-diagnostics.js';
 import {validatePerformanceRecord} from '../web/performance-library.js';
@@ -2866,3 +2867,4 @@ registerLiveToneNavigationBrowserRegressions({test,getPage:()=>page,startPreview
 registerSkinBrowserRegressions({test,getPage:()=>page,getOrigin:()=>origin,ui,startPreview,configureStageMod,readyForTitle,closeShellPanels,exportTakeData,exportScore,pausedTakeSnapshot,getRequests:getRequestsForLocale,artifactDirectory});
 
 registerHumanModTimbreBrowserRegression({test,getPage:()=>page,ui,readyForTitle,closeShellPanels,exportTakeData,exportScore,artifactDirectory});
+registerGuitarPhraseBrowserRegression({test,getPage:()=>page,ui,configureStageMod,setSessionMode,hideNotation,readyForTitle,closeShellPanels,exportTakeData,exportScore,getRequests:getRequestsForLocale,artifactDirectory,binary});

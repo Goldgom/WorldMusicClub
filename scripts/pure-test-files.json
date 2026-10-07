@@ -224,5 +224,6 @@
   "tests/canonical-first-take-clock.test.js",
   "tests/practice-assistance-presets.test.js",
   "tests/frontend-assistance-presets-view.test.js",
-  "tests/frontend-assistance-presets-app.test.js"
+  "tests/frontend-assistance-presets-app.test.js",
+  "tests/guitar-phrase-preview.test.js"
 ]
