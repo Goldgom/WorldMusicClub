@@ -43,7 +43,7 @@ pub struct TranspositionPreview {
     pub scored_mode_allowed: bool,
 }
 
-fn shifted_pitch(pitch: &Pitch, semitones: i16, steps: i16) -> Option<Pitch> {
+pub(crate) fn shifted_pitch(pitch: &Pitch, semitones: i16, steps: i16) -> Option<Pitch> {
     let target = i16::from(pitch.midi()?) + semitones;
     if !(0..=127).contains(&target) {
         return None;
@@ -65,7 +65,7 @@ fn shifted_pitch(pitch: &Pitch, semitones: i16, steps: i16) -> Option<Pitch> {
 
 /// Version1's deterministic policy is part of the restoration contract: minimize
 /// total key-signature accidentals, then written-note accidentals, then fifth distance.
-fn choose_interval(original: &Score, semitones: i16) -> Result<WrittenInterval, String> {
+pub(crate) fn choose_interval(original: &Score, semitones: i16) -> Result<WrittenInterval, String> {
     let mut candidates = Vec::new();
     for delta in -42i16..=42 {
         if (7 * delta).rem_euclid(12) != semitones.rem_euclid(12) {

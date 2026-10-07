@@ -44,6 +44,7 @@ pub mod instruments;
 pub mod metronome;
 pub mod navigation;
 pub mod omr;
+pub mod pitch_projection;
 pub mod practice;
 pub mod practice_progression;
 pub mod practice_source;

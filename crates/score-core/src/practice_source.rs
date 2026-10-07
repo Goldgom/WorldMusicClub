@@ -288,6 +288,43 @@ pub struct PracticeSource {
     pub(crate) diagnostics: Vec<Diagnostic>,
 }
 impl PracticeSource {
+    /// Only a core-owned projection may derive a runtime. The complete original
+    /// binding, identity inventory, exclusions and exact gates stay immutable.
+    pub(crate) fn with_pitch_projection(
+        &self,
+        semitones: i16,
+        identity_digest: &str,
+    ) -> Result<Self, PracticeSourceError> {
+        if semitones == 0 {
+            return Ok(self.clone());
+        }
+        if !(-12..=12).contains(&semitones) {
+            return Err(PracticeSourceError::new(
+                "pitch_mod_shift",
+                "Choose an integer shift from -12 to 12 semitones",
+            ));
+        }
+        let mut derived = self.clone();
+        for note in &mut derived.timeline.notes {
+            if !self.keyboard_excluded.contains(&note.id) {
+                let shifted = i16::from(note.midi) + semitones;
+                if !(0..=127).contains(&shifted) {
+                    let mut error = PracticeSourceError::new("pitch_mod_midi_range", "The whole pitch projection was rejected because a pitched note would leave MIDI 0–127");
+                    error.source_ids = note.source_note_ids.clone();
+                    return Err(error);
+                }
+                note.midi = shifted as u8;
+            }
+        }
+        derived.receipt.runtime_policy = crate::pitch_projection::RUNTIME_POLICY.into();
+        derived.receipt.runtime_digest = hash(&(
+            crate::pitch_projection::RUNTIME_POLICY,
+            identity_digest,
+            &self.receipt,
+            &derived.timeline,
+        ))?;
+        Ok(derived)
+    }
     pub fn receipt(&self) -> &PracticeRuntimeReceipt {
         &self.receipt
     }
