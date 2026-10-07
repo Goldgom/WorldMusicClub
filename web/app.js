@@ -216,7 +216,9 @@ inputRoutes.push({kind:'score',recorder:state.recorder,start:0,end:null});
 function refreshFreeTone(){bindText($('free-live-tone'),()=>`${i18n.t('ui.instrument')}: ${i18n.t(`free.timbre.${state.instrument}`)}`);}
 // Default has no receipt, saved recipe, request or draft to revoke. Preserve
 // this no-op state so ordinary navigation does not invalidate fingering caches.
-function resetAssistanceOnNavigation(controller){if(controller.state().phase!=='default')controller.reset();}
+// A resumable stage owns its admitted assignment independently from lobby edits.
+// Cancel pending drafts on navigation; current() still fences its live tokens.
+function resetAssistanceOnNavigation(controller){const snapshot=controller.state();if(controller===stageAssistance&&snapshot.active)controller.cancelDraft();else if(snapshot.phase!=='default')controller.reset();}
 function changeScreen(screen){
   if(screen!=='stage')resetAssistanceOnNavigation(stageAssistance);
   else if(state.compiled&&stageAssistance.state().phase==='idle'){void stageAssistance.restore();if(stageAssistance.state().phase!=='default')void checkInstrument();}
@@ -1080,6 +1082,7 @@ async function togglePlayback() {
   if(state.cleanSong&&!inspectCleanRendition(state.cleanSong).supported&&!(isBasicKeysSong(state.cleanSong)&&state.mode==='practice'&&state.targetTimeline?.notes.length)){notice(()=>cleanErrorText(i18n.locale,{code:'clean_renderer_unsupported'}),true);return;}
   if (state.mode === 'practice' && (state.compatibility.status !== 'ready'||assistancePracticeGate(stageAssistance))) { notice(compatibilityNotice(state.compatibility), true); return; }
   if(state.songMod){try{assertModLiveAudioSupported(state.songMod,state.mode);assertPartInstrumentPolicyReady(modInputPolicy(state.songMod,state,state.mode),state.score.parts,i18n.locale);}catch(error){notice(()=>error.message,true);return;}}
+  try{assertCurrentPassAssignment();}catch(error){notice(()=>error.message,true);return;}
   const waiting=state.recorder.active;
   if(waiting&&(waiting.manualDeadline!==null||waiting.inFlight||(transport.completed&&state.recorder.pending))){notice(() => t('app.assessmentWaiting'));return}
   if (transport.completed) { if(state.mode==='practice') { transport.reset(); if(state.loop)transport.seek(state.loop.start_ms); state.lastHighlight=''; } else resetPlayback(); }
@@ -1133,7 +1136,13 @@ async function togglePlayback() {
     if(ticket===state.playTicket&&state.playPending){state.playPending=false;cleanPlayer.stop();canonicalSession.stop();updateButtons();}
   }
 }
+function assertCurrentPassAssignment(){
+  const pass=state.recorder.active;if(!pass||pass.closedWall!==null||!pass.captureEnabled)return;
+  const saved=passInterpretations.get(pass),checked=stageAssistance.current();
+  if(!saved||saved.practice_assistance?.plan.selection_digest!==(checked?.plan.selection_digest)||JSON.stringify(saved.practice_assistance?.receipt??null)!==JSON.stringify(checked?.receipt??null)||JSON.stringify(saved.source_revision)!==JSON.stringify(songMods.identity(state))||JSON.stringify(pass.timeline)!==JSON.stringify(state.targetTimeline))throw Object.assign(new Error('This take belongs to another note assignment. Reset the session before playing.'),{code:'assistance_take_reset_required'});
+}
 function beginPracticePass(now, captureEnabled = true) {
+  assertCurrentPassAssignment();
   const checked=stageAssistance.current();if(assistancePracticeGate(stageAssistance)||checked&&!checked.scored_mode_allowed||!state.targetTimeline?.notes.length)throw new Error('This assignment has no admitted human practice targets.');
   const recorder=state.recorder;let pass=recorder.active;
   if(pass&&pass.closedWall===null&&pass.captureEnabled&&captureEnabled) recorder.resume(now,transport.position);

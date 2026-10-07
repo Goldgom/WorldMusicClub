@@ -89,7 +89,9 @@ export function createPracticeAssistanceController({api,getContext,onChange=()=>
   function beginDraft(){
     const context=synchronize();if(!context)return null;invalidate();const stored=store.read(context);persistence=active&&persistence.status==='unsaved'&&stored.status!=='invalid'?{...persistence,raw:stored.raw}:stored;
     const recipe=active?.plan||persistence.recipe;
-    draft={mode:recipe?.mode||'original',settings:recipe?.settings?copy(recipe.settings):null,selection:copy(context.selection),...(persistence.recipe&&!active?{expected_selection_digest:persistence.recipe.expected_selection_digest}:{})};phase='editing';error=null;notify();return value();
+    // Opening a new selection/profile draft is an explicit replacement path.
+    // Only an unchanged saved selection can retain its old expected digest.
+    draft={mode:recipe?.mode||'original',settings:recipe?.settings?copy(recipe.settings):null,selection:copy(context.selection),...(persistence.recipe&&!active&&assistanceEqual(normalizeAssistanceSelection(persistence.recipe.selection),context.selection)?{expected_selection_digest:persistence.recipe.expected_selection_digest}:{})};phase='editing';error=null;notify();return value();
   }
   function setDraft(patch){
     const context=synchronize();if(!context||!draft)fail('assistance_no_draft','Open Mod before editing assistance.');

@@ -83,7 +83,7 @@ test('audio preparation failure leaves the assistance and Mod draft cancellable 
  try{await f.automatic();await app.click('song-mod-apply');await app.until(()=>app.$('song-mod-error').textContent.includes('audio preparation failed'));assert.equal(app.$('song-mod-dialog').open,true);assert.equal([...f.storageValues.keys()].filter(key=>key.startsWith(ASSISTANCE_STORAGE_PREFIX)).length,0);assert.equal(source(app),undefined);await app.click('song-mod-cancel');assert.equal(app.$('song-mod-dialog').open,false);assert.equal(app.$('start-performance').disabled,false);}finally{await app.close();}
 });
 
-test('navigation during assisted audio preparation revokes the current receipt and cannot start a stale receiver or record a take',async()=>{
+test('navigation during assisted audio preparation cancels the receiver and cannot record a stale take',async()=>{
  const f=await setup(),{app}=f,prepare=CanonicalPlayer.prototype.prepare,start=CanonicalPlayer.prototype.startPrepared,wait=deferred();let ready=false,starts=0;
  try{
   await f.automatic();await f.apply();CanonicalPlayer.prototype.prepare=async function(...args){const result=await prepare.apply(this,args);ready=true;await wait.promise;return result;};CanonicalPlayer.prototype.startPrepared=function(...args){starts++;return start.apply(this,args);};
@@ -102,5 +102,16 @@ test('assessment without playback validates the current assistance in the silent
  const f=await setup(),{app}=f;
  try{
   await f.automatic();await f.apply();await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');await app.click('reset-button');await app.click('assess-button');await app.until(()=>Boolean(app.$('feedback-pass').querySelector('option[value="1"]')));const exported=await app.exported('export-takes');assert.equal(exported.passes.length,1);assert.match(exported.passes[0].interpretation.assistance_fingerprint,/^[a-f0-9]{64}$/);assert.deepEqual(exported.passes[0].timeline.notes,fixture.automatic.checked.human_targets.timeline.notes);assert.equal(exported.passes[0].inputs.length,0);assert.equal(source(app),undefined);
+ }finally{await app.close();}
+});
+
+for(const edit of ['cancel','apply'])test(`resuming Automatic preserves its frozen take, scoring and audio after lobby Original ${edit}`,async()=>{
+ const f=await setup(),{app}=f;
+ try{
+  await f.automatic();await f.apply();app.$('count-in').checked=false;await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');await app.click('back-to-library');const before=await app.exported('export-takes');await app.until(()=>!app.$('configure-song-mod').disabled);await app.click('configure-song-mod');set(app,app.$('song-mod-assistance-mode'),'original');if(edit==='apply')await f.apply();else await app.click('song-mod-cancel');
+  const key=[...f.storageValues.keys()].find(key=>key.startsWith(ASSISTANCE_STORAGE_PREFIX));assert.equal(JSON.parse(f.storageValues.get(key)).mode,edit==='apply'?'original':'automatic');
+  await app.click('resume-session');await app.until(()=>!app.$('play-button').disabled);const resumed=await app.exported('export-takes');assert.deepEqual(resumed.passes,before.passes);assert.deepEqual(resumed.target_plan,before.target_plan);assert.deepEqual(resumed.practice_assistance,before.practice_assistance);assert.equal(source(app),undefined);
+  await app.click('play-button');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');const played=await app.exported('export-takes');assert.equal(played.passes.length,1);assert.deepEqual(played.passes[0].timeline.notes,fixture.automatic.checked.human_targets.timeline.notes);assert.equal(played.practice_assistance.plan.selection_digest,played.passes[0].interpretation.practice_assistance.plan.selection_digest);assert.equal(played.practice_assistance.plan.mode,'automatic');assert.equal(source(app).core.plan.count,fixture.automatic.checked.machine_occurrence_ids.length);assert.equal(played.passes[0].interpretation.playback_segments.at(-1).assistance_fingerprint,played.passes[0].interpretation.assistance_fingerprint);
+  if(edit==='apply'){await app.click('back-to-library');await app.until(()=>!app.$('start-performance').disabled);await app.click('start-performance');await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');const fresh=await app.exported('export-takes');assert.equal(fresh.practice_assistance.plan.mode,'original');assert.equal(fresh.passes.length,1);assert.deepEqual(fresh.passes[0].timeline.notes,fixture.original.checked.human_targets.timeline.notes);assert.equal(source(app).core.plan.count,0);}
  }finally{await app.close();}
 });

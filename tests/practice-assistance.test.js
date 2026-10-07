@@ -104,3 +104,12 @@ test('complete cross-scope atomic exclusion may identify an unselected machine o
  const context=assistanceContext(),response=assistanceResponse(context);response.checked.exclusion_reasons=[{source_ids:['b','bass'],code:'cross_scope_physical_group'}];assert.equal(admitPracticeAssistance(response,assistanceBinding(context)).coverage.human_target_count,2);
  response.checked.exclusion_reasons[0].code='onset_density';assert.throws(()=>admitPracticeAssistance(response,assistanceBinding(context)));
 });
+
+test('changed guitar profile can explicitly rebuild Original without inheriting the old selection digest',async()=>{
+ const context=assistanceContext();context.selection.profile={kind:'guitar',tuning:[64,59,55,50,45,40],frets:12,capo:0};const h=harness({context});
+ await h.controller.restore();h.controller.beginDraft();await h.controller.prepareDraft();const original=h.controller.commitDraft({resetConfirmed:true}),key=h.store.key(h.context),raw=h.storage.values.get(key);
+ h.context={...h.context,selection:{...h.context.selection,profile:{...h.context.selection.profile,frets:20}}};await h.controller.restore();assert.equal(h.controller.state().phase,'blocked');assert.equal(h.controller.current(),null);
+ h.controller.beginDraft();h.controller.setDraft({mode:'original',settings:null});assert.equal(h.controller.state().draft.expected_selection_digest,undefined);await h.controller.prepareDraft();h.controller.cancelDraft();assert.equal(h.storage.values.get(key),raw);assert.equal(h.controller.current(),null);
+ h.controller.beginDraft();await h.controller.prepareDraft();assert.throws(()=>h.controller.commitDraft(),/Confirm the reset/);assert.equal(h.storage.values.get(key),raw);const rebuilt=h.controller.commitDraft({resetConfirmed:true});assert.equal(rebuilt.plan.selection.profile.frets,20);assert.notEqual(rebuilt.plan.selection_digest,original.plan.selection_digest);
+ const recipe=JSON.parse(h.storage.values.get(key));recipe.expected_selection_digest='d'.repeat(64);const tampered=JSON.stringify(recipe);h.storage.values.set(key,tampered);h.controller.reset();await h.controller.restore();h.controller.beginDraft();h.controller.setDraft({mode:'original',settings:null});assert.equal(h.controller.state().draft.expected_selection_digest,recipe.expected_selection_digest);await assert.rejects(h.controller.prepareDraft(),/does not match/);assert.equal(h.storage.values.get(key),tampered);
+});
