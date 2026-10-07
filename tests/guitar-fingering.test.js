@@ -1,14 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fixture} from './frontend-fixtures.js';
-import {validateGuitarFingering,setupGuitarFingering} from '../web/guitar-fingering.js';
+import {validateGuitarFingering,setupGuitarFingering,guitarSelectedNotes,guitarSelectedPartIds} from '../web/guitar-fingering.js';
 
 function context(){const score=structuredClone(fixture);return{score,timeline:{duration_ms:2000,notes:score.parts[0].notes.map((note,index)=>({id:note.id,source_note_ids:[note.id],part_id:'piano',midi:index?64:60,start_ms:index*500,duration_ms:500}))},part_id:null,profile:{kind:'guitar',tuning:[40,45,50,55,59,64],frets:12,capo:0},dirty:false};}
 const defaults=()=>({max_fret_span:3,locks:[]});
 function result(ctx,settings=defaults()){
- const notes=ctx.timeline.notes.filter(note=>ctx.part_id===null||note.part_id===ctx.part_id);
- return{version:1,algorithm:'deterministic_guitar_beam_v1',score_id:ctx.score.id,part_id:ctx.part_id,status:notes.length?'ready':'no_targets',profile:structuredClone(ctx.profile),complete:true,changed_source_notes:false,source_occurrence_count:notes.length,max_fret_span:settings.max_fret_span,beam_width:64,explored_choices:2,beam_pruned:false,objective_cost:notes.length?6:0,requested_locks:structuredClone(settings.locks),diagnostics:[],assignments:notes.map((note,index)=>({occurrence_id:note.id,source_note_ids:[...note.source_note_ids],part_id:note.part_id,midi:note.midi,start_ms:note.start_ms,end_ms:note.start_ms+note.duration_ms,string:index?6:5,fret:index?0:1,finger:index?0:1,onset_index:index,picking_hint:index?'upstroke_suggestion':'downstroke_suggestion'}))};
+ const notes=guitarSelectedNotes(ctx);
+ return{version:1,algorithm:'deterministic_guitar_beam_v1',score_id:ctx.score.id,part_id:ctx.part_id,...(ctx.selected_part_ids===undefined?{}:{selected_part_ids:guitarSelectedPartIds(ctx)}),status:notes.length?'ready':'no_targets',profile:structuredClone(ctx.profile),complete:true,changed_source_notes:false,source_occurrence_count:notes.length,max_fret_span:settings.max_fret_span,beam_width:64,explored_choices:2,beam_pruned:false,objective_cost:notes.length?6:0,requested_locks:structuredClone(settings.locks),diagnostics:[],assignments:notes.map((note,index)=>({occurrence_id:note.id,source_note_ids:[...note.source_note_ids],part_id:note.part_id,midi:note.midi,start_ms:note.start_ms,end_ms:note.start_ms+note.duration_ms,string:index?6:5,fret:index?0:1,finger:index?0:1,onset_index:index,picking_hint:index?'upstroke_suggestion':'downstroke_suggestion'}))};
 }
+test('explicit union normalizes an omitted legacy part to the Rust null envelope',async()=>{
+ const ctx=context();delete ctx.part_id;ctx.selected_part_ids=['piano'];
+ const plan=result({...ctx,part_id:null});
+ assert.equal(validateGuitarFingering(plan,ctx,defaults()),plan);
+ const requests=[],guide=setupGuitarFingering({getContext:()=>ctx,api:async(_path,body)=>{requests.push(body);return plan;}});
+ await guide.prepare();assert.equal(guide.state().phase,'ready');assert.equal(requests.length,1);
+ assert.equal(requests[0].part_id,null);assert.deepEqual(requests[0].selected_part_ids,['piano']);
+ const wrong={...plan,part_id:'piano'};assert.throws(()=>validateGuitarFingering(wrong,ctx,defaults()));
+});
 test('guitar plan validation retains exact source/part/timing and capo-relative position correspondence',()=>{
  const ctx=context(),plan=result(ctx),before=structuredClone({ctx,plan});assert.equal(validateGuitarFingering(plan,ctx,defaults()),plan);assert.deepEqual({ctx,plan},before);
  const reordered={...plan,profile:{capo:0,frets:12,tuning:[40,45,50,55,59,64],kind:'guitar'}};assert.equal(validateGuitarFingering(reordered,ctx,defaults()),reordered);
@@ -99,7 +108,7 @@ function phraseResult(ctx,body,ids=['c4'],entry=[]){
  const plan=result(ctx,body),notes=ctx.timeline.notes.filter(note=>ids.includes(note.id));
  const starts=[...new Set(notes.map(note=>note.start_ms))].sort((a,b)=>a-b);
  plan.purpose=body.inventory_only?'scope_inventory':'phrase_plan';
- plan.planning_scope={requested:structuredClone(body.planning_scope),start_ms:250,end_ms:500,full_occurrence_count:ctx.timeline.notes.filter(note=>ctx.part_id===null||ctx.part_id===note.part_id).length,selected_occurrence_count:ids.length,included_occurrence_ids:ids,entry_hold_occurrence_ids:entry};
+ plan.planning_scope={requested:structuredClone(body.planning_scope),start_ms:250,end_ms:500,full_occurrence_count:guitarSelectedNotes(ctx).length,selected_occurrence_count:ids.length,included_occurrence_ids:ids,entry_hold_occurrence_ids:entry};
  plan.source_occurrence_count=ids.length;
  plan.assignments=plan.assignments.filter(choice=>ids.includes(choice.occurrence_id)).map(choice=>({...choice,onset_index:starts.indexOf(choice.start_ms),picking_hint:notes.filter(note=>note.start_ms===choice.start_ms).length>1?'simultaneous_pluck_review':starts.indexOf(choice.start_ms)%2?'upstroke_suggestion':'downstroke_suggestion'}));
  if(body.inventory_only)Object.assign(plan,{status:'unavailable',complete:false,assignments:[],objective_cost:null});
@@ -187,4 +196,49 @@ test('controller display metadata uses stable codes without changing error prose
  const pending=guide.prepare();assert.equal(guide.state().messageCode,'guitar_loading');await pending;
  assert.equal(guide.state().messageCode,'guitar_error');assert.deepEqual(guide.state().errorDetails,{code:'engine_detail_17',message:'Engine text without a status word'});assert.match(guide.state().message,/Engine text without/);
  guide.editPlanningScope();assert.equal(guide.state().messageCode,'guitar_draft');assert.equal(guide.state().errorDetails,null);
+});
+
+function unionContext(){
+ const ctx=context(),part=ctx.score.parts[0];
+ ctx.score.parts=['A','B','C'].map(id=>({...part,id,name:`Part ${id}`,notes:[]}));
+ ctx.timeline.notes=[{...ctx.timeline.notes[0],part_id:'A'},{...ctx.timeline.notes[1],part_id:'B'},{...ctx.timeline.notes[1],id:'machine',source_note_ids:['machine'],part_id:'C',start_ms:1000}];
+ ctx.selected_part_ids=['B','A'];return ctx;
+}
+test('selected human union normalizes in source order, filters machine locks and binds the echoed scope',async()=>{
+ const ctx=unionContext(),calls=[],guide=setupGuitarFingering({getContext:()=>ctx,api:async(path,body)=>{calls.push({path,body});return result(ctx,body)}});
+ guide.setSettings({max_fret_span:3,locks:[{source_note_id:'e4',finger:0},{source_note_id:'machine',finger:0}]});
+ await guide.prepare();assert.equal(guide.state().phase,'ready');
+ assert.deepEqual(calls[0].body.selected_part_ids,['A','B']);assert.equal(calls[0].body.part_id,null);
+ assert.deepEqual(calls[0].body.locks,[{source_note_id:'e4',string:null,fret:null,finger:0}]);
+ assert.deepEqual(guide.state().plan.assignments.map(note=>note.part_id),['A','B']);assert.equal(guide.assignment('machine'),null);
+ ctx.selected_part_ids=['A','B'];await guide.prepare();assert.equal(calls.length,1,'Equivalent source-order selections share a cache');
+ const plan=result(ctx),settings=defaults();
+ for(const mutate of [p=>delete p.selected_part_ids,p=>p.selected_part_ids=['A'],p=>p.selected_part_ids=['B','A'],p=>p.selected_part_ids=['A','C'],p=>p.selected_part_ids=null,p=>p.part_id='A']){
+  const invalid=structuredClone(plan);mutate(invalid);assert.throws(()=>validateGuitarFingering(invalid,ctx,settings));
+ }
+});
+test('A+B to A+C invalidates cached guidance and late responses with the same first human part',async()=>{
+ let ctx=unionContext();const old=structuredClone(ctx),calls=[],guide=setupGuitarFingering({getContext:()=>ctx,api:(path,body,signal)=>new Promise(resolve=>calls.push({path,body,signal,resolve}))});
+ const first=guide.prepare();await Promise.resolve();ctx={...ctx,selected_part_ids:['A','C']};const fresh=guide.prepare();await Promise.resolve();
+ assert.equal(calls[0].signal.aborted,true);assert.deepEqual(calls[1].body.selected_part_ids,['A','C']);
+ calls[1].resolve(result(ctx));await fresh;assert.ok(guide.assignment('machine'));assert.equal(guide.assignment('e4'),null);
+ calls[0].resolve(result(old));await first;assert.deepEqual(guide.state().plan.selected_part_ids,['A','C']);
+ ctx.selected_part_ids[1]='B';assert.equal(guide.assignment('machine'),null,'In-place ownership edits clear the old route');
+});
+test('selected union changes cancel both phrase phases and preserve inactive source locks',async()=>{
+ for(const phase of ['inventory','plan']){
+  let ctx=unionContext();const old=structuredClone(ctx),calls=[],guide=setupGuitarFingering({getContext:()=>ctx,api:(path,body,signal)=>new Promise(resolve=>calls.push({path,body,signal,resolve}))});
+  guide.setSettings({max_fret_span:3,locks:[{source_note_id:'e4',finger:0},{source_note_id:'machine',finger:0}]});guide.setPlanningScope(phrase());
+  const pending=guide.prepare();await Promise.resolve();assert.deepEqual(calls[0].body.selected_part_ids,['A','B']);assert.deepEqual(calls[0].body.locks,[]);
+  if(phase==='plan'){calls[0].resolve(phraseResult(old,calls[0].body,['e4']));await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(calls[1].body.selected_part_ids,['A','B']);assert.equal(calls[1].body.locks[0].source_note_id,'e4');}
+  const current=calls.at(-1);ctx={...ctx,selected_part_ids:['A','C']};guide.state();assert.equal(current.signal.aborted,true);assert.equal(guide.state().scopeInventory,null);
+  current.resolve(phraseResult(old,current.body,['e4']));await pending;assert.equal(guide.state().plan,null);assert.equal(calls.length,phase==='plan'?2:1);assert.equal(guide.state().settings.locks.length,2);
+ }
+});
+test('malformed explicit unions invalidate previous guidance and never become legacy All',async()=>{
+ for(const ids of [null,[],['A','A'],['A','unknown'],'A']){
+  const ctx=unionContext(),calls=[],guide=setupGuitarFingering({getContext:()=>ctx,api:async(path,body)=>{calls.push(body);return result(ctx,body)}});
+  await guide.prepare();ctx.selected_part_ids=ids;assert.equal(guide.assignment('c4'),null);await guide.prepare();assert.equal(calls.length,1);assert.equal(guide.state().errorDetails.code,'guitar_selection_invalid');
+ }
+ const ctx=unionContext();ctx.part_id='A';const guide=setupGuitarFingering({getContext:()=>ctx,api:()=>{throw Error('Unexpected request')}});await guide.prepare();assert.equal(guide.state().errorDetails.code,'guitar_selection_invalid');
 });

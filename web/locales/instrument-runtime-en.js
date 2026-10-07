@@ -93,6 +93,7 @@ export default Object.freeze({
   "guitar.runtime.inactiveLock": " (other part; inactive for this selection)",
   "guitar.runtime.removeLock": "Remove guitar lock for {source}",
   "guitar.runtime.lockCount": "{total} session locks; {active} apply to the selected parts. Applied fret span: {span}.",
+  "guitar.runtime.selection": "Human parts: {parts} · {count} source occurrences in this selection",
   "guitar.runtime.model": "Rust {algorithm} · beam {beam} · {choices} choices · {pruning}{cost}. {scope}",
   "guitar.runtime.pruned": "some paths pruned",
   "guitar.runtime.notPruned": "no beam pruning",

@@ -1774,7 +1774,7 @@ externalOmrView = setupExternalOmrReview({api,onActivate:(score,signal,options)=
 // selected-part octave copy. Keep the session's All ownership unchanged.
 adaptationView = setupAdaptationView({api,pausePlayback,notice,onActivate:activateCanonicalTransformation,getContext:()=>({score:state.cleanSong?null:state.score,part:state.practicePart??(state.score?.parts.length===1?state.score.parts[0].id:null),profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
 transpositionView = setupTranspositionView({api,pausePlayback,notice,onActivate:activateCanonicalTransformation,getContext:()=>({score:state.cleanSong?null:state.score,timeline:state.compiled?.timeline,part:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,version:`${state.loadIntent}:${state.practiceVersion}:${state.instrumentRequest}`})});
-const guitarContext=()=>({score:state.score,timeline:state.compiled?.timeline,cleanSong:state.cleanSong,part_id:state.practicePart,profile:currentProfile(),dirty:state.profileDirty});
+const guitarContext=()=>({score:state.score,timeline:state.compiled?.timeline,cleanSong:state.cleanSong,...(state.practiceSelection?{part_id:null,selected_part_ids:state.practiceSelection.part_ids}:{part_id:state.practicePart}),profile:currentProfile(),dirty:state.profileDirty});
 guitarFingering=setupGuitarFingering({api,getContext:guitarContext,onChange:()=>guitarFingeringView?.render()});
 guitarFingeringView=setupGuitarFingeringView({document,controller:guitarFingering,getContext:guitarContext,onRefresh:drawFrame});
 guitarFingeringView.render();

@@ -6,8 +6,37 @@ with the same solver, constraints and strict response validation.
 `POST /api/fingering/guitar` accepts `{score, part_id, profile, max_fret_span, locks}`.
 An optional versioned `planning_scope` selects an exact written phrase; omitting
 it preserves the whole-selection request and response contract described below.
-The full canonical score is compiled by Rust. `part_id:null` plans all parts;
-an existing part ID explicitly selects that part. The profile is the existing
+The full canonical score is compiled by Rust. Legacy requests with no
+`selected_part_ids` preserve `part_id:null` for All and an existing `part_id`
+for a solo part. New requests use `part_id:null` and a nonempty
+`selected_part_ids:["part-a","part-b"]` array for exactly the human-part union.
+The field must be absent or a valid array: explicit null, empty, duplicate,
+unknown, non-string IDs, and use alongside a non-null legacy `part_id` are
+rejected. Rust normalizes the selected set in original score-part order and
+echoes `selected_part_ids` in every plan and phrase inventory response. Legacy
+responses omit that field. The browser verifies this exact scope before using
+any assignment.
+
+Selected occurrences enter one shared solver, including cross-part held strings,
+complete ties, repeat occurrences and same-pitch attacks on distinct strings.
+Machine accompaniment does not consume the selected occurrence/reference budgets
+or enter the guitar inventory, phrase, active locks or search. A later selected
+part can change an earlier part's recommended string; plans are never concatenated
+from independent solo results. The original score and its full timeline remain
+unchanged. The UI shows selected part names and their full occurrence count;
+explicit phrase status separately shows the covered occurrences and entry holds.
+An A+B to A+C ownership change invalidates both in-flight request phases and the
+cache even when A remains first. Locks outside the current union remain stored
+but inactive and do not enter the request. Reordering the same selected set keeps
+the normalized cache identity.
+
+The shared exact occurrence boundary retains the legacy piano interface. This
+slice covers full-part selection; note-level human ownership must be resolved
+from a checked assistance plan before it can provide guitar guidance. Basic key
+projections remain unavailable until an actual source/interpretation adapter can
+preserve all admitted attacks and receiver-end evidence.
+
+The profile is the existing
 `{kind:"guitar", tuning:[40,45,50,55,59,64], frets:12, capo:0}` shape.
 `max_fret_span` defaults to 3 and bounds highest minus lowest held fretted position;
 0–12 is supported. It is a chosen model constraint, not a measured hand size.

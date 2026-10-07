@@ -93,6 +93,7 @@ export default Object.freeze({
   "guitar.runtime.inactiveLock": "（其他声部；当前选择中不生效）",
   "guitar.runtime.removeLock": "移除 {source} 的吉他锁定",
   "guitar.runtime.lockCount": "本次会话有 {total} 个锁定；其中 {active} 个适用于所选声部。已应用品位跨度：{span}。",
+  "guitar.runtime.selection": "演奏声部：{parts} · 此选择共 {count} 个源音符事件",
   "guitar.runtime.model": "Rust {algorithm} · 束宽 {beam} · {choices} 个选择 · {pruning}{cost}。{scope}",
   "guitar.runtime.pruned": "部分路径已剪枝",
   "guitar.runtime.notPruned": "未进行束搜索剪枝",

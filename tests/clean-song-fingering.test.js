@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {prepareCleanSong,prepareVsqPractice} from '../web/clean-song-package.js';
 import {setupPianoFingering,defaultPianoSettings} from '../web/piano-fingering.js';
-import {setupGuitarFingering} from '../web/guitar-fingering.js';
+import {setupGuitarFingering,guitarSelectedNotes,guitarSelectedPartIds} from '../web/guitar-fingering.js';
 import {pianoResult} from './piano-fingering-fixtures.js';
 import {cleanSong,cleanDescriptor,fixtureKey} from './clean-song-fixtures.js';
 
@@ -29,9 +29,9 @@ const phrase={version:1,from:{numerator:1,denominator:480},to:{numerator:1,denom
 /** Declared test positions for the existing original fixtures, not a JS planner. */
 const positions={48:{string:2,fret:3,finger:3},55:{string:4,fret:0,finger:0},60:{string:5,fret:1,finger:1},63:{string:5,fret:4,finger:4},64:{string:6,fret:0,finger:0},67:{string:6,fret:3,finger:3}};
 function guitarResult(ctx,requested,{included,entry=[]}={}){
-  const all=ctx.timeline.notes.filter(note=>ctx.part_id===null||note.part_id===ctx.part_id),notes=included?all.filter(note=>included.includes(note.id)):all;
+  const all=guitarSelectedNotes(ctx),notes=included?all.filter(note=>included.includes(note.id)):all;
   const onsets=[...new Set(notes.map(note=>note.start_ms))].sort((a,b)=>a-b);
-  const plan={version:1,algorithm:'deterministic_guitar_beam_v1',score_id:ctx.score.id,part_id:ctx.part_id,profile:structuredClone(ctx.profile),status:notes.length?'ready':'no_targets',complete:true,changed_source_notes:false,source_occurrence_count:notes.length,max_fret_span:requested.max_fret_span,beam_width:64,explored_choices:0,beam_pruned:false,objective_cost:0,requested_locks:structuredClone(requested.locks),diagnostics:[],assignments:notes.map(note=>({occurrence_id:note.id,source_note_ids:note.source_note_ids,part_id:note.part_id,midi:note.midi,start_ms:note.start_ms,end_ms:note.start_ms+note.duration_ms,...positions[note.midi],onset_index:onsets.indexOf(note.start_ms),picking_hint:notes.filter(item=>item.start_ms===note.start_ms).length>1?'simultaneous_pluck_review':onsets.indexOf(note.start_ms)%2?'upstroke_suggestion':'downstroke_suggestion'}))};
+  const plan={version:1,algorithm:'deterministic_guitar_beam_v1',score_id:ctx.score.id,part_id:ctx.part_id,...(ctx.selected_part_ids===undefined?{}:{selected_part_ids:guitarSelectedPartIds(ctx)}),profile:structuredClone(ctx.profile),status:notes.length?'ready':'no_targets',complete:true,changed_source_notes:false,source_occurrence_count:notes.length,max_fret_span:requested.max_fret_span,beam_width:64,explored_choices:0,beam_pruned:false,objective_cost:0,requested_locks:structuredClone(requested.locks),diagnostics:[],assignments:notes.map(note=>({occurrence_id:note.id,source_note_ids:note.source_note_ids,part_id:note.part_id,midi:note.midi,start_ms:note.start_ms,end_ms:note.start_ms+note.duration_ms,...positions[note.midi],onset_index:onsets.indexOf(note.start_ms),picking_hint:notes.filter(item=>item.start_ms===note.start_ms).length>1?'simultaneous_pluck_review':onsets.indexOf(note.start_ms)%2?'upstroke_suggestion':'downstroke_suggestion'}))};
   if(requested.planning_scope){
     plan.purpose=requested.inventory_only?'scope_inventory':'phrase_plan';
     plan.planning_scope={requested:structuredClone(requested.planning_scope),start_ms:all[0].start_ms,end_ms:all.at(-1).start_ms+all.at(-1).duration_ms,full_occurrence_count:all.length,selected_occurrence_count:notes.length,included_occurrence_ids:notes.map(note=>note.id),entry_hold_occurrence_ids:entry};
@@ -156,4 +156,14 @@ test('replacing a native choice during either guitar phrase phase discards the o
     last.resolve(response('guitar',original,last.body.settings,{included:[original.timeline.notes[0].id]}));await pending;
     assert.equal(guide.state().plan,null);assert.equal(guide.state().scopeInventory,null);assert.equal(calls.length,phase==='inventory'?1:2);
   }
+});
+
+test('native VSQ All sends the full selected union and rejects the previous one-part scope',async()=>{
+ const ctx=context(vsqSong(),'guitar');ctx.part_id=null;ctx.selected_part_ids=ctx.score.parts.map(part=>part.id).reverse();const calls=[];
+ const guide=setupGuitarFingering({getContext:()=>ctx,api:async(path,body)=>{calls.push({path,body});return response('guitar',ctx,body.settings)}});
+ await guide.prepare();assert.equal(guide.state().phase,'ready');assert.equal(calls[0].path,'/api/library/fingering/guitar');
+ assert.deepEqual(calls[0].body.settings.selected_part_ids,ctx.score.parts.map(part=>part.id));assert.equal(calls[0].body.settings.part_id,null);
+ assert.deepEqual(calls[0].body.source,source(ctx.cleanSong));assert.equal('score' in calls[0].body.settings,false);assert.equal('timeline' in calls[0].body.settings,false);
+ assert.equal(guide.state().plan.assignments.length,ctx.timeline.notes.length);assert.equal(guide.state().plan.assignments[0].start_ms,0);
+ const invalid=setupGuitarFingering({getContext:()=>ctx,api:async()=>{const answer=response('guitar',ctx);answer.plan.selected_part_ids=[ctx.score.parts[0].id];return answer}});await invalid.prepare();assert.equal(invalid.state().phase,'error');
 });

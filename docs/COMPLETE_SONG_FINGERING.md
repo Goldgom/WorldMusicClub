@@ -26,6 +26,12 @@ The native routes are `POST /api/library/fingering/piano` and
 Semantic MIDI uses profile `wmh-semantic-midi1-v1` and `choice: null`. Settings
 retain the existing planner's hand ranges, reach, locks, fret span, exact phrase
 scope and inventory-only options; they cannot supply a score or timeline.
+Guitar settings additionally accept `selected_part_ids` with `part_id:null` for
+an exact human-part union, including native All. It is normalized in source order
+and echoed by both the inventory and plan. Empty, duplicate, unknown, explicit
+null and conflicting legacy selections are rejected. Absent-field legacy piano
+and guitar requests retain their previous contracts. Both native guitar request
+phases use the same source-bound union and original occurrence identities.
 The response is `{source, plan}`, where `source` identifies the saved package
 and explicit interpretation and `plan` retains the existing planner contract.
 

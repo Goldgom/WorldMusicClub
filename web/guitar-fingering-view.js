@@ -1,7 +1,7 @@
 import {fingeringUnavailable} from './fingering-source.js';
 import {midiName} from './music.js';
 import {getAppI18n} from './app-locale.js';
-import {validateGuitarPlanningScope} from './guitar-fingering.js';
+import {validateGuitarPlanningScope,guitarSelectedNotes,guitarSelectionKey,guitarSelectedPartIds} from './guitar-fingering.js';
 
 const assignmentIndexes=new WeakMap();
 export function guitarAssignmentIndex(plan){
@@ -31,7 +31,7 @@ export function guitarPlanSummary(state,i18n=getAppI18n()){
 /** UI consumes Rust assignments and source identities; it never chooses positions. */
 export function setupGuitarFingeringView({document,controller,getContext,onRefresh=()=>{},i18n=getAppI18n(document)}){
   const $=id=>document.getElementById(id);
-  let sourceScore=null,sourceTimeline=null,sourcePart=undefined,profileKey='',sources=[],lastState='',settingsKey='',appliedSettingsKey='',selection='';
+  let sourceScore=null,sourceTimeline=null,sourceSelection=undefined,profileKey='',sources=[],lastState='',settingsKey='',appliedSettingsKey='',selection='';
   const options={showAlternatives:false,showPicking:false};
   let lockMessage=null,optionRevision=-1,sourceCount={shown:0,total:0},lockRows=new Map();
   const t=(key,params)=>i18n.t('guitar.runtime.'+key,params);
@@ -52,6 +52,8 @@ export function setupGuitarFingeringView({document,controller,getContext,onRefre
   const phraseHelp=document.createElement('p');phraseHelp.id='guitar-phrase-help';phraseFields.append(labelText(phraseHelp,'guitar.phrase.help'));
   const phraseStatus=document.createElement('p');phraseStatus.id='guitar-phrase-status';phraseStatus.setAttribute('role','status');phraseStatus.setAttribute('aria-live','polite');phraseFields.append(phraseStatus);
   $('guitar-plan-controls').insertBefore(phraseForm,$('guitar-annotation-scope'));
+  const selectionStatus=document.createElement('p');selectionStatus.id='guitar-selected-parts';selectionStatus.setAttribute('aria-live','polite');
+  $('guitar-plan-status').insertAdjacentElement('afterend',selectionStatus);
   let phraseAppliedKey='',phraseError='';
   const beatText=beat=>beat.denominator===1?String(beat.numerator):`${beat.numerator}/${beat.denominator}`;
   const parseBeat=text=>{const match=/^(\d+)(?:\/(\d+))?$/.exec(text.trim());return match?{numerator:Number(match[1]),denominator:Number(match[2]||1)}:null;};
@@ -115,7 +117,11 @@ export function setupGuitarFingeringView({document,controller,getContext,onRefre
   for(const[id,key]of [['guitar-show-alternatives','showAlternatives'],['guitar-show-picking','showPicking']])$(id).addEventListener('change',()=>{options[key]=$(id).checked;onRefresh();});
   function render({localeOnly=false}={}){
     const state=controller.state(),context=getContext(),profile=context?.profile;
-    const nextProfile=JSON.stringify(profile),changedScore=sourceScore!==context?.score;
+    const nextProfile=JSON.stringify(profile),changedScore=sourceScore!==context?.score,nextSelection=guitarSelectionKey(context);
+    let selected=[],selectedIds=[];
+    try{selected=guitarSelectedNotes(context);selectedIds=guitarSelectedPartIds(context)??(context?.score?.parts||[]).filter(part=>context.part_id===null||part.id===context.part_id).map(part=>part.id);}catch{/* Invalid selection has no lock sources or advertised coverage. */}
+    const names=selectedIds.map(id=>context.score.parts.find(part=>part.id===id)?.name||id);
+    selectionStatus.textContent=t('selection',{parts:names.join(', ')||i18n.t('guitar.phrase.noTargets'),count:selected.length});
     for(const[node,key]of phraseText)node.textContent=i18n.t(key);
     const appliedKey=JSON.stringify(state.planningScope??null);
     if(changedScore){phraseAppliedKey='';phraseError='';}
@@ -132,10 +138,10 @@ export function setupGuitarFingeringView({document,controller,getContext,onRefre
       ...scopeText,selected:inventory.selected_occurrence_count,total:inventory.full_occurrence_count,holds:inventory.entry_hold_occurrence_ids.length,
       start:i18n.formatDuration(inventory.start_ms,{fractionDigits:3}),end:i18n.formatDuration(inventory.end_ms,{fractionDigits:3})
     }):scopeText?i18n.t('guitar.phrase.pending',scopeText):i18n.t(repeated?'guitar.phrase.repeats':'guitar.phrase.wholeHelp');
-    if(changedScore||sourceTimeline!==context?.timeline||sourcePart!==context?.part_id||profileKey!==nextProfile){
-      sourceScore=context?.score;sourceTimeline=context?.timeline;sourcePart=context?.part_id;profileKey=nextProfile;settingsKey='';appliedSettingsKey='';
+    if(changedScore||sourceTimeline!==context?.timeline||sourceSelection!==nextSelection||profileKey!==nextProfile){
+      sourceScore=context?.score;sourceTimeline=context?.timeline;sourceSelection=nextSelection;profileKey=nextProfile;settingsKey='';appliedSettingsKey='';
       const byId=new Map();
-      for(const note of context?.timeline?.notes||[]){if(context.part_id!==null&&note.part_id!==context.part_id)continue;for(const id of note.source_note_ids||[]){if(!byId.has(id))byId.set(id,{id,label:`${id} · ${midiName(note.midi)} · ${context.score?.parts.find(part=>part.id===note.part_id)?.name||note.part_id}`});}}
+      for(const note of selected){for(const id of note.source_note_ids||[]){if(!byId.has(id))byId.set(id,{id,label:`${id} · ${midiName(note.midi)} · ${context.score?.parts.find(part=>part.id===note.part_id)?.name||note.part_id}`});}}
       sources=[...byId.values()];
       populate($('guitar-lock-string'),[['',t('anyRow')],...(profile?.tuning||[]).map((_,index)=>[index+1,guitarRowLabel(profile,index+1,i18n)])]);
       populate($('guitar-lock-fret'),[['',t('anyFret')],...Array.from({length:Math.max(0,(profile?.frets||0)-(profile?.capo||0))+1},(_,index)=>[index,index===0?t('finger.0'):i18n.formatNumber(index)])]);
@@ -164,7 +170,7 @@ export function setupGuitarFingeringView({document,controller,getContext,onRefre
       let previous=null;for(const row of nextRows.values()){const next=previous?previous.nextSibling:$('guitar-lock-list').firstChild;if(row.li!==next)$('guitar-lock-list').insertBefore(row.li,next);previous=row.li;}lockRows=nextRows;
       $('guitar-lock-count').textContent=state.planningScope?(inventory?i18n.t('guitar.phrase.locks',{total:state.settings.locks.length,active:state.settings.locks.filter(lock=>active.has(lock.source_note_id)).length}):i18n.t('guitar.phrase.locksPending',{total:state.settings.locks.length})):t('lockCount',{total:state.settings.locks.length,active:state.settings.locks.filter(lock=>visible.has(lock.source_note_id)).length,span:state.settings.max_fret_span});
     }
-    const signature=JSON.stringify([state.phase,state.messageCode,state.errorDetails,state.plan,state.scopeDraft,i18n.revision]);
+    const signature=JSON.stringify([state.phase,state.messageCode,state.errorDetails,state.plan,state.scopeDraft,nextSelection,i18n.revision]);
     if(signature!==lastState){
       lastState=signature;$('guitar-plan-status').textContent=guitarPlanSummary(state,i18n);$('guitar-planning').dataset.status=state.plan?.status||state.phase;
       $('guitar-plan-model').textContent=state.plan?t('model',{algorithm:state.plan.algorithm,beam:state.plan.beam_width,choices:state.plan.explored_choices,pruning:t(state.plan.beam_pruned?'pruned':'notPruned'),cost:state.plan.objective_cost===null?'':t('cost',{cost:state.plan.objective_cost}),scope:i18n.t(state.plan.planning_scope?'guitar.phrase.help':'guitar.phrase.wholeHelp')}):i18n.t(state.planningScope||state.scopeDraft?'guitar.phrase.help':'guitar.phrase.wholeHelp');
@@ -173,7 +179,7 @@ export function setupGuitarFingeringView({document,controller,getContext,onRefre
         if(diagnostic.note_id){
           const note=context.timeline?.notes.find(note=>note.id===diagnostic.note_id);
           if(note){
-            const simultaneous=context.timeline.notes.filter(other=>(context.part_id===null||other.part_id===context.part_id)&&other.start_ms<=note.start_ms&&other.start_ms+other.duration_ms>note.start_ms);
+            const simultaneous=selected.filter(other=>other.start_ms<=note.start_ms&&other.start_ms+other.duration_ms>note.start_ms);
             const sourceIds=[...new Set(simultaneous.flatMap(other=>other.source_note_ids||[]))];
             identity=' '+t('diagnosticIdentity',{id:note.id,sources:(note.source_note_ids||[]).join(', '),seconds:i18n.formatNumber(note.start_ms/1000,{minimumFractionDigits:3,maximumFractionDigits:3}),context:sourceIds.join(', ')});
           }else identity=' '+t('diagnosticSource',{id:diagnostic.note_id});
@@ -189,7 +195,7 @@ export function setupGuitarFingeringView({document,controller,getContext,onRefre
     return state;
   }
   const unsubscribe=i18n.subscribe(()=>render({localeOnly:true}));
-  return{render,options:()=>({...options}),destroy:()=>{unsubscribe();phraseForm.remove();}};
+  return{render,options:()=>({...options}),destroy:()=>{unsubscribe();phraseForm.remove();selectionStatus.remove();}};
 }
 
 /** One chosen row/fret per source occurrence, never a pitch-to-position solver.

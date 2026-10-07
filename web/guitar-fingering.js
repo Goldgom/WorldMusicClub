@@ -4,7 +4,26 @@ import {fingeringUnavailable,BASIC_KEY_FINGERING_REASON,fingeringSource,currentF
 const codedError=(code,message)=>Object.assign(new Error(message),{code});
 const STATUSES=new Set(['ready','no_targets','infeasible_under_model','no_plan_found','search_limit','unavailable']);
 const integer=(value,low,high)=>Number.isSafeInteger(value)&&value>=low&&value<=high;
-const selectedNotes=context=>context.timeline.notes.filter(note=>context.part_id===null||note.part_id===context.part_id);
+/** Source-order normalization mirrors Rust; no new occurrence IDs or targets. */
+export function guitarSelectedPartIds(context){
+  if(context?.selected_part_ids===undefined)return null;
+  const ids=context.selected_part_ids,parts=context.score?.parts||[];
+  if(context.part_id!=null||!Array.isArray(ids)||!ids.length||new Set(ids).size!==ids.length
+    ||ids.some(id=>typeof id!=='string'||!parts.some(part=>part.id===id))){
+    throw codedError('guitar_selection_invalid','Choose a nonempty set of unique existing human parts, without a legacy part selection.');
+  }
+  const selected=new Set(ids);return parts.filter(part=>selected.has(part.id)).map(part=>part.id);
+}
+export function guitarSelectionKey(context){
+  // Invalid inputs still invalidate a previous route before prepare reports them.
+  let ids;try{ids=guitarSelectedPartIds(context);}catch{ids={invalid:context?.selected_part_ids};}
+  return JSON.stringify([context?.part_id??null,ids]);
+}
+export function guitarSelectedNotes(context){
+  const ids=guitarSelectedPartIds(context),selected=ids&&new Set(ids);
+  return (context?.timeline?.notes||[]).filter(note=>selected?selected.has(note.part_id):context.part_id===null||note.part_id===context.part_id);
+}
+const selectedNotes=guitarSelectedNotes;
 const normalizeLocks=locks=>locks.map(lock=>({source_note_id:lock.source_note_id,string:lock.string??null,fret:lock.fret??null,finger:lock.finger??null}));
 
 const validBeat=beat=>beat&&integer(beat.numerator,0,1000000000)&&integer(beat.denominator,1,1000000);
@@ -42,8 +61,9 @@ export function validateGuitarScopeInventory(plan,context,scope,max_fret_span){
 
 /** Validate complete identity/range/lock correspondence; never solve fingering in JS. */
 export function validateGuitarFingering(plan,context,settings){
-  const fail=()=>{throw codedError('guitar_response_invalid','The guitar recommendation does not match this complete score, selected part, instrument or locks. Request a fresh Rust plan; the original score is unchanged.');};
+  const fail=()=>{throw codedError('guitar_response_invalid','The guitar recommendation does not match this complete score, selected human parts, instrument or locks. Request a fresh Rust plan; the original score is unchanged.');};
   const profile=context.profile;
+  let selection;try{selection=guitarSelectedPartIds(context);}catch{fail();}
   if(!context.score||!Array.isArray(context.timeline?.notes)||profile?.kind!=='guitar'||!Array.isArray(profile.tuning))fail();
   const notes=settings.planning_scope?scopeNotes(plan?.planning_scope,context,settings.planning_scope,fail):selectedNotes(context),byId=new Map(notes.map(note=>[note.id,note]));
   if(settings.planning_scope){
@@ -54,7 +74,8 @@ export function validateGuitarFingering(plan,context,settings){
   const onsetCounts=new Map();for(const note of notes)onsetCounts.set(note.start_ms,(onsetCounts.get(note.start_ms)||0)+1);
   const onsetIndices=new Map([...onsetCounts.keys()].sort((a,b)=>a-b).map((at,index)=>[at,index]));
   if(!plan||plan.version!==1||plan.algorithm!=='deterministic_guitar_beam_v1'||!STATUSES.has(plan.status)
-    ||plan.score_id!==context.score.id||plan.part_id!==context.part_id||!equivalentJson(plan.profile,profile)
+    ||plan.score_id!==context.score.id||plan.part_id!==(selection===null?context.part_id:null)||!equivalentJson(plan.profile,profile)
+    ||(selection===null?plan.selected_part_ids!==undefined:!equivalentJson(plan.selected_part_ids,selection))
     ||plan.changed_source_notes!==false||typeof plan.complete!=='boolean'||plan.source_occurrence_count!==notes.length
     ||plan.max_fret_span!==settings.max_fret_span||!equivalentJson(plan.requested_locks,normalizeLocks(settings.locks))
     ||plan.beam_width!==64||!integer(plan.explored_choices,0,2000000)||typeof plan.beam_pruned!=='boolean'
@@ -99,7 +120,7 @@ export function setupGuitarFingering({api,getContext,onChange=()=>{}}){
     const changed=currentScore!==score||currentTimeline!==timeline||currentSong!==cleanSong;
     if(currentScore!==score||currentSong!==cleanSong){score=currentScore;settings={max_fret_span:3,locks:[]};planningScope=null;scopeDraft=false;revision++;}
     timeline=currentTimeline;cleanSong=currentSong;
-    const next=JSON.stringify([context?.part_id??null,context?.profile||null,Boolean(context?.dirty),revision,currentSong?.runtime?.choice??null]);
+    const next=JSON.stringify([guitarSelectionKey(context),context?.profile||null,Boolean(context?.dirty),revision,currentSong?.runtime?.choice??null]);
     if(changed||next!==key){key=next;invalidate();}
     return context;
   }
@@ -129,20 +150,21 @@ export function setupGuitarFingering({api,getContext,onChange=()=>{}}){
     if(plan)return Promise.resolve(plan);
     if(pending)return pending;
     if(phase==='error'&&!retry)return Promise.resolve(null);
-    let source;try{source=fingeringSource(context);}catch(error){publish('error',`Guitar guidance unavailable: ${error.message}`,'guitar_error',{code:error.code,message:error.message});return Promise.resolve(null);}
-    const snapshot={score:structuredClone(context.score),timeline:structuredClone(context.timeline),part_id:context.part_id,profile:structuredClone(context.profile)};
+    let source,selection;try{selection=guitarSelectedPartIds(context);source=fingeringSource(context);}catch(error){publish('error',`Guitar guidance unavailable: ${error.message}`,'guitar_error',{code:error.code,message:error.message});return Promise.resolve(null);}
+    const snapshot={score:structuredClone(context.score),timeline:structuredClone(context.timeline),part_id:selection===null?context.part_id:null,...(selection===null?{}:{selected_part_ids:selection}),profile:structuredClone(context.profile)};
     const targetScope=structuredClone(planningScope);
     const sources=new Set(selectedNotes(context).flatMap(note=>note.source_note_ids));
-    const requested={max_fret_span:settings.max_fret_span,locks:settings.locks.filter(lock=>sources.has(lock.source_note_id))};
+    const selectionSettings=selection===null?{}:{selected_part_ids:selection};
+    const requested={...selectionSettings,max_fret_span:settings.max_fret_span,locks:settings.locks.filter(lock=>sources.has(lock.source_note_id))};
     const target=context.score,targetTimeline=context.timeline,targetSong=context.cleanSong??null,targetKey=key,current=++generation;
     controller=new AbortController();const signal=controller.signal;
-    const currentContext=()=>{const value=getContext();return current===generation&&!signal.aborted&&value?.score===target&&value.timeline===targetTimeline&&!value.dirty&&value.part_id===snapshot.part_id&&currentFingeringSource(value,targetSong,source)&&equivalentJson(value.profile,snapshot.profile)&&equivalentJson(value.score,snapshot.score)&&equivalentJson(value.timeline,snapshot.timeline);};
+    const currentContext=()=>{const value=getContext();return current===generation&&!signal.aborted&&value?.score===target&&value.timeline===targetTimeline&&!value.dirty&&guitarSelectionKey(value)===guitarSelectionKey(snapshot)&&currentFingeringSource(value,targetSong,source)&&equivalentJson(value.profile,snapshot.profile)&&equivalentJson(value.score,snapshot.score)&&equivalentJson(value.timeline,snapshot.timeline);};
     // Assign the pending promise before notifications or API calls can reenter.
     pending=Promise.resolve().then(async()=>{
       try{
         if(!currentContext()||targetKey!==key)return null;
         if(targetScope){
-          const request=fingeringRequest('guitar',snapshot,{max_fret_span:requested.max_fret_span,locks:[],planning_scope:targetScope,inventory_only:true},source),response=await api(request.path,request.body,signal);
+          const request=fingeringRequest('guitar',snapshot,{...selectionSettings,max_fret_span:requested.max_fret_span,locks:[],planning_scope:targetScope,inventory_only:true},source),response=await api(request.path,request.body,signal);
           if(!currentContext()||targetKey!==key)return null;
           const inventory=fingeringResponse(response,source);
           scopeInventory=validateGuitarScopeInventory(inventory,snapshot,targetScope,requested.max_fret_span);

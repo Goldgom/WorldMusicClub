@@ -94,6 +94,7 @@ export default Object.freeze({
   "guitar.runtime.inactiveLock":entry({}),
   "guitar.runtime.removeLock":entry({"source": "text"}),
   "guitar.runtime.lockCount":entry({"total": "count", "active": "count", "span": "count"}),
+  "guitar.runtime.selection":entry({"parts": "text", "count": "count"}),
   "guitar.runtime.model":entry({"algorithm": "text", "beam": "count", "choices": "count", "pruning": "text", "cost": "text", "scope": "text"}),
   "guitar.runtime.pruned":entry({}),
   "guitar.runtime.notPruned":entry({}),

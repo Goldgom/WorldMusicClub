@@ -8,15 +8,15 @@ import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
 import {fixture} from './frontend-fixtures.js';
 import {getAppI18n} from '../web/app-locale.js';
-import {setupGuitarFingering} from '../web/guitar-fingering.js';
+import {setupGuitarFingering,guitarSelectedNotes,guitarSelectedPartIds} from '../web/guitar-fingering.js';
 import {setupGuitarFingeringView,guitarRowLabel as localizedGuitarRowLabel,guitarPlanSummary as localizedGuitarPlanSummary,highlightGuitarRoute} from '../web/guitar-fingering-view.js';
 import {setupGuitarGuidance} from '../web/guitar-guidance.js';
 
 const html=await readFile(new URL('../web/index.html',import.meta.url),'utf8');
 function context(){return{score:structuredClone(fixture),part_id:null,profile:{kind:'guitar',tuning:[64,59,55,50,45,40],frets:12,capo:0},dirty:false,timeline:{duration_ms:1000,notes:[{id:'c4@pass1',part_id:'piano',midi:60,start_ms:0,duration_ms:500,source_note_ids:['c4']},{id:'e4@pass1',part_id:'piano',midi:64,start_ms:500,duration_ms:500,source_note_ids:['e4']}]}};}
 function result(ctx,settings){
- const notes=ctx.timeline.notes.filter(note=>ctx.part_id===null||ctx.part_id===note.part_id),locked=settings.locks.find(lock=>lock.source_note_id==='c4');
- const plan={version:1,algorithm:'deterministic_guitar_beam_v1',score_id:ctx.score.id,part_id:ctx.part_id,status:notes.length?'ready':'no_targets',profile:structuredClone(ctx.profile),complete:true,changed_source_notes:false,source_occurrence_count:notes.length,max_fret_span:settings.max_fret_span,requested_locks:structuredClone(settings.locks),beam_width:64,beam_pruned:false,explored_choices:24,objective_cost:notes.length?5:0,diagnostics:[],assignments:notes.map((note,index)=>({...note,occurrence_id:note.id,end_ms:note.start_ms+note.duration_ms,onset_index:index,string:index?1:locked?.string??2,fret:index?0:locked?.fret??1,finger:index?0:locked?.finger??1,picking_hint:index?'upstroke_suggestion':'downstroke_suggestion'}))};
+ const notes=guitarSelectedNotes(ctx),locked=settings.locks.find(lock=>lock.source_note_id==='c4');
+ const plan={version:1,algorithm:'deterministic_guitar_beam_v1',score_id:ctx.score.id,part_id:ctx.part_id,...(ctx.selected_part_ids===undefined?{}:{selected_part_ids:guitarSelectedPartIds(ctx)}),status:notes.length?'ready':'no_targets',profile:structuredClone(ctx.profile),complete:true,changed_source_notes:false,source_occurrence_count:notes.length,max_fret_span:settings.max_fret_span,requested_locks:structuredClone(settings.locks),beam_width:64,beam_pruned:false,explored_choices:24,objective_cost:notes.length?5:0,diagnostics:[],assignments:notes.map((note,index)=>({...note,occurrence_id:note.id,end_ms:note.start_ms+note.duration_ms,onset_index:index,string:index?1:locked?.string??2,fret:index?0:locked?.fret??1,finger:index?0:locked?.finger??1,picking_hint:index?'upstroke_suggestion':'downstroke_suggestion'}))};
  if(settings.planning_scope){
   const selected=notes.filter(note=>note.source_note_ids.includes(settings.planning_scope.from.numerator===1?'e4':'c4'));
   plan.planning_scope={requested:structuredClone(settings.planning_scope),start_ms:settings.planning_scope.from.numerator*500,end_ms:settings.planning_scope.to.numerator*500,full_occurrence_count:notes.length,selected_occurrence_count:selected.length,included_occurrence_ids:selected.map(note=>note.id),entry_hold_occurrence_ids:[]};
@@ -131,4 +131,28 @@ test('repeated scores explain explicit phrase refusal and new score resets the p
  const ctx=context();ctx.score.repeats=[{from:{numerator:0,denominator:1},to:{numerator:2,denominator:1},times:2}];h.setContext(ctx);
  assert.equal(h.controller.state().planningScope,null);assert.equal(h.$('guitar-phrase-mode').value,'whole');assert.equal(h.$('guitar-phrase-mode').querySelector('option[value="explicit"]').disabled,true);
  assert.match(h.$('guitar-phrase-status').textContent,/repeat-pass selection/);await h.controller.prepare();assert.ok(h.controller.assignment('c4@pass1'));
+});
+
+test('human union source chooser, scope label, locks and locale update when the second part changes',async()=>{
+ const h=await harness(),ctx=h.getContext(),part=ctx.score.parts[0];
+ ctx.score.parts=['A','B','C'].map(id=>({...part,id,name:`Part ${id}`,notes:[]}));ctx.timeline.notes[0].part_id='A';ctx.timeline.notes[1].part_id='B';
+ ctx.timeline.notes.push({...ctx.timeline.notes[1],id:'c-machine',source_note_ids:['c-machine'],part_id:'C',start_ms:1000});ctx.selected_part_ids=['B','A'];h.setContext(ctx);
+ assert.match(h.$('guitar-selected-parts').textContent,/Human parts: Part A, Part B.*2 source occurrences/);
+ assert.deepEqual([...h.$('guitar-lock-source').children].map(option=>option.value),['c4','e4']);
+ h.controller.setSettings({max_fret_span:3,locks:[{source_note_id:'e4',finger:0},{source_note_id:'c-machine',finger:0}]});await h.controller.prepare();
+ assert.deepEqual(h.calls.at(-1).body.locks.map(lock=>lock.source_note_id),['e4']);assert.match(h.$('guitar-lock-count').textContent,/1 apply/);
+ h.setContext({...ctx,selected_part_ids:['A','C']});assert.equal(h.controller.assignment('e4@pass1'),null);await h.controller.prepare();
+ assert.deepEqual([...h.$('guitar-lock-source').children].map(option=>option.value),['c4','c-machine']);
+ assert.match(h.$('guitar-selected-parts').textContent,/Part A, Part C/);assert.doesNotMatch(h.$('guitar-selected-parts').textContent,/Part B/);
+ assert.deepEqual(h.calls.at(-1).body.locks.map(lock=>lock.source_note_id),['c-machine']);
+ assert.match(h.$('guitar-lock-list').textContent,/e4:.*inactive for this selection/);
+ getAppI18n(h.document).setLocale('zh-CN');assert.match(h.$('guitar-selected-parts').textContent,/演奏声部：Part A, Part C/);
+ getAppI18n(h.document).setLocale('en');assert.match(h.$('guitar-selected-parts').textContent,/Human parts: Part A, Part C/);
+});
+test('joint conflict diagnostic context lists holds from both human parts but excludes accompaniment',()=>{
+ const{document}=parseHTML(html),ctx=context(),part=ctx.score.parts[0];
+ ctx.score.parts=['A','B','C'].map(id=>({...part,id,name:id,notes:[]}));ctx.selected_part_ids=['A','B'];ctx.timeline.notes[0].part_id='A';ctx.timeline.notes[0].duration_ms=1000;ctx.timeline.notes[1].part_id='B';ctx.timeline.notes.push({...ctx.timeline.notes[0],id:'machine',source_note_ids:['machine-source'],part_id:'C'});
+ const state={phase:'unavailable',settings:{max_fret_span:3,locks:[]},plan:{...result(ctx,{max_fret_span:3,locks:[]}),status:'infeasible_under_model',complete:false,assignments:[],objective_cost:null,diagnostics:[{code:'guitar_fingering_incomplete',severity:'warning',message:'Both parts need this held string.',note_id:'e4@pass1'}]}};
+ setupGuitarFingeringView({document,getContext:()=>ctx,controller:{state:()=>state},i18n:en}).render();
+ const text=document.getElementById('guitar-plan-diagnostics').textContent;assert.match(text,/c4, e4/);assert.doesNotMatch(text,/machine-source/);
 });
