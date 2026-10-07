@@ -1,0 +1,501 @@
+{
+  "presets": {
+    "balanced": {
+      "response": {
+        "checked": {
+          "all_selected_human": false,
+          "coverage": {
+            "human_occurrence_count": 1,
+            "human_source_unit_count": 1,
+            "human_target_count": 1,
+            "machine_occurrence_count": 1,
+            "machine_selected_target_count": 1,
+            "machine_source_unit_count": 1,
+            "occurrence_count": 2,
+            "selected_source_unit_count": 2,
+            "selected_target_count": 2,
+            "source_unit_count": 2
+          },
+          "diagnostics": [
+            {
+              "code": "assistance_scope_limits",
+              "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.",
+              "note_id": null,
+              "severity": "warning"
+            }
+          ],
+          "exclusion_reasons": [
+            {
+              "code": "onset_density",
+              "source_ids": [
+                "human-note"
+              ]
+            }
+          ],
+          "human_targets": {
+            "diagnostics": [],
+            "groups": [
+              {
+                "part_ids": [
+                  "piano"
+                ],
+                "source_note_ids": [
+                  "machine-note"
+                ],
+                "source_occurrence_ids": [
+                  "machine-note"
+                ],
+                "target_id": "machine-note"
+              }
+            ],
+            "playable": true,
+            "source_note_count": 1,
+            "target_count": 1,
+            "timeline": {
+              "duration_ms": 10666.666666666666,
+              "notes": [
+                {
+                  "duration_ms": 666.6666666666666,
+                  "id": "machine-note",
+                  "midi": 60,
+                  "part_id": "piano",
+                  "source_note_id": "machine-note",
+                  "source_note_ids": [
+                    "machine-note"
+                  ],
+                  "staff": 1,
+                  "start_ms": 0.0,
+                  "velocity": 90,
+                  "voice": "1"
+                }
+              ]
+            }
+          },
+          "machine_occurrence_ids": [
+            "human-note"
+          ],
+          "plan": {
+            "format": "wmc-practice-assistance",
+            "human_source_ids": [
+              "machine-note"
+            ],
+            "mode": "automatic",
+            "planner_revision": 1,
+            "receipt": {
+              "choice": null,
+              "runtime_digest": "90ebf9bb009aaebc9d9c9fa2fe9d8f0239bfb5a0fedc879627a2709e6d075d22",
+              "runtime_policy": "wmc-canonical-practice-v1",
+              "saved_package_sha256": null,
+              "source_binding": {
+                "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+                "domain": "wmc-canonical-score-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmc-canonical-score-v1"
+            },
+            "revision": 1,
+            "schema_version": 1,
+            "selection": {
+              "profile": {
+                "key_count": 88,
+                "kind": "piano",
+                "lowest_midi": null
+              },
+              "selected_part_ids": [
+                "piano"
+              ]
+            },
+            "selection_digest": "b368525dcbc445ca047718b6bddacf4a56cd3f86bb2e6bffd3856c3573ce5302",
+            "settings": {
+              "algorithm_id": "wmc-keyboard-assistance-v1",
+              "max_held_span_semitones": 7,
+              "max_simultaneous_keys": 3,
+              "max_targets_per_onset": 2,
+              "min_onset_interval_ms": 250
+            }
+          },
+          "receipt": {
+            "choice": null,
+            "runtime_digest": "90ebf9bb009aaebc9d9c9fa2fe9d8f0239bfb5a0fedc879627a2709e6d075d22",
+            "runtime_policy": "wmc-canonical-practice-v1",
+            "saved_package_sha256": null,
+            "source_binding": {
+              "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+              "domain": "wmc-canonical-score-serde-json",
+              "serialization_revision": 1
+            },
+            "source_profile": "wmc-canonical-score-v1"
+          },
+          "scored_mode_allowed": true,
+          "source_ownership": [
+            {
+              "in_selected_scope": true,
+              "owner": "machine",
+              "part_id": "piano",
+              "source_id": "human-note"
+            },
+            {
+              "in_selected_scope": true,
+              "owner": "human",
+              "part_id": "piano",
+              "source_id": "machine-note"
+            }
+          ]
+        },
+        "source": {
+          "choice": null,
+          "kind": "canonical",
+          "profile": "wmc-canonical-score-v1",
+          "runtime_policy": "wmc-canonical-practice-v1",
+          "source_binding": {
+            "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+            "domain": "wmc-canonical-score-serde-json",
+            "serialization_revision": 1
+          }
+        }
+      },
+      "settings": {
+        "algorithm_id": "wmc-keyboard-assistance-v1",
+        "max_held_span_semitones": 7,
+        "max_simultaneous_keys": 3,
+        "max_targets_per_onset": 2,
+        "min_onset_interval_ms": 250
+      }
+    },
+    "dense": {
+      "response": {
+        "checked": {
+          "all_selected_human": false,
+          "coverage": {
+            "human_occurrence_count": 1,
+            "human_source_unit_count": 1,
+            "human_target_count": 1,
+            "machine_occurrence_count": 1,
+            "machine_selected_target_count": 1,
+            "machine_source_unit_count": 1,
+            "occurrence_count": 2,
+            "selected_source_unit_count": 2,
+            "selected_target_count": 2,
+            "source_unit_count": 2
+          },
+          "diagnostics": [
+            {
+              "code": "assistance_scope_limits",
+              "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.",
+              "note_id": null,
+              "severity": "warning"
+            }
+          ],
+          "exclusion_reasons": [
+            {
+              "code": "onset_density",
+              "source_ids": [
+                "human-note"
+              ]
+            }
+          ],
+          "human_targets": {
+            "diagnostics": [],
+            "groups": [
+              {
+                "part_ids": [
+                  "piano"
+                ],
+                "source_note_ids": [
+                  "machine-note"
+                ],
+                "source_occurrence_ids": [
+                  "machine-note"
+                ],
+                "target_id": "machine-note"
+              }
+            ],
+            "playable": true,
+            "source_note_count": 1,
+            "target_count": 1,
+            "timeline": {
+              "duration_ms": 10666.666666666666,
+              "notes": [
+                {
+                  "duration_ms": 666.6666666666666,
+                  "id": "machine-note",
+                  "midi": 60,
+                  "part_id": "piano",
+                  "source_note_id": "machine-note",
+                  "source_note_ids": [
+                    "machine-note"
+                  ],
+                  "staff": 1,
+                  "start_ms": 0.0,
+                  "velocity": 90,
+                  "voice": "1"
+                }
+              ]
+            }
+          },
+          "machine_occurrence_ids": [
+            "human-note"
+          ],
+          "plan": {
+            "format": "wmc-practice-assistance",
+            "human_source_ids": [
+              "machine-note"
+            ],
+            "mode": "automatic",
+            "planner_revision": 1,
+            "receipt": {
+              "choice": null,
+              "runtime_digest": "90ebf9bb009aaebc9d9c9fa2fe9d8f0239bfb5a0fedc879627a2709e6d075d22",
+              "runtime_policy": "wmc-canonical-practice-v1",
+              "saved_package_sha256": null,
+              "source_binding": {
+                "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+                "domain": "wmc-canonical-score-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmc-canonical-score-v1"
+            },
+            "revision": 1,
+            "schema_version": 1,
+            "selection": {
+              "profile": {
+                "key_count": 88,
+                "kind": "piano",
+                "lowest_midi": null
+              },
+              "selected_part_ids": [
+                "piano"
+              ]
+            },
+            "selection_digest": "4f2081639139861a0a49b8cdc3cf7ecc2c9286a632f4c5caae342685302b7005",
+            "settings": {
+              "algorithm_id": "wmc-keyboard-assistance-v1",
+              "max_held_span_semitones": 12,
+              "max_simultaneous_keys": 6,
+              "max_targets_per_onset": 4,
+              "min_onset_interval_ms": 125
+            }
+          },
+          "receipt": {
+            "choice": null,
+            "runtime_digest": "90ebf9bb009aaebc9d9c9fa2fe9d8f0239bfb5a0fedc879627a2709e6d075d22",
+            "runtime_policy": "wmc-canonical-practice-v1",
+            "saved_package_sha256": null,
+            "source_binding": {
+              "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+              "domain": "wmc-canonical-score-serde-json",
+              "serialization_revision": 1
+            },
+            "source_profile": "wmc-canonical-score-v1"
+          },
+          "scored_mode_allowed": true,
+          "source_ownership": [
+            {
+              "in_selected_scope": true,
+              "owner": "machine",
+              "part_id": "piano",
+              "source_id": "human-note"
+            },
+            {
+              "in_selected_scope": true,
+              "owner": "human",
+              "part_id": "piano",
+              "source_id": "machine-note"
+            }
+          ]
+        },
+        "source": {
+          "choice": null,
+          "kind": "canonical",
+          "profile": "wmc-canonical-score-v1",
+          "runtime_policy": "wmc-canonical-practice-v1",
+          "source_binding": {
+            "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+            "domain": "wmc-canonical-score-serde-json",
+            "serialization_revision": 1
+          }
+        }
+      },
+      "settings": {
+        "algorithm_id": "wmc-keyboard-assistance-v1",
+        "max_held_span_semitones": 12,
+        "max_simultaneous_keys": 6,
+        "max_targets_per_onset": 4,
+        "min_onset_interval_ms": 125
+      }
+    },
+    "single": {
+      "response": {
+        "checked": {
+          "all_selected_human": false,
+          "coverage": {
+            "human_occurrence_count": 1,
+            "human_source_unit_count": 1,
+            "human_target_count": 1,
+            "machine_occurrence_count": 1,
+            "machine_selected_target_count": 1,
+            "machine_source_unit_count": 1,
+            "occurrence_count": 2,
+            "selected_source_unit_count": 2,
+            "selected_target_count": 2,
+            "source_unit_count": 2
+          },
+          "diagnostics": [
+            {
+              "code": "assistance_scope_limits",
+              "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.",
+              "note_id": null,
+              "severity": "warning"
+            }
+          ],
+          "exclusion_reasons": [
+            {
+              "code": "onset_density",
+              "source_ids": [
+                "human-note"
+              ]
+            }
+          ],
+          "human_targets": {
+            "diagnostics": [],
+            "groups": [
+              {
+                "part_ids": [
+                  "piano"
+                ],
+                "source_note_ids": [
+                  "machine-note"
+                ],
+                "source_occurrence_ids": [
+                  "machine-note"
+                ],
+                "target_id": "machine-note"
+              }
+            ],
+            "playable": true,
+            "source_note_count": 1,
+            "target_count": 1,
+            "timeline": {
+              "duration_ms": 10666.666666666666,
+              "notes": [
+                {
+                  "duration_ms": 666.6666666666666,
+                  "id": "machine-note",
+                  "midi": 60,
+                  "part_id": "piano",
+                  "source_note_id": "machine-note",
+                  "source_note_ids": [
+                    "machine-note"
+                  ],
+                  "staff": 1,
+                  "start_ms": 0.0,
+                  "velocity": 90,
+                  "voice": "1"
+                }
+              ]
+            }
+          },
+          "machine_occurrence_ids": [
+            "human-note"
+          ],
+          "plan": {
+            "format": "wmc-practice-assistance",
+            "human_source_ids": [
+              "machine-note"
+            ],
+            "mode": "automatic",
+            "planner_revision": 1,
+            "receipt": {
+              "choice": null,
+              "runtime_digest": "90ebf9bb009aaebc9d9c9fa2fe9d8f0239bfb5a0fedc879627a2709e6d075d22",
+              "runtime_policy": "wmc-canonical-practice-v1",
+              "saved_package_sha256": null,
+              "source_binding": {
+                "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+                "domain": "wmc-canonical-score-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmc-canonical-score-v1"
+            },
+            "revision": 1,
+            "schema_version": 1,
+            "selection": {
+              "profile": {
+                "key_count": 88,
+                "kind": "piano",
+                "lowest_midi": null
+              },
+              "selected_part_ids": [
+                "piano"
+              ]
+            },
+            "selection_digest": "77c051fb94bd4ae959e0c10a4e95ae195a6c92fc78d402ddea35d1542b9575fa",
+            "settings": {
+              "algorithm_id": "wmc-keyboard-assistance-v1",
+              "max_held_span_semitones": 0,
+              "max_simultaneous_keys": 1,
+              "max_targets_per_onset": 1,
+              "min_onset_interval_ms": 500
+            }
+          },
+          "receipt": {
+            "choice": null,
+            "runtime_digest": "90ebf9bb009aaebc9d9c9fa2fe9d8f0239bfb5a0fedc879627a2709e6d075d22",
+            "runtime_policy": "wmc-canonical-practice-v1",
+            "saved_package_sha256": null,
+            "source_binding": {
+              "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+              "domain": "wmc-canonical-score-serde-json",
+              "serialization_revision": 1
+            },
+            "source_profile": "wmc-canonical-score-v1"
+          },
+          "scored_mode_allowed": true,
+          "source_ownership": [
+            {
+              "in_selected_scope": true,
+              "owner": "machine",
+              "part_id": "piano",
+              "source_id": "human-note"
+            },
+            {
+              "in_selected_scope": true,
+              "owner": "human",
+              "part_id": "piano",
+              "source_id": "machine-note"
+            }
+          ]
+        },
+        "source": {
+          "choice": null,
+          "kind": "canonical",
+          "profile": "wmc-canonical-score-v1",
+          "runtime_policy": "wmc-canonical-practice-v1",
+          "source_binding": {
+            "digest": "1e50595e73de2a834077bba7f4e2113a7fd45fdf330f05a234d76b36562490df",
+            "domain": "wmc-canonical-score-serde-json",
+            "serialization_revision": 1
+          }
+        }
+      },
+      "settings": {
+        "algorithm_id": "wmc-keyboard-assistance-v1",
+        "max_held_span_semitones": 0,
+        "max_simultaneous_keys": 1,
+        "max_targets_per_onset": 1,
+        "min_onset_interval_ms": 500
+      }
+    }
+  },
+  "selection": {
+    "profile": {
+      "key_count": 88,
+      "kind": "piano",
+      "lowest_midi": null
+    },
+    "selected_part_ids": [
+      "piano"
+    ]
+  },
+  "source_fixture": "assistance-canonical.json"
+}
