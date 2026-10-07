@@ -46,6 +46,8 @@
 .song-mod-assistance[hidden],.song-mod-assistance [hidden] {display:none}
 .song-mod-assistance h3 {margin:0 0 .5rem}
 .song-mod-assistance label {display:flex;align-items:center;gap:.5rem;line-height:1.5}
+#song-mod-assistance-preset-label {display:grid;gap:.25rem;margin:.75rem 0;min-width:0}
+#song-mod-assistance-preset {width:100%;min-width:0;max-width:100%}
 .song-mod-assistance-limits {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem;margin:.75rem 0}
 .song-mod-assistance-limits label {display:grid;gap:.25rem}
 .song-mod-assistance-limits input {width:100%;min-width:0}
