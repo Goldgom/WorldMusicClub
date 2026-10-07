@@ -9,6 +9,7 @@ mod native_assistance;
 mod native_basic_keys;
 mod native_fingering;
 pub mod native_library;
+mod native_pitch_mod;
 mod native_progression;
 pub use native_library::catalog_product;
 pub mod song_pack;
@@ -232,13 +233,16 @@ fn dispatch_inner(
     }
     if request.method() != "POST"
         && (path.starts_with("/api/practice-assistance/")
-            || path.starts_with("/api/practice-progression/"))
+            || path.starts_with("/api/practice-progression/")
+            || path.starts_with("/api/pitch-mod/"))
         && practice_server::is_song_api_route(path)
     {
         return engine_response(practice_server::song_api_error(
             405,
             "method_not_allowed",
-            if path.starts_with("/api/practice-progression/") {
+            if path.starts_with("/api/pitch-mod/") {
+                "Pitch Mod operations require POST"
+            } else if path.starts_with("/api/practice-progression/") {
                 "Practice progression operations require POST"
             } else {
                 "Practice assistance operations require POST"

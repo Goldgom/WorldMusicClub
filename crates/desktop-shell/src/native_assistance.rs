@@ -15,13 +15,13 @@ use serde_json::{json, Value};
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Source {
-    key: String,
-    content_sha256: String,
-    profile: String,
+    pub(crate) key: String,
+    pub(crate) content_sha256: String,
+    pub(crate) profile: String,
     // A missing choice is not an explicit choice, even for profiles using null.
     #[serde(deserialize_with = "explicit_choice")]
-    choice: Option<score_core::vsq_clean::PracticeChoice>,
-    runtime_policy: String,
+    pub(crate) choice: Option<score_core::vsq_clean::PracticeChoice>,
+    pub(crate) runtime_policy: String,
 }
 
 fn explicit_choice<'de, D: Deserializer<'de>>(
@@ -34,6 +34,8 @@ fn explicit_choice<'de, D: Deserializer<'de>>(
 #[serde(deny_unknown_fields)]
 struct OriginalRequest {
     source: Source,
+    #[serde(default)]
+    pitch_mod: Option<practice_server::pitch_mod_api::Configuration>,
     selection: AssistanceSelection,
 }
 
@@ -41,6 +43,8 @@ struct OriginalRequest {
 #[serde(deny_unknown_fields)]
 struct GenerateRequest {
     source: Source,
+    #[serde(default)]
+    pitch_mod: Option<practice_server::pitch_mod_api::Configuration>,
     selection: AssistanceSelection,
     settings: AutomaticSettings,
 }
@@ -49,6 +53,8 @@ struct GenerateRequest {
 #[serde(deny_unknown_fields)]
 struct CreateRequest {
     source: Source,
+    #[serde(default)]
+    pitch_mod: Option<practice_server::pitch_mod_api::Configuration>,
     selection: AssistanceSelection,
     human_source_ids: Vec<String>,
 }
@@ -57,6 +63,8 @@ struct CreateRequest {
 #[serde(deny_unknown_fields)]
 struct ValidateRequest {
     source: Source,
+    #[serde(default)]
+    pitch_mod: Option<practice_server::pitch_mod_api::Configuration>,
     plan: PracticeAssistancePlan,
 }
 
@@ -158,39 +166,74 @@ pub(crate) fn load_source(
         .map_err(|error| unavailable(error.to_string()))
 }
 
-fn response(source: Source, checked: CheckedPracticeAssistance) -> Result<Value, LibraryError> {
-    Ok(json!({"source": source, "checked": checked}))
+pub(crate) fn load_effective_source(
+    library: &NativeLibrary,
+    source: &Source,
+    configuration: Option<&practice_server::pitch_mod_api::Configuration>,
+) -> Result<
+    (
+        PracticeSource,
+        Option<score_core::pitch_projection::PitchProjectionIdentity>,
+    ),
+    LibraryError,
+> {
+    let shift = configuration
+        .map(crate::native_pitch_mod::shift)
+        .transpose()?
+        .unwrap_or(0);
+    if shift == 0 {
+        return load_source(library, source).map(|source| (source, None));
+    }
+    crate::native_pitch_mod::load_projection(library, source, shift)
+        .map(|(_, projection)| (projection.source().clone(), projection.identity().cloned()))
+}
+
+fn response(
+    source: Source,
+    checked: CheckedPracticeAssistance,
+    pitch_mod: Option<score_core::pitch_projection::PitchProjectionIdentity>,
+) -> Result<Value, LibraryError> {
+    let mut response = json!({"source":source,"checked":checked});
+    if let Some(identity) = pitch_mod {
+        response["pitch_mod"] =
+            serde_json::to_value(identity).map_err(|error| invalid(error.to_string()))?;
+    }
+    Ok(response)
 }
 
 pub(crate) fn original(library: &NativeLibrary, bytes: &[u8]) -> Result<Value, LibraryError> {
     let request: OriginalRequest = decode(bytes)?;
-    let native = load_source(library, &request.source)?;
+    let (native, pitch_mod) =
+        load_effective_source(library, &request.source, request.pitch_mod.as_ref())?;
     let checked = automatic_assistance::original(&native, &request.selection)
         .map_err(|error| unavailable(error.to_string()))?;
-    response(request.source, checked)
+    response(request.source, checked, pitch_mod)
 }
 
 pub(crate) fn generate(library: &NativeLibrary, bytes: &[u8]) -> Result<Value, LibraryError> {
     let request: GenerateRequest = decode(bytes)?;
-    let native = load_source(library, &request.source)?;
+    let (native, pitch_mod) =
+        load_effective_source(library, &request.source, request.pitch_mod.as_ref())?;
     let checked = automatic_assistance::generate(&native, &request.selection, &request.settings)
         .map_err(|error| unavailable(error.to_string()))?;
-    response(request.source, checked)
+    response(request.source, checked, pitch_mod)
 }
 
 pub(crate) fn create(library: &NativeLibrary, bytes: &[u8]) -> Result<Value, LibraryError> {
     let request: CreateRequest = decode(bytes)?;
-    let native = load_source(library, &request.source)?;
+    let (native, pitch_mod) =
+        load_effective_source(library, &request.source, request.pitch_mod.as_ref())?;
     let checked =
         automatic_assistance::create(&native, &request.selection, &request.human_source_ids)
             .map_err(|error| unavailable(error.to_string()))?;
-    response(request.source, checked)
+    response(request.source, checked, pitch_mod)
 }
 
 pub(crate) fn validate(library: &NativeLibrary, bytes: &[u8]) -> Result<Value, LibraryError> {
     let request: ValidateRequest = decode(bytes)?;
-    let native = load_source(library, &request.source)?;
+    let (native, pitch_mod) =
+        load_effective_source(library, &request.source, request.pitch_mod.as_ref())?;
     let checked = automatic_assistance::validate(&native, &request.plan)
         .map_err(|error| unavailable(error.to_string()))?;
-    response(request.source, checked)
+    response(request.source, checked, pitch_mod)
 }

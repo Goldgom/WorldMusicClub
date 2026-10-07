@@ -18,11 +18,43 @@ struct Source {
 struct NotationRequest {
     source: Source,
     settings: basic_keys::NotationRequest,
+    #[serde(default)]
+    pitch_mod: Option<practice_server::pitch_mod_api::Configuration>,
 }
 
 pub(crate) fn notation(library: &NativeLibrary, bytes: &[u8]) -> Result<Value, LibraryError> {
     let request: NotationRequest = serde_json::from_slice(bytes)
         .map_err(|e| fail(400, "library_invalid_request", e.to_string()))?;
+    let shift = request
+        .pitch_mod
+        .as_ref()
+        .map(crate::native_pitch_mod::shift)
+        .transpose()?
+        .unwrap_or(0);
+    if shift != 0 {
+        let source = crate::native_assistance::Source {
+            key: request.source.key.clone(),
+            content_sha256: request.source.content_sha256.clone(),
+            profile: request.source.profile.clone(),
+            choice: None,
+            runtime_policy: basic_keys::RENDITION_POLICY.into(),
+        };
+        let (original, projection) =
+            crate::native_pitch_mod::load_projection(library, &source, shift)?;
+        let crate::native_pitch_mod::Original::Basic(original) = original else {
+            return Err(fail(
+                422,
+                "library_basic_keys_source",
+                "Notation requires the saved complete basic-key source",
+            ));
+        };
+        let page = projection
+            .basic_notation_page(&original, &request.settings)
+            .map_err(crate::native_pitch_mod::projection_error)?;
+        return Ok(
+            json!({"source":request.source,"page":page,"pitch_mod":projection.identity(),"receipt":projection.source().receipt()}),
+        );
+    }
     let mismatch = || {
         fail(422, "library_basic_keys_source", "The notation view must name the current saved complete basic-key package and its exact content identity")
     };

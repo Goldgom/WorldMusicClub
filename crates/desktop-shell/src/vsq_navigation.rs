@@ -12,7 +12,7 @@ const MAX_BYTES: usize = 16 * 1024 * 1024;
 const MAX_CURSOR_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Serialize)]
-pub(super) struct PracticeNavigation {
+pub(crate) struct PracticeNavigation {
     profile: &'static str,
     content_sha256: String,
     source_sha256: String,
@@ -31,7 +31,7 @@ pub(super) struct PracticeNavigation {
 /// 1,000,000 reference limits for exact written membership. Replace every
 /// display clock from authoritative VSQ ticks; never offset approximate BPM ms.
 /// No modification to the ordinary navigation path or its limits is needed.
-pub(super) fn compile(
+pub(crate) fn compile(
     score: &VsqCompleteScore,
     runtime: &PracticeRuntime,
     timeline: &Timeline,

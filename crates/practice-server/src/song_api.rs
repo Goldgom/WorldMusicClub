@@ -23,6 +23,9 @@ pub fn is_song_api_route(path: &str) -> bool {
     matches!(
         path,
         "/api/assistance/create"
+            | "/api/pitch-mod/project"
+            | "/api/pitch-mod/fingering/piano"
+            | "/api/pitch-mod/fingering/guitar"
             | "/api/assistance/validate"
             | "/api/practice-assistance/original"
             | "/api/practice-assistance/generate"
@@ -169,6 +172,10 @@ pub fn api_response(path: &str, bytes: Vec<u8>) -> ApiResponse {
         return request_limit_response();
     }
     match path {
+        "/api/pitch-mod/project" => crate::pitch_mod_api::response(&bytes),
+        "/api/pitch-mod/fingering/piano" | "/api/pitch-mod/fingering/guitar" => {
+            crate::pitch_mod_api::fingering(&bytes, path.ends_with("/piano"))
+        }
         "/api/practice-assistance/original"
         | "/api/practice-assistance/generate"
         | "/api/practice-assistance/create"

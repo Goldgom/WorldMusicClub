@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 struct GenerateRequest {
     score: Score,
+    #[serde(default)]
+    pitch_mod: Option<crate::pitch_mod_api::Configuration>,
     selection: AssistanceSelection,
     layer: ProgressionLayer,
 }
@@ -23,6 +25,8 @@ struct GenerateRequest {
 #[serde(deny_unknown_fields)]
 struct ValidateRequest {
     score: Score,
+    #[serde(default)]
+    pitch_mod: Option<crate::pitch_mod_api::Configuration>,
     plan: PracticeProgressionPlan,
 }
 
@@ -36,10 +40,29 @@ fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, ApiResponse
     })
 }
 
-fn source(score: &Score) -> Result<PracticeSource, ApiResponse> {
-    PracticeSource::from_canonical(score).map_err(|error| {
-        super::song_api_error(422, "practice_progression_source", &error.to_string())
-    })
+fn source(
+    score: &Score,
+    pitch_mod: Option<&crate::pitch_mod_api::Configuration>,
+) -> Result<
+    (
+        PracticeSource,
+        Option<score_core::pitch_projection::PitchProjectionIdentity>,
+    ),
+    ApiResponse,
+> {
+    if let Some(configuration) = pitch_mod {
+        let shift = configuration
+            .validate()
+            .map_err(|error| super::song_api_error(422, "pitch_mod_configuration", &error))?;
+        if shift != 0 {
+            return crate::pitch_mod_api::source(score, pitch_mod);
+        }
+    }
+    PracticeSource::from_canonical(score)
+        .map(|source| (source, None))
+        .map_err(|error| {
+            super::song_api_error(422, "practice_progression_source", &error.to_string())
+        })
 }
 
 fn checked(
@@ -64,7 +87,7 @@ impl<'a> From<&'a PracticeRuntimeReceipt> for CanonicalSource<'a> {
             source_binding: &receipt.source_binding,
             profile: &receipt.source_profile,
             choice: receipt.choice,
-            runtime_policy: &receipt.runtime_policy,
+            runtime_policy: score_core::practice_source::CANONICAL_RUNTIME_POLICY,
         }
     }
 }
@@ -73,33 +96,37 @@ impl<'a> From<&'a PracticeRuntimeReceipt> for CanonicalSource<'a> {
 struct Response<'a> {
     source: CanonicalSource<'a>,
     checked: &'a CheckedPracticeProgression,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pitch_mod: Option<&'a score_core::pitch_projection::PitchProjectionIdentity>,
 }
 
 pub(super) fn response(path: &str, bytes: &[u8]) -> ApiResponse {
     let result = (|| match path {
         "/api/practice-progression/generate" => {
             let request: GenerateRequest = decode(bytes)?;
+            let (source, pitch_mod) = source(&request.score, request.pitch_mod.as_ref())?;
             checked(practice_progression::generate(
-                &source(&request.score)?,
+                &source,
                 &request.selection,
                 request.layer,
             ))
+            .map(|checked| (checked, pitch_mod))
         }
         "/api/practice-progression/validate" => {
             let request: ValidateRequest = decode(bytes)?;
-            checked(practice_progression::validate(
-                &source(&request.score)?,
-                &request.plan,
-            ))
+            let (source, pitch_mod) = source(&request.score, request.pitch_mod.as_ref())?;
+            checked(practice_progression::validate(&source, &request.plan))
+                .map(|checked| (checked, pitch_mod))
         }
         _ => unreachable!("Only registered practice-progression routes reach this adapter"),
     })();
     match result {
-        Ok(checked) => bounded_response(
+        Ok((checked, pitch_mod)) => bounded_response(
             200,
             &Response {
                 source: (&checked.plan.receipt).into(),
                 checked: &checked,
+                pitch_mod: pitch_mod.as_ref(),
             },
         ),
         Err(response) => response,

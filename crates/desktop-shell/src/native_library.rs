@@ -10,7 +10,7 @@ pub mod clean_package;
 #[path = "pack_groups.rs"]
 pub mod pack_groups;
 #[path = "vsq_navigation.rs"]
-mod vsq_navigation;
+pub(crate) mod vsq_navigation;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -1030,6 +1030,7 @@ pub fn dispatch(
         ("POST", "/api/library/manage/query") => decode(bytes).and_then(|request| pack_groups::query(library, request)),
         ("GET", "/api/library/list") => library.list().and_then(|inventory| serde_json::to_value(inventory).map_err(|error| corrupt(error.to_string()))),
         ("POST", "/api/library/save") => decode(bytes).and_then(|request| library.save(request)).and_then(|entry| serde_json::to_value(entry).map_err(|error| corrupt(error.to_string()))),
+        ("POST", "/api/library/pitch-mod/project") => crate::native_pitch_mod::project(library, bytes),
         ("POST", "/api/library/basic-keys/notation") => crate::native_basic_keys::notation(library, bytes),
         ("POST", "/api/library/fingering/piano" | "/api/library/fingering/guitar") => crate::native_fingering::plan(library, bytes, path.ends_with("/piano")),
         ("POST", "/api/library/assistance/original") => crate::native_assistance::original(library, bytes),
@@ -1048,7 +1049,7 @@ pub fn dispatch(
                 serde_json::to_value(loaded).map_err(|e| corrupt(e.to_string()))
             }
         }),
-        (_, "/api/library/manage/query" | "/api/library/list" | "/api/library/save" | "/api/library/load" | "/api/library/export" | "/api/library/asset" | "/api/library/runtime" | "/api/library/basic-keys/notation" | "/api/library/fingering/piano" | "/api/library/fingering/guitar" | "/api/library/assistance/original" | "/api/library/assistance/generate" | "/api/library/assistance/create" | "/api/library/assistance/validate" | "/api/library/progression/generate" | "/api/library/progression/validate") => Err(fail(405, "library_method_not_allowed", "Unsupported method for this library operation")),
+        (_, "/api/library/pitch-mod/project" | "/api/library/manage/query" | "/api/library/list" | "/api/library/save" | "/api/library/load" | "/api/library/export" | "/api/library/asset" | "/api/library/runtime" | "/api/library/basic-keys/notation" | "/api/library/fingering/piano" | "/api/library/fingering/guitar" | "/api/library/assistance/original" | "/api/library/assistance/generate" | "/api/library/assistance/create" | "/api/library/assistance/validate" | "/api/library/progression/generate" | "/api/library/progression/validate") => Err(fail(405, "library_method_not_allowed", "Unsupported method for this library operation")),
         _ => Err(fail(404, "library_unknown_route", "Unknown native library operation")),
     };
     match result {
