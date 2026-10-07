@@ -2,6 +2,7 @@
 //! Musical time is rational quarter-note time; wall-clock time is derived only at playback boundaries.
 pub mod adaptation;
 pub mod assistance;
+pub mod automatic_assistance;
 pub mod basic_keys;
 pub mod canonical_audio;
 pub mod clean_conversion;
@@ -44,6 +45,7 @@ pub mod metronome;
 pub mod navigation;
 pub mod omr;
 pub mod practice;
+pub mod practice_source;
 mod public_domain;
 pub mod results;
 pub mod targets;
