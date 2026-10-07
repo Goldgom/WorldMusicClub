@@ -375,6 +375,66 @@ fn candidate(
         clean: None,
     }
 }
+
+/// A directly selected MIDI keeps the established canonical path when it is
+/// exact. Otherwise admit the complete Basic Keys profile through the same
+/// decoder, runtime and storage checks as a clean ZIP. The original SMF is
+/// still the import archive: generated JSON never replaces its exact bytes.
+fn direct_midi_candidate(filename: &str, bytes: &[u8], warnings: &mut Vec<String>) -> Candidate {
+    let strict_error = match standard(filename, bytes) {
+        Ok(score) => return candidate(filename.into(), filename.into(), None, Ok(score)),
+        Err(error) => error,
+    };
+    warnings.push(format!(
+        "Strict canonical MIDI notation is unavailable: {strict_error}"
+    ));
+    let prepared = (|| -> std::result::Result<clean_package::Package, String> {
+        let draft = score_core::clean_conversion::prepare_basic_keys(bytes, filename, filename)?;
+        for diagnostic in &draft.diagnostics {
+            warnings.push(format!(
+                "{}: {} {}",
+                diagnostic.code, diagnostic.message, diagnostic.action
+            ));
+        }
+        // VSQ has its own explicit authoring/practice workflow. A file extension
+        // or a rejected canonical projection must not implicitly select it.
+        if draft.state != score_core::clean_conversion::State::BasicKeyCandidate {
+            return Err(draft
+                .diagnostics
+                .iter()
+                .map(|diagnostic| format!("{}: {}", diagnostic.code, diagnostic.message))
+                .collect::<Vec<_>>()
+                .join("; "));
+        }
+        let package = draft
+            .package
+            .ok_or("Complete Basic Keys package is unavailable")?;
+        let metadata = package.metadata_json.as_bytes();
+        let score = package.score_json.as_bytes();
+        let files = BTreeMap::from([
+            (
+                "metadata.json".into(),
+                (metadata.len() as u64, digest(metadata)),
+            ),
+            ("score.json".into(), (score.len() as u64, digest(score))),
+        ]);
+        clean_package::parse(metadata, score, &files).map_err(|error| error.error)
+    })();
+    match prepared {
+        Ok(package) => {
+            warnings.push(format!(
+                "Complete Basic Keys uses the declared {} FIFO/tempo policy for basic synthesized audition and note-on practice. Original instrument sound is unresolved; every source event and exact original MIDI byte is retained on commit. Instrument range is checked separately.",
+                score_core::basic_keys::RENDITION_POLICY
+            ));
+            let mut result = candidate(filename.into(), filename.into(), None, Ok(package.index_json().into()));
+            result.clean = Some(package);
+            result
+        }
+        Err(error) => candidate(filename.into(), filename.into(), None, Err(format!(
+            "Strict canonical MIDI notation is unavailable: {strict_error}. Complete MIDI import unavailable: {error}. The original is retained on commit; no tracks or events were discarded."
+        ))),
+    }
+}
 fn json_candidates(path: &str, bytes: &[u8]) -> Result<Vec<Candidate>> {
     let v: Value = serde_json::from_slice(bytes).map_err(|e| invalid(e.to_string()))?;
     match v.get("format").and_then(Value::as_str) {
@@ -677,7 +737,12 @@ fn plan(filename: &str, bytes: &[u8]) -> Result<Plan> {
     }
     let sha256 = digest(bytes);
     let mut warnings = Vec::new();
-    let (inventory, candidates) = if bytes.starts_with(b"PK") {
+    let lower = filename.to_lowercase();
+    let direct_midi =
+        bytes.starts_with(b"MThd") || lower.ends_with(".mid") || lower.ends_with(".midi");
+    // An explicitly selected MIDI must not acquire a different format merely
+    // because malformed bytes happen to look like JSON or a ZIP container.
+    let (inventory, candidates) = if bytes.starts_with(b"PK") && !direct_midi {
         let expected_entries = zip_guard::preflight(bytes).map_err(invalid)?;
         let mut archive =
             ZipArchive::new(Cursor::new(bytes)).map_err(|e| invalid(e.to_string()))?;
@@ -918,24 +983,25 @@ fn plan(filename: &str, bytes: &[u8]) -> Result<Plan> {
                 "Non-ZIP input exceeds 40 MiB backup limit",
             ));
         }
-        let candidates =
-            if filename.to_lowercase().ends_with(".json") || bytes.first() == Some(&b'{') {
-                json_candidates(filename, bytes).unwrap_or_else(|e| {
-                    vec![candidate(
-                        filename.into(),
-                        filename.into(),
-                        None,
-                        Err(e.error),
-                    )]
-                })
-            } else {
+        let candidates = if direct_midi {
+            vec![direct_midi_candidate(filename, bytes, &mut warnings)]
+        } else if lower.ends_with(".json") || bytes.first() == Some(&b'{') {
+            json_candidates(filename, bytes).unwrap_or_else(|e| {
                 vec![candidate(
                     filename.into(),
                     filename.into(),
                     None,
-                    standard(filename, bytes),
+                    Err(e.error),
                 )]
-            };
+            })
+        } else {
+            vec![candidate(
+                filename.into(),
+                filename.into(),
+                None,
+                standard(filename, bytes),
+            )]
+        };
         (
             Inventory {
                 files: vec![FileInventory {
@@ -1216,19 +1282,27 @@ fn import_with_boundary(
                     item.entry = existing.iter().find(|e| e.score_id == score_id).cloned();
                 } else if commit && selected.is_none_or(|i| i == index) {
                     let saved = if let Some(package) = &candidate.clean {
-                        let folder = item.path.rsplit_once('/').map(|p| p.0).unwrap_or("");
-                        let mut archive = ZipArchive::new(Cursor::new(bytes))
-                            .map_err(|e| invalid(e.to_string()))?;
-                        batch
+                        let batch = batch
                             .as_mut()
-                            .ok_or_else(|| invalid("Clean import transaction missing"))?
-                            .save(package, candidate.label, keep_both, |media| {
+                            .ok_or_else(|| invalid("Clean import transaction missing"))?;
+                        if package.metadata.media.is_empty() {
+                            // Generated raw-MIDI packages contain no media;
+                            // source retention above has already saved the SMF.
+                            batch.save(package, candidate.label, keep_both, |_| {
+                                Err(invalid("Unexpected media in a media-free clean package"))
+                            })
+                        } else {
+                            let folder = item.path.rsplit_once('/').map(|p| p.0).unwrap_or("");
+                            let mut archive = ZipArchive::new(Cursor::new(bytes))
+                                .map_err(|e| invalid(e.to_string()))?;
+                            batch.save(package, candidate.label, keep_both, |media| {
                                 read_zip(
                                     &mut archive,
                                     &resolve(folder, &media.path)?,
                                     MAX_ENTRY_BYTES,
                                 )
                             })
+                        }
                     } else {
                         let request = SaveRequest {
                             score_json,
