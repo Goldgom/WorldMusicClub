@@ -203,8 +203,8 @@ test('new phases agree across Rust, native orchestration and every fresh-profile
  assert.deepEqual(rustPhases.SKIN_PHASES,['skin-seed','skin-restart','skin-default-restart']);
  assert.deepEqual(quoted(profile.match(/\$humanTimbre=@\(([^\n]+)\)/)[1],/'([^']+)'/g),rustPhases.HUMAN_MOD_TIMBRE_PHASES);
  assert.deepEqual(rustPhases.HUMAN_MOD_TIMBRE_PHASES,['human-timbre-seed','human-timbre-migrate','human-timbre-restart']);
- // Assistance is an explicit same-profile pair, not two fresh caches.
- assert.deepEqual(rustPhases.ASSISTANCE_PHASES,['assistance-seed','assistance-restart']);
+ // Legacy and progressive assistance use four ordered processes on one profile.
+ assert.deepEqual(rustPhases.ASSISTANCE_PHASES,['assistance-seed','assistance-restart','assistance-progression','assistance-off-restart']);
  assert.deepEqual(quoted(profile.match(/\$assistance=@\(([^\n]+)\)/)[1],/'([^']+)'/g),rustPhases.ASSISTANCE_PHASES);
  assert.deepEqual(quoted(contract.match(/\$assistancePhases=@\(([^\n]+)\)/)[1],/'([^']+)'/g),rustPhases.ASSISTANCE_PHASES);
  for(const phase of rustPhases.ASSISTANCE_PHASES){assert.ok(!freshProfile.includes(phase));assert.ok(!freshContract.includes(phase));}

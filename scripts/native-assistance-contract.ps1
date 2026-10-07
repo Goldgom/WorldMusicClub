@@ -18,6 +18,12 @@ $directory=Join-Path ([IO.Path]::GetTempPath()) ('wmc-assistance-contract-'+[gui
 [void][IO.Directory]::CreateDirectory($directory)
 try {
   $seed=Get-AcceptanceProfile $directory 'assistance-seed';$restart=Get-AcceptanceProfile $directory 'assistance-restart'
+  foreach($phase in @('assistance-progression','assistance-off-restart')) {
+    $next=Get-AcceptanceProfile $directory $phase
+    if($next.fresh_required -or -not $next.existing_required -or $next.profile_directory -cne $seed.profile_directory){throw 'Progression phase must use the actual existing assistance profile'}
+    $rejected=$false;try{[void](Assert-AcceptanceProfileLaunch $directory $phase)}catch{$rejected=$true}
+    if(-not $rejected){throw 'Progression silently manufactured its predecessor profile'}
+  }
   if(-not $seed.fresh_required -or $seed.existing_required -or $restart.fresh_required -or -not $restart.existing_required -or $seed.profile_directory -cne $restart.profile_directory){throw 'Assistance profile continuity contract failed'}
   $rejected=$false
   try{[void](Assert-AcceptanceProfileLaunch $directory 'assistance-restart')}catch{$rejected=$true}

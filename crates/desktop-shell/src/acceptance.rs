@@ -39,7 +39,12 @@ pub const HUMAN_MOD_TIMBRE_PHASES: [&str; 3] = [
     "human-timbre-migrate",
     "human-timbre-restart",
 ];
-pub const ASSISTANCE_PHASES: [&str; 2] = ["assistance-seed", "assistance-restart"];
+pub const ASSISTANCE_PHASES: [&str; 4] = [
+    "assistance-seed",
+    "assistance-restart",
+    "assistance-progression",
+    "assistance-off-restart",
+];
 pub const BASIC_KEY_PHASES: [&str; 2] = ["basic-key-seed", "basic-key-restart"];
 pub const AUTHORING_PHASES: [&str; 2] = ["authoring-seed", "authoring-restart"];
 pub const VSQ_AUTHORING_PHASES: [&str; 2] = ["vsq-authoring-seed", "vsq-authoring-restart"];
@@ -454,7 +459,7 @@ impl Acceptance {
             || canonical_restart
             || skin_restart
             || human_timbre_restart
-            || self.phase == "assistance-restart";
+            || (ASSISTANCE_PHASES.contains(&self.phase) && self.phase != "assistance-seed");
         let fresh_required = !PHASES.contains(&self.phase) && !existing_required;
         let prepare = || -> std::io::Result<bool> {
             require_ordinary_directory(&self.directory)?;
@@ -462,8 +467,14 @@ impl Acceptance {
                 // A restart must never manufacture a replacement browser profile.
                 // Require the same ordinary path and bounded earlier host records.
                 require_ordinary_directory(&profile)?;
-                if self.phase == "assistance-restart" {
+                if ASSISTANCE_PHASES.contains(&self.phase) {
                     self.require_catalog_profile_evidence("assistance-seed", true)?;
+                    if self.phase != "assistance-restart" {
+                        self.require_catalog_profile_evidence("assistance-restart", false)?;
+                    }
+                    if self.phase == "assistance-off-restart" {
+                        self.require_catalog_profile_evidence("assistance-progression", false)?;
+                    }
                 } else if human_timbre_restart {
                     self.require_catalog_profile_evidence("human-timbre-seed", true)?;
                     if self.phase == "human-timbre-restart" {
@@ -1193,7 +1204,8 @@ fn valid_action_for_phase(value: &Value, phase: &str) -> bool {
             "assistance-span",
         ]
         .contains(&value["kind"].as_str().unwrap_or("")))
-        || (phase == "assistance-restart" && value["kind"] == "assistance-key-c5");
+        || (["assistance-restart", "assistance-progression"].contains(&phase)
+            && value["kind"] == "assistance-key-c5");
     if assistance
         && !assistance_special
         && ![
@@ -1920,12 +1932,21 @@ mod tests {
         let evidence = Evidence::new();
         let seed = Acceptance::new(evidence.0.clone(), "assistance-seed").unwrap();
         let restart = Acceptance::new(evidence.0.clone(), "assistance-restart").unwrap();
-        assert!(restart.prepare_webview_profile().is_err());
+        let progression = Acceptance::new(evidence.0.clone(), "assistance-progression").unwrap();
+        let off_restart = Acceptance::new(evidence.0.clone(), "assistance-off-restart").unwrap();
+        for run in [&restart, &progression, &off_restart] {
+            assert!(run.prepare_webview_profile().is_err());
+        }
         let profile = seed.prepare_webview_profile().unwrap();
         assert_eq!(profile, evidence.0.join("webview-profiles/assistance-seed"));
         assert!(seed.prepare_webview_profile().is_err());
+        assert!(progression.prepare_webview_profile().is_err());
+        assert!(off_restart.prepare_webview_profile().is_err());
         assert_eq!(restart.prepare_webview_profile().unwrap(), profile);
-        for run in [&seed, &restart] {
+        assert!(off_restart.prepare_webview_profile().is_err());
+        assert_eq!(progression.prepare_webview_profile().unwrap(), profile);
+        assert_eq!(off_restart.prepare_webview_profile().unwrap(), profile);
+        for run in [&seed, &restart, &progression, &off_restart] {
             assert_eq!(run.library_directory(), evidence.0.join("Scores"));
             assert_eq!(run.report_limit(), MAX_CLEAN_REPORT_BYTES);
             assert_eq!(action_limit(run.phase), 96);
@@ -1949,18 +1970,26 @@ mod tests {
             for phase in [
                 "assistance-seed",
                 "assistance-restart",
+                "assistance-progression",
+                "assistance-off-restart",
                 "seed",
                 "human-timbre-seed",
                 "canonical-practice-controls",
             ] {
-                assert_eq!(valid_action_for_phase(&action, phase), phase == allowed);
+                assert_eq!(
+                    valid_action_for_phase(&action, phase),
+                    phase == allowed
+                        || (kind == "assistance-key-c5" && phase == "assistance-progression")
+                );
             }
         }
         let mut picker = base.clone();
         picker["kind"] = json!("picker");
         picker["file"] = json!("assistance-original-songs.zip");
         assert!(valid_action_for_phase(&picker, "assistance-seed"));
-        assert!(!valid_action_for_phase(&picker, "assistance-restart"));
+        for phase in &ASSISTANCE_PHASES[1..] {
+            assert!(!valid_action_for_phase(&picker, phase));
+        }
         assert!(!valid_action_for_phase(&picker, "seed"));
         picker["file"] = json!("malformed.json");
         assert!(!valid_action_for_phase(&picker, "assistance-seed"));

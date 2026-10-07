@@ -6,7 +6,7 @@ import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {storedZip} from '../tests/native-import-driver-fixtures.js';
 import {digest} from '../tests/clean-song-package-fixtures.js';
-export const ASSISTANCE_PHASES=Object.freeze(['assistance-seed','assistance-restart']);
+export const ASSISTANCE_PHASES=Object.freeze(['assistance-seed','assistance-restart','assistance-progression','assistance-off-restart']);
 export const ASSISTANCE_FIXTURE='assistance-original-songs.zip';
 export function assistanceNativeFixtures(){
  const read=name=>JSON.parse(readFileSync(new URL(`../tests/fixtures/${name}.json`,import.meta.url),'utf8'));
@@ -19,6 +19,15 @@ export function assistanceNativeFixtures(){
  }
  files.set('manifest.json',Buffer.from(JSON.stringify({format:'worldmusichub-song-pack',version:2,songs:['basic','vsq'].map(kind=>({folder:`songs/assistance-${kind}`}))})));
  const bytes=storedZip([...files]);return{basic,vsq,vsqOpened,bytes,sources,manifest:{version:1,file:ASSISTANCE_FIXTURE,sha256:digest(bytes),bytes:bytes.length,sources}};
+}
+export function progressionNativeFixtures(){
+ const originals=assistanceNativeFixtures(),result={};
+ for(const kind of ['basic','vsq']){
+  const fixture=JSON.parse(readFileSync(new URL(`../tests/fixtures/progression-native-${kind}.json`,import.meta.url),'utf8'));
+  assert.equal(fixture.source_fixture,`assistance-native-${kind}.json`);assert.deepEqual(fixture.source,originals[kind].source);
+  result[kind]=fixture;
+ }
+ return result;
 }
 export async function prepareAssistanceFixtures(directory){const f=assistanceNativeFixtures();await mkdir(directory,{recursive:true});await writeFile(join(directory,ASSISTANCE_FIXTURE),f.bytes,{flag:'wx'});await writeFile(join(directory,'assistance-fixtures.json'),JSON.stringify(f.manifest,null,2)+'\n',{flag:'wx'});return f.manifest;}
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){assert.equal(process.argv.length,3);console.log(JSON.stringify(await prepareAssistanceFixtures(resolve(process.argv[2]))));}

@@ -41,7 +41,8 @@
     "test:human-mod-timbre-proof": "node --test tests/human-mod-live-tone-proof.test.js tests/native-human-mod-timbre-renderer.test.js tests/native-human-mod-timbre-evidence.test.js tests/native-human-mod-timbre-registration.test.js tests/live-tone-released-checkpoint.test.js tests/human-mod-timbre-preview.test.js tests/frontend-human-mod-admission.test.js tests/human-mod-profile-proof.test.js",
     "test:assistance": "node --test tests/practice-assistance.test.js tests/practice-assistance-view.test.js tests/practice-assistance-native-fixtures.test.js tests/practice-assistance-audio.test.js tests/practice-assistance-audio-wire.test.js tests/native-practice-assistance-audio.test.js tests/practice-assistance-display.test.js tests/engraving-note-map.test.js tests/app-assistance.test.js tests/frontend-app-assistance.test.js tests/frontend-original-loop-storage.test.js tests/assistance-browser-fixtures.test.js tests/assistance-preview.test.js tests/native-assistance-evidence.test.js tests/practice-assistance-presets.test.js tests/frontend-assistance-presets-view.test.js tests/frontend-assistance-presets-app.test.js tests/practice-progression.test.js tests/practice-progression-view.test.js tests/frontend-practice-progression.test.js",
     "test:assistance-browser": "node --test tests/assistance-app-browser.test.js",
-    "test:progression": "node --test tests/practice-progression.test.js tests/practice-progression-view.test.js tests/frontend-practice-progression.test.js"
+    "test:progression": "node --test tests/practice-progression.test.js tests/practice-progression-view.test.js tests/frontend-practice-progression.test.js tests/progression-preview.test.js tests/native-progression-evidence.test.js",
+    "test:progression-browser": "node --test tests/progression-app-browser.test.js"
   },
   "devDependencies": {
     "ajv": "^8.20.0",

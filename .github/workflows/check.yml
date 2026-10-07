@@ -128,6 +128,24 @@ jobs:
       - name: Check real Rust-backed note-level assistance
         if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' && steps.rust_server.outcome == 'success' }}
         run: npm run test:assistance-browser
+      - name: Check real progressive hierarchy, input isolation and durable Off
+        if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' && steps.rust_server.outcome == 'success' }}
+        env:
+          WMH_ARTIFACT_DIR: ${{ runner.temp }}/worldmusicclub-progression
+          WMH_SOURCE_SHA: ${{ github.sha }}
+          WMH_SERVER_BINARY: ${{ github.workspace }}/target/debug/practice-server
+        run: |
+          set -o pipefail
+          mkdir -p "$WMH_ARTIFACT_DIR"
+          node --test --test-reporter=tap tests/progression-app-browser.test.js | tee "$WMH_ARTIFACT_DIR/tests.tap"
+          node scripts/verify-progression-preview.mjs "$WMH_ARTIFACT_DIR"
+      - name: Preserve exact-source progressive browser evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: progression-browser-regression
+          path: ${{ runner.temp }}/worldmusicclub-progression/
+          if-no-files-found: warn
       - name: Check real Rust-backed application
         if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' && steps.rust_server.outcome == 'success' }}
         run: npm run test:full-app

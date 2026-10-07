@@ -60,7 +60,7 @@ try {
     if($phase -eq 'seed'){New-Item -ItemType Directory $selection.profile_directory | Out-Null}
     else{Assert-True (-not $selection.profile_absent_before_launch) 'desktop restart reuses its existing profile'}
   }
-  $assistancePhases=@('assistance-seed','assistance-restart')
+  $assistancePhases=@('assistance-seed','assistance-restart','assistance-progression','assistance-off-restart')
   Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $assistancePhases[1] } 'assistance restart requires its exact seed profile'
   $assistanceSeed=Assert-AcceptanceProfileLaunch $profileRoot $assistancePhases[0]
   Assert-True ($assistanceSeed.fresh_required -and -not $assistanceSeed.existing_required -and $assistanceSeed.profile_absent_before_launch) 'assistance seed requires an absent profile'
@@ -79,10 +79,25 @@ try {
     Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $assistancePhases[1] } "assistance predecessor must match exact $($case.field)"
     $assistanceProof[$case.field]=$old
   }
+  $assistanceProof | ConvertTo-Json | Set-Content -LiteralPath $assistancePath -Encoding utf8
+  foreach($index in 2..3) {
+    $phase=$assistancePhases[$index]
+    Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $phase } 'progression needs every earlier native process profile proof'
+    $previous=$assistancePhases[$index-1]
+    $proof=[ordered]@{version=1;phase=$previous;process_id=(42+$index);profile_directory=$assistanceSeed.profile_directory;library_directory=$assistanceSeed.library_directory;fresh_required=$false;created_new=$false}
+    $proofPath=Join-Path $profileRoot "profile-$previous.json"
+    $proof | ConvertTo-Json | Set-Content -LiteralPath $proofPath -Encoding utf8
+    $selected=Assert-AcceptanceProfileLaunch $profileRoot $phase
+    Assert-True ($selected.profile_directory -ceq $assistanceSeed.profile_directory -and $selected.existing_required -and -not $selected.fresh_required) 'progression and Off restart retain the same original profile'
+    $proof.created_new=$true;$proof | ConvertTo-Json | Set-Content -LiteralPath $proofPath -Encoding utf8
+    Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $phase } 'an intermediate process cannot claim a newly created profile'
+    $proof.created_new=$false;$proof | ConvertTo-Json | Set-Content -LiteralPath $proofPath -Encoding utf8
+  }
   Remove-Item -LiteralPath $assistancePath
+  foreach($phase in $assistancePhases[1..3]){Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $phase } 'all later phases require the retained original seed proof'}
   Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $assistancePhases[1] } 'assistance restart rejects missing predecessor proof'
   Assert-True ([IO.File]::ReadAllText($assistanceMarker) -ceq 'original source-bound recipe') 'assistance validation preserves existing cache bytes'
-  foreach($phase in @('assistance','assistance-controls','ASSISTANCE-SEED',"assistance-seed`n")){Assert-Rejected { Get-AcceptanceProfile $profileRoot $phase } 'only the exact assistance phase pair is supported'}
+  foreach($phase in @('assistance','assistance-controls','ASSISTANCE-SEED',"assistance-seed`n")){Assert-Rejected { Get-AcceptanceProfile $profileRoot $phase } 'only the four exact assistance phases are supported'}
   $completePhases=@('complete-practice-seed','complete-practice-restart')
   Assert-Rejected { Assert-AcceptanceProfileLaunch $profileRoot $completePhases[1] } 'complete restart needs its seed profile'
   $completeSeed=Assert-AcceptanceProfileLaunch $profileRoot $completePhases[0]

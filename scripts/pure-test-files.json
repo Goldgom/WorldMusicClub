@@ -229,5 +229,7 @@
   "tests/practice-progression.test.js",
   "tests/practice-progression-view.test.js",
   "tests/frontend-practice-progression.test.js",
-  "tests/browser-response-capture.test.js"
+  "tests/browser-response-capture.test.js",
+  "tests/progression-preview.test.js",
+  "tests/native-progression-evidence.test.js"
 ]
