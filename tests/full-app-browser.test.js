@@ -27,7 +27,7 @@ import {selectLegacyEnglish, wideKeyboardBindings, keyboardBrowserScore, observe
 import test, {before, after, beforeEach, afterEach} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync, spawn} from 'node:child_process';
-import {createHash} from 'node:crypto';
+import {createHash, randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
 import {mkdir, readFile, realpath, stat, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:net';
@@ -50,8 +50,10 @@ import {validatePerformanceRecord} from '../web/performance-library.js';
 import {assertAddedLibraryCopies} from './library-copy-assertions.js';
 import {settlePianoViewportBudget} from './browser-piano-budget.js';
 import {browserMarkerVisibility} from './browser-marker-visibility.js';
-import {captureJsonResponse} from './browser-response-capture.js';
+import {installConsumedBodyObserver, assertConsumedJsonResponse} from './browser-consumed-body-observer.js';
 
+const buildDiagnosticsTestName = 'real Settings build diagnostics lazily bind the Rust process and keep copied paths opt-in';
+let diagnosticsObserverKey;
 const root = fileURLToPath(new URL('../', import.meta.url));
 const binary = resolve(root, process.env.WMH_SERVER_BINARY || join('target', 'debug', `practice-server${process.platform === 'win32' ? '.exe' : ''}`));
 const artifactDirectory = resolve(process.env.WMH_ARTIFACT_DIR || tmpdir());
@@ -456,6 +458,13 @@ beforeEach(async t => {
   page = await context.newPage();
   await installPlaybackClockReader(page);
   await prepareAudioAdmissionDiagnostics(page);
+  diagnosticsObserverKey = null;
+  if (currentTestName === buildDiagnosticsTestName) {
+    // The Settings view captures fetch during construction. Install before the
+    // first app script, not just before the later explicit Read click.
+    diagnosticsObserverKey = `__wmcConsumedDiagnostics_${randomUUID()}`;
+    await page.addInitScript(installConsumedBodyObserver, {key: diagnosticsObserverKey, expectedUrl: `${origin}/api/diagnostics/build`});
+  }
   page.on('pageerror', error => pageErrors.push(error.message));
   page.on('console', message => { if (['error','warning'].includes(message.type()) && browserConsole.length < 30) browserConsole.push({type:message.type(),text:message.text().slice(0,1000)}); });
   page.on('requestfailed', request => { const url=new URL(request.url()); if(url.origin===origin && failedResources.length<30)failedResources.push({path:url.pathname,error:request.failure()?.errorText}); });
@@ -512,6 +521,12 @@ afterEach(async t => {
     assert.deepEqual(apiFailures, [], 'All browser API calls must reach successful Rust responses');
   } finally {
     if(t.passed===false||t.error||t.signal.aborted||pageErrors.length||apiFailures.length)await captureFailureState('failure',t.error);
+    // Also remove the early observer if a startup/privacy assertion failed before
+    // the body-capture try/finally was reached. Closing the context still owns teardown.
+    if (diagnosticsObserverKey && page && !page.isClosed()) {
+      await page.evaluate(key => globalThis[key]?.restore(), diagnosticsObserverKey)
+        .catch(error => console.error(`Cannot restore diagnostic observer during teardown: ${error.message}`));
+    }
     await context?.close();
   }
 }, {timeout: 10_000});
@@ -556,7 +571,7 @@ test('actual Rust catalog, compiler and assessment preserve original exercises a
   await assertStoppedAtZero();
 });
 
-test('real Settings build diagnostics lazily bind the Rust process and keep copied paths opt-in', testOptions, async () => {
+test(buildDiagnosticsTestName, testOptions, async () => {
   // Reuse the original bundled exercise and owned server. No response, clipboard,
   // browser permission or application state is replaced by this check.
   assert.equal(initialCompilation.score.provenance.kind, 'original_exercise');
@@ -590,10 +605,15 @@ test('real Settings build diagnostics lazily bind the Rust process and keep copi
   assert.equal(diagnosticRequests().length, 0, 'Opening and leaving Settings visible must not fetch diagnostics');
   // The pinned Playwright adds navigation advice to any body protocol error;
   // that advice alone does not establish that this page actually navigated.
-  // Capture this request's body before waiting for the click to finish, and keep
-  // bounded, read-only observations if Chromium still cannot supply the body.
+  // CDP body extraction can fail even after this app has consumed its stream.
+  // Observe those exact original read results instead, retaining independent
+  // network identity and all product assertions below. No clone or refetch.
   const readStarted = performance.now(), readEvents = [], requestIds = new WeakMap(), owner = page.mainFrame();
-  let requestId = 0, captureFailure = null, response, identity;
+  let requestId = 0, captureFailure = null, response, identity, consumedBody;
+  const networkRequests = [];
+  assert.ok(diagnosticsObserverKey);
+  const beforeRead = await page.evaluate(key => globalThis[key].snapshot(), diagnosticsObserverKey);
+  assert.equal(beforeRead.requestCount, 0);assert.equal(beforeRead.failure, null);
   const observe = (event, detail = {}) => {
     if (readEvents.length < 24) readEvents.push({event, elapsed_ms: Math.round(performance.now() - readStarted), ...detail});
   };
@@ -605,7 +625,7 @@ test('real Settings build diagnostics lazily bind the Rust process and keep copi
   };
   const isDiagnosticRequest = request => new URL(request.url()).pathname === diagnosticsPath;
   const listeners = {
-    request: request => { if (isDiagnosticRequest(request)) observe('request', describeRequest(request)); },
+    request: request => { if (isDiagnosticRequest(request)) { networkRequests.push(request);observe('request', describeRequest(request)); } },
     response: received => { if (isDiagnosticRequest(received.request())) observe('response', {...describeRequest(received.request()),
       same_origin: new URL(received.url()).origin === origin, status: received.status(), from_service_worker: received.fromServiceWorker(),
       cache_control: received.headers()['cache-control'] ?? null, content_length: received.headers()['content-length'] ?? null}); },
@@ -616,20 +636,31 @@ test('real Settings build diagnostics lazily bind the Rust process and keep copi
   };
   for (const [event, listener] of Object.entries(listeners)) page.on(event, listener);
   try {
-    [{response, json: identity}] = await Promise.all([
-      captureJsonResponse(nextResponse(diagnosticsPath), observe),
+    [response] = await Promise.all([
+      nextResponse(diagnosticsPath),
+      page.waitForFunction(key => globalThis[key]?.settled(), diagnosticsObserverKey),
       page.locator('#build-diagnostics-read').click().then(() => observe('click-complete')),
     ]);
+    consumedBody = await page.evaluate(key => globalThis[key].restore(), diagnosticsObserverKey);
+    ({json: identity} = assertConsumedJsonResponse(response, consumedBody, {
+      key: diagnosticsObserverKey, expectedUrl: `${origin}${diagnosticsPath}`, requests: networkRequests,
+    }));
+    observe('consumed-body-verified', {bytes: consumedBody.byteLength, request_id: requestIds.get(response.request()),
+      sha256: createHash('sha256').update(Uint8Array.from(consumedBody.bytes)).digest('hex')});
   } catch (error) {
     captureFailure = {name: error.name, message: error.message, stack: error.stack};throw error;
   } finally {
+    if (!consumedBody) {
+      consumedBody = await page.evaluate(key => globalThis[key]?.restore() ?? {failure: 'Observer missing'}, diagnosticsObserverKey)
+        .catch(error => ({failure: `Cannot restore observer: ${error.message}`}));
+    }
     for (const [event, listener] of Object.entries(listeners)) page.off(event, listener);
     const observed = await page.evaluate(() => ({state: document.querySelector('#build-diagnostics')?.dataset.state,
       settings_open: document.querySelector('#settings-dialog')?.open, include_path: document.querySelector('#build-diagnostics-include-path')?.checked,
       source_sha: document.querySelector('#build-diagnostics-value-sourceSha')?.textContent,
       source_tree: document.querySelector('#build-diagnostics-value-sourceTree')?.textContent,
       executable_sha256: document.querySelector('#build-diagnostics-value-hash')?.textContent})).catch(error => ({observation_error: error.message}));
-    const evidence = {test: currentTestName, failure: captureFailure, events: readEvents, observed};
+    const evidence = {test: currentTestName, failure: captureFailure, events: readEvents, consumedBody, observed};
     if (captureFailure) console.error(`Build diagnostics response capture: ${JSON.stringify(evidence)}`);
     await writeFile(join(artifactDirectory, 'worldmusichub-live-build-diagnostics-response.json'), JSON.stringify(evidence, null, 2))
       .catch(error => console.error(`Cannot save build response observations: ${error.message}`));

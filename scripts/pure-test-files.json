@@ -244,5 +244,6 @@
   "tests/direct-midi-fixtures.test.js",
   "tests/direct-midi-proof.test.js",
   "tests/native-direct-midi-evidence.test.js",
-  "tests/hosted-direct-midi-isolation.test.js"
+  "tests/hosted-direct-midi-isolation.test.js",
+  "tests/browser-consumed-body-observer.test.js"
 ]
