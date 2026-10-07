@@ -72,3 +72,7 @@
 .song-mod-source-details dt {opacity:.8}
 .song-mod-source-details dd {margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
 @media (max-width:700px) {.song-mod-source-details dl {grid-template-columns:1fr}.song-mod-source-details dd {margin-bottom:.35rem}}
+
+.song-mod-detail-pages,.song-mod-detail-text-pages {display:flex;flex-wrap:wrap;align-items:center;gap:.4rem}
+.song-mod-detail-pages>span,.song-mod-detail-text-pages>span {flex-basis:100%}
+.song-mod-detail-pages input,.song-mod-detail-text-pages input {width:6rem;max-width:100%}

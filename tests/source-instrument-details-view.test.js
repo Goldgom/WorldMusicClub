@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseHTML} from 'linkedom';
-import {sourceInstrumentDetailRows,renderSourceInstrumentDetails} from '../web/source-instrument-details-view.js';
+import {sourceInstrumentDetailRows,sourceInstrumentDetailPage,renderSourceInstrumentDetails,SOURCE_DETAIL_PAGE_SIZE,SOURCE_DETAIL_TEXT_PAGE_SIZE} from '../web/source-instrument-details-view.js';
 import {setupSongModView} from '../web/song-mod-view.js';
 import {createSongMod} from '../web/song-mod.js';
 
@@ -68,4 +68,19 @@ test('same-source async metadata refresh preserves open disclosure and draft; st
  f.update({sourceInstrumentDetails:evidence(),sourceInstrumentDetailsStatus:'ready'});assert.match(details.textContent,/Lead.*track-wide/);assert.equal(details.open,true);assert.equal(actor.value,'machine');
  const other=evidence();other.tracks[0].names[0].utf8='Wrong source';f.update({sourceInstrumentDetailsToken:{},sourceInstrumentDetails:other});assert.doesNotMatch(details.textContent,/Wrong source/);
  f.$('song-mod-apply').click();await settle();assert.equal(f.applied.config.parts[0].performer,'machine');assert.equal(f.applied.config.parts[0].liveInstrument,'guitar');
+});
+
+
+test('large evidence is lazy and paginated with truthful totals, bounded text, and native keyboard controls',()=>{
+ const data=evidence(),names=Array.from({length:50000},(_,index)=>({role:'track_name',utf8:`Name ${index} `+'x'.repeat(600),channel_prefix_scope:'unscoped'}));
+ data.tracks[0].names=names;data.parts[0].selection_summary.observed_selections=Array.from({length:50000},(_,index)=>({program:index%128,bank_most_significant:Math.floor(index/128)%128,bank_least_significant:null}));
+ const first=sourceInstrumentDetailPage({id:'p1'},data);assert.equal(first.rows.length,SOURCE_DETAIL_PAGE_SIZE);assert.equal(first.totalRows,100011);assert.equal(first.pageCount,5001);
+ assert.ok(first.rows.some(([label])=>label==='Source note attacks / notated notes'),'Core part facts remain on page one');
+ const f=fixture();f.update({sourceInstrumentDetails:data,sourceInstrumentDetailsStatus:'ready'});const details=f.document.querySelector('[data-source-details="p1"]'),body=details.querySelector('dl');assert.equal(body.children.length,0,'Closed rows never duplicate source metadata');
+ details.open=true;details.dispatchEvent(new f.window.Event('toggle'));assert.ok(body.querySelectorAll('dt').length<=SOURCE_DETAIL_PAGE_SIZE+1);assert.ok(body.textContent.length<20000);assert.match(body.textContent,/Details 1–20 of 100011/);assert.match(body.textContent,/Remaining text is on other pages/);
+ const find=label=>[...body.querySelectorAll('button')].find(button=>button.textContent===label);
+ assert.equal(find('Next details').tagName,'BUTTON');assert.equal(find('Next details').type,'button');find('Next details').click();assert.match(body.textContent,/Details 21–40 of 100011/);
+ find('Next text').click();assert.match(body.textContent,/Text positions 501–/);assert.ok(body.querySelectorAll('dt').length<=SOURCE_DETAIL_PAGE_SIZE+1);
+ const jump=body.querySelector('.song-mod-detail-pages input');jump.value='5001';jump.dispatchEvent(Object.assign(new f.window.Event('keydown'),{key:'Enter'}));assert.match(body.textContent,/Details 100001–100011 of 100011/);assert.equal(find('Next details').disabled,true);assert.ok(body.querySelectorAll('dt').length<=SOURCE_DETAIL_PAGE_SIZE+1);
+ assert.equal(data.tracks[0].names.length,50000);assert.equal(data.parts[0].selection_summary.observed_selections.length,50000);
 });
