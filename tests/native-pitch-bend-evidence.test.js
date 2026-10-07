@@ -11,20 +11,21 @@ import {join} from 'node:path';
 import {deflateSync} from 'node:zlib';
 import {spawnSync} from 'node:child_process';
 import {pitchBendAcceptanceFixtures,preparePitchBendFixtures} from '../scripts/prepare-pitch-bend-fixtures.mjs';
-import {validatePitchBendRun,validatePitchBendRenderer,validatePitchBendInterruption,validatePerformanceTakes,verifyNativePitchBendEvidence,PITCH_BEND_PHASES,PITCH_BEND_CHECKS,PITCH_BEND_REPORT_BYTES,PITCH_BEND_CLAIMS} from '../scripts/verify-native-pitch-bend-evidence.mjs';
+import {validatePitchBendRun,validatePitchBendRenderer,validatePitchBendInterruption,validatePitchPauseCutoff,validatePerformanceTakes,verifyNativePitchBendEvidence,PITCH_BEND_PHASES,PITCH_BEND_CHECKS,PITCH_BEND_REPORT_BYTES,PITCH_BEND_CLAIMS} from '../scripts/verify-native-pitch-bend-evidence.mjs';
 import {createCleanPerformancePlayer} from '../web/clean-performance-player.js';
 import {ReferenceAudioReceiver} from '../web/midi-reference-synth.js';
+import {CompletePerformanceMixer} from '../web/clean-performance-controls.js';
 import {storedZip} from './native-import-driver-fixtures.js';
 import {digest} from './clean-song-package-fixtures.js';
 const pack=pitchBendAcceptanceFixtures(),renderer=await readFile(new URL('../crates/desktop-shell/pitch-bend-acceptance.js',import.meta.url),'utf8');
 const scope={structuredClone};vm.createContext(scope);vm.runInContext(renderer.split('(() => {')[0],scope);const observe=vm.runInContext('observePitchBendAudio',scope);
 class Param{constructor(){this.value=0;}setValueAtTime(value){this.value=value;return this;}linearRampToValueAtTime(){return this;}}
-class Node{constructor(context){this.context=context;this.gain=new Param();this.pan=new Param();this.frequency=new Param();this.Q=new Param();this.type='sine';}connect(node){assert.equal(node.context,this.context);return node;}disconnect(){}start(){}stop(){}}
-class Audio{constructor(){this.currentTime=0;this.sampleRate=48000;this.state='running';}createGain(){return new Node(this);}createStereoPanner(){return new Node(this);}createOscillator(){return new Node(this);}createBufferSource(){const n=new Node(this);delete n.frequency;delete n.type;return n;}createBiquadFilter(){return new Node(this);}createBuffer(channels,length){return{getChannelData:()=>new Float32Array(length)};}}
+class Node{constructor(context){this.context=context;this.gain=new Param();this.pan=new Param();this.frequency=new Param();this.Q=new Param();this.type='sine';}connect(node){assert.equal(node.context,this.context);return node;}disconnect(){this.context.cleanup?.();}start(){}stop(){this.context.cleanup?.();}}
+class Audio{constructor(){this.currentTime=0;this.sampleRate=48000;this.state='running';}createGain(){return new Node(this);}createStereoPanner(){return new Node(this);}createOscillator(){return new Node(this);}createBufferSource(){const n=new Node(this);delete n.frequency;delete n.type;return n;}createBiquadFilter(){return new Node(this);}createConvolver(){return new Node(this);}createBuffer(channels,length){return{getChannelData:()=>new Float32Array(length)};}}
 const copy=value=>JSON.parse(JSON.stringify(value)),cache=new Map();
 async function simulatedRun(f,muted=null,interrupt=false) {
  const key=f.key+':'+muted+':'+interrupt;if(cache.has(key))return structuredClone(cache.get(key));
- const original=ReferenceAudioReceiver.prototype.schedule,probe=observe(ReferenceAudioReceiver,{AudioContext:Audio}),context=new Audio(),output=context.createGain();
+ const original=ReferenceAudioReceiver.prototype.schedule,probe=observe(ReferenceAudioReceiver,CompletePerformanceMixer,{AudioContext:Audio,performance}),context=new Audio(),output=context.createGain();
  let pending=new Map(),id=0;const timers={setTimeout:fn=>{pending.set(++id,fn);return id;},clearTimeout:id=>pending.delete(id)};
  const player=createCleanPerformancePlayer(f.reference,{contextFactory:()=>({context,output}),timers});
  const advance=until=>{while(context.currentTime<until){context.currentTime=Math.min(until,context.currentTime+.02);const callbacks=[...pending.values()];pending.clear();callbacks.forEach(fn=>fn());}};
@@ -36,7 +37,7 @@ async function simulatedRun(f,muted=null,interrupt=false) {
   if(interrupt==='navigation'){player.stop();const result=snapshot();cache.set(key,result);return structuredClone(result);}
   let interruption;
   if(interrupt){
-   advance(interrupt==='lookahead'?3.96:3.1);interruption={playing:snapshot()};player.pause();interruption.paused=snapshot();const pausedClock=interrupt==='lookahead'?'0:03.9 / 0:05.0':'0:03.0 / 0:05.0';interruption.pauseClock={before:pausedClock,after:pausedClock};
+   advance(interrupt==='lookahead'?3.96:3.1);interruption={playing:snapshot()};if(interrupt==='advancing-cleanup')context.cleanup=()=>{context.currentTime+=128/44100;};player.pause();delete context.cleanup;interruption.paused=snapshot();const pausedClock=interrupt==='lookahead'?'0:03.9 / 0:05.0':'0:03.0 / 0:05.0';interruption.pauseClock={before:pausedClock,after:pausedClock};
    advance(context.currentTime+.2);await player.play({userGesture:true,acceptedPolicyId:f.reference.policy.id});advance(context.currentTime+.1);interruption.resumed=snapshot();interruption.resumeClock=interrupt==='lookahead'?'0:03.9 / 0:05.0':'0:03.1 / 0:05.0';
   }
   advance(5.6);assert.equal(player.snapshot().state,'ended');
@@ -84,6 +85,60 @@ test('synthetic production scheduler observes every original bend at exact nativ
   validatePitchBendInterruption((await simulatedRun(f,null,true)).interruption,f);
   const pendingFuture=(await simulatedRun(f,null,'lookahead')).interruption;validatePitchBendInterruption(pendingFuture,f);assert.ok(pendingFuture.paused.receiver.retunes.at(-1).at>pendingFuture.paused.receiver.silences[0].currentTime);assert.notEqual(pendingFuture.resumed.receiver.schedules[3].pitchSemitones,0,'Already-scheduled future center cannot leak into restored voice');
  }
+});
+test('pause cuts the real common output first while successive native cleanup calls advance four or more audio quanta',async()=>{
+ for(const f of pack.fixtures.filter(f=>f.reference.playable)){
+  const value=(await simulatedRun(f,null,'advancing-cleanup')).interruption;
+  validatePitchBendInterruption(value,f);
+  const audio=value.paused,cutoff=audio.cutoffs[0],master=audio.nodes.find(node=>node.id===cutoff.masterNodeId),cut=master.disconnects[0],silence=audio.receiver.silences[0];
+  assert.ok(cut.completedTime-cutoff.currentTime<.01);
+  assert.ok(Math.max(...audio.sources.map(source=>source.stops.at(-1)-silence.currentTime))>.01,'Regression must exceed the old changing-clock argument comparison');
+  assert.ok(audio.sources.every(source=>source.stopCalls.at(-1).operation>cut.operation));
+  assert.ok(silence.completedTime-cutoff.currentTime>.01,'The observed cleanup window must remain honest after output cutoff');
+ }
+});
+test('pause evidence rejects wrong output, bypass routes, missing/duplicate cut, reconnection, late cutoff and incomplete or future source cancellation',async()=>{
+ const f=pack.fixtures[1],good=(await simulatedRun(f,null,'advancing-cleanup')).interruption;
+ const edits=[
+  r=>{for(const name of ['playing','paused','resumed','ended','stopped'])for(const source of r[name].sources)source.nodeId=r[name].sources[0].nodeId;},
+  r=>{const id=r.playing.receiver.schedules[0].outputNodeId;for(const name of ['paused','resumed','ended','stopped'])r[name].nodes.find(node=>node.id===id).disconnected=false;},
+  r=>r.paused.sources[0].nodeId=r.paused.sources[1].nodeId,
+  r=>r.paused.cutoffs[0].masterNodeId=r.paused.sources[0].nodeId,
+  r=>r.paused.cutoffs[0].outputNodeId=r.paused.sources[0].nodeId,
+  r=>{const a=r.paused,node=a.nodes.find(n=>n.id===a.sources[0].nodeId);node.connections[0].destination=a.cutoffs[0].outputNodeId;},
+  r=>{const a=r.paused,node=a.nodes.find(n=>n.id===a.cutoffs[0].masterNodeId);node.disconnects=[];},
+  r=>{const a=r.paused,node=a.nodes.find(n=>n.id===a.cutoffs[0].masterNodeId);node.disconnects.push({...node.disconnects[0]});},
+  r=>{const a=r.paused,node=a.nodes.find(n=>n.id===a.cutoffs[0].masterNodeId);node.connections.push({...node.connections[0],operation:999});},
+  r=>{const a=r.paused,node=a.nodes.find(n=>n.id===a.cutoffs[0].masterNodeId);node.disconnects[0].completedTime=a.cutoffs[0].currentTime+.011;},
+  r=>{const a=r.paused,source=a.sources[0];source.stopCalls.pop();source.stops.pop();},
+  r=>{const a=r.paused,source=a.sources[0];source.stopCalls.at(-1).when+=1;source.stops[source.stops.length-1]+=1;},
+  r=>r.paused.sources[0].stopCalls.at(-1).silenceSequence+=1,
+  r=>r.paused.sources[0].stopCalls.at(-1).success=false,
+  r=>{const a=r.paused,node=a.nodes.find(n=>n.id===a.sources[0].nodeId);node.disconnected=false;},
+  r=>r.paused.receiver.silences[0].completedMs=r.paused.cutoffs[0].elapsedMs+5000,
+ ];
+ for(const edit of edits){const bad=structuredClone(good);edit(bad);assert.throws(()=>validatePitchBendInterruption(bad,f));}
+ const late=structuredClone(good.paused);late.cutoffs[0].currentTime-=.011;
+ assert.throws(()=>validatePitchPauseCutoff(good.playing,late),/unchanged 10 ms/);
+ const reconnect=structuredClone(good.paused),lane=reconnect.nodes.find(node=>node.id===good.playing.receiver.schedules[0].outputNodeId);
+ const operations=reconnect.nodes.flatMap(node=>[...node.connections,...node.disconnects]).concat(reconnect.sources.flatMap(source=>source.stopCalls));
+ lane.connections.push({...lane.connections[0],operation:Math.max(...operations.map(call=>call.operation))+1,currentTime:reconnect.receiver.silences[0].completedTime,completedTime:reconnect.receiver.silences[0].completedTime});
+ assert.throws(()=>validatePitchPauseCutoff(good.playing,reconnect),/reconnected after cutoff/);
+ const bypass=structuredClone(good.paused),sourceNode=bypass.nodes.find(node=>node.id===good.playing.sources[0].nodeId);
+ sourceNode.connections.push({...sourceNode.connections[0],destination:bypass.cutoffs[0].masterNodeId});
+ assert.throws(()=>validatePitchPauseCutoff(good.playing,bypass),/scheduled channel output/);
+});
+test('actual dry and wet output routes share the cut master and a wet bypass is rejected',()=>{
+ const probe=observe(ReferenceAudioReceiver,CompletePerformanceMixer,{AudioContext:Audio,performance}),context=new Audio(),output=context.createGain();
+ try{
+  const mixer=new CompletePerformanceMixer(context,output,{reverbChannels:[0],end:10}),receiver=new ReferenceAudioReceiver(context,output,{maxVoices:128,ErrorType:Error});
+  mixer.command({kind:'reverb_send',channel:0,value:127},.05);
+  receiver.schedule({eventId:'authored-wet-route',channel:0,key:60,program:0,velocity:90},.05,10,{output:mixer.outputFor(0,.05),strictPitchRange:true});context.currentTime=1;
+  const before=copy(probe.snapshot());mixer.close();receiver.silence();const after=copy(probe.snapshot());validatePitchPauseCutoff(before,after);
+  const convolver=after.nodes.find(node=>node.kind==='createConvolver');assert.ok(convolver);
+  const wet=after.nodes.find(node=>node.id===convolver.connections[0].destination);wet.connections[0].destination=after.cutoffs[0].outputNodeId;
+  assert.throws(()=>validatePitchPauseCutoff(before,after),/bypassed/);
+ }finally{probe.restore();}
 });
 test('actual oscillator observations reject frequency, raw scaling, source clock, duplicate loss, waveform and mute mutation',async()=>{
  const f=pack.fixtures[0],good=await simulatedRun(f);

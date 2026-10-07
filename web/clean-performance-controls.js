@@ -58,8 +58,10 @@ export class CompletePerformanceMixer {
     }
   }
   close() {
+    // The master is downstream of every dry and wet lane. Disconnect it first
+    // so per-channel/source cleanup cannot leave later layers sounding.
+    this.master?.disconnect(); this.master = null;
     for (const lane of this.lanes.values()) { lane.gain.disconnect(); lane.pan.disconnect(); lane.room?.close(); }
     this.lanes.clear();
-    this.master?.disconnect(); this.master = null;
   }
 }

@@ -210,7 +210,14 @@ export function createCleanPerformancePlayer(prepared, {
     positionSeconds: state === 'playing' ? Math.max(position, Math.min(prepared.durationSeconds, context.currentTime - anchor)) : position,
     error, mutedTracks: Object.freeze([...muted]) });
   const notify = () => onState(snapshot());
-  const cancel = () => { generation++; if (timer !== null) timers.clearTimeout(timer); timer = null; receiver?.silence(); mixer?.close(); mixer = null; pitch = new ReferencePitchChannels(); };
+  const cancel = () => {
+    generation++; if (timer !== null) timers.clearTimeout(timer); timer = null;
+    // Cut this rendition's common output before disposing its individual voices.
+    // A running audio clock may advance while native stop/disconnect calls run.
+    try { mixer?.close(); mixer = null; } finally {
+      try { receiver?.silence(); } finally { pitch = new ReferencePitchChannels(); }
+    }
+  };
   const abort = reason => {
     position = snapshot().positionSeconds; cancel(); error = reason instanceof CleanPerformanceError ? reason : new CleanPerformanceError('audio_failure', String(reason?.message || reason));
     state = 'error'; notify();

@@ -616,6 +616,34 @@ test('controlled mixer and room allocation failures disconnect partial nodes and
   const count = h.sources().length; h.timers.all.forEach(t => t.callback()); assert.equal(h.sources().length, count); h.silent();
 });
 
+test('pause disconnects its shared dry/wet master before slow cleanup and still cancels sources if mixer cleanup throws', async () => {
+  const p = await load(fixture([[control(0, 'reverb_send', 127), on(0), on(0, 64), off(500000), off(500000, 64)]]));
+  for (const fails of [false, true]) {
+    const h = harness(p); await h.play(); h.advance(0.1);
+    const master = h.context.nodes.find(node => node !== h.output && node.connections.includes(h.output)), calls = []; let failOnce = fails;
+    for (const node of h.context.nodes.slice(1)) {
+      const disconnect = node.disconnect.bind(node);
+      node.disconnect = () => {
+        calls.push({kind: 'disconnect', node, at: h.context.currentTime});
+        if (failOnce && node === master) { failOnce = false; throw Error('authored mixer disconnect failure'); }
+        disconnect(); h.context.currentTime += 128 / 44100;
+      };
+    }
+    for (const node of h.sources()) {
+      const stop = node.stop.bind(node);
+      node.stop = at => { calls.push({kind: 'stop', node, at}); stop(at); h.context.currentTime += 128 / 44100; };
+    }
+    if (fails) assert.throws(() => h.player.pause(), /authored mixer disconnect failure/);
+    else { const paused = h.player.pause(); near(paused.positionSeconds, 0.05); h.silent(); }
+    assert.equal(calls[0].kind, 'disconnect'); assert.equal(calls[0].node, master);
+    assert.ok(h.sources().every(source => source.disconnected && source.stops.length === 2));
+    assert.ok(h.sources().at(-1).stops.at(-1) - calls[0].at > .01, 'Native cleanup clock must actually advance');
+    assert.equal(h.output.disconnected, false, 'Other shared synth output remains connected');
+    assert.equal(h.timers.pending.size, 0);
+    if (fails) { h.player.stop(); h.silent(); }
+  }
+});
+
 test('a scheduled downstream gate cuts reference room tails at exact global end even before a delayed cleanup poll', async () => {
   const p = await load(fixture([[control(0, 'reverb_send', 127), on(0), off(50000), row(111111, 'track_end')]])), h = harness(p);
   await h.play();

@@ -3,29 +3,76 @@
  * observers delegate unchanged calls to the production receiver and Web Audio;
  * they do not replace application APIs, event sources, clocks or scheduling. */
 function observePitchBendWebAudio(root=globalThis) {
- const sources=[],parameters=[],restores=[],prototypes=new Set([root.AudioContext?.prototype,root.webkitAudioContext?.prototype].filter(Boolean));
+ const sources=[],parameters=[],nodes=[],restores=[],ids=new WeakMap(),prototypes=new Set([root.AudioContext?.prototype,root.webkitAudioContext?.prototype].filter(Boolean));
+ let nextId=0,operation=0,silenceSequence=null;
  if(!prototypes.size)throw Error('Performance acceptance requires real AudioContext');
+ const nodeId=node=>{if(!ids.has(node))ids.set(node,++nextId);return ids.get(node);};
  const wrap=(object,key,replace)=>{const original=object[key],descriptor=Object.getOwnPropertyDescriptor(object,key);if(typeof original!=='function')throw Error(`Missing audio ${key}`);const observed=replace(original);object[key]=observed;restores.push(()=>{if(object[key]===observed){if(descriptor)Object.defineProperty(object,key,descriptor);else delete object[key];}});};
- for(const proto of prototypes){
-  for(const method of ['createOscillator','createBufferSource'])wrap(proto,method,original=>function(...args){const source=Reflect.apply(original,this,args);if(sources.length>=128)throw Error('Performance source observation bound exceeded');const row={context:this,source,kind:method,starts:[],stops:[],frequencies:[],disconnected:false};sources.push(row);if(source.frequency)wrap(source.frequency,'setValueAtTime',original=>function(value,at,...rest){const result=Reflect.apply(original,this,[value,at,...rest]);if(row.frequencies.length>=12)throw Error('Pitch-bend frequency observation bound exceeded');row.frequencies.push({value,at});return result;});for(const [key,field]of [['start','starts'],['stop','stops']])wrap(source,key,original=>function(...values){const result=Reflect.apply(original,this,values);if(this===source){if(row[field].length>=4)throw Error('Performance source call bound exceeded');row[field].push(Number(values[0])||0);}return result;});wrap(source,'disconnect',original=>function(...args){const result=Reflect.apply(original,this,args);if(this===source&&args.length===0)row.disconnected=true;return result;});return source;});
-  for(const [method,key]of [['createGain','gain'],['createStereoPanner','pan']])wrap(proto,method,original=>function(...args){const node=Reflect.apply(original,this,args);if(parameters.length>=256)throw Error('Performance parameter observation bound exceeded');const row={kind:key,events:[],disconnected:false};parameters.push(row);const parameter=node[key];wrap(parameter,'setValueAtTime',original=>function(value,at,...rest){const result=Reflect.apply(original,this,[value,at,...rest]);if(this===parameter){if(row.events.length>=64)throw Error('Performance parameter call bound exceeded');row.events.push({value,at});}return result;});wrap(node,'disconnect',original=>function(...args){const result=Reflect.apply(original,this,args);if(this===node&&args.length===0)row.disconnected=true;return result;});return node;});
+ function observeNode(node,kind){
+  if(nodes.length>=512)throw Error('Pitch audio graph observation bound exceeded');
+  const row={id:nodeId(node),kind,connections:[],disconnects:[],disconnected:false};nodes.push(row);
+  wrap(node,'connect',original=>function(destination,...args){
+   if(row.connections.length>=8)throw Error('Pitch connection observation bound exceeded');
+   const call={operation:++operation,destination:nodeId(destination),currentTime:node.context.currentTime,completedTime:null,success:false};row.connections.push(call);
+   try{const result=Reflect.apply(original,this,[destination,...args]);call.success=true;return result;}finally{call.completedTime=node.context.currentTime;}
+  });
+  wrap(node,'disconnect',original=>function(...args){
+   if(row.disconnects.length>=4)throw Error('Pitch disconnect observation bound exceeded');
+   const call={operation:++operation,all:args.length===0,currentTime:node.context.currentTime,completedTime:null,success:false};row.disconnects.push(call);
+   try{const result=Reflect.apply(original,this,args);call.success=true;if(this===node&&args.length===0)row.disconnected=true;return result;}finally{call.completedTime=node.context.currentTime;}
+  });
+  return row;
  }
- return{snapshot(){return {sourceStarts:sources.reduce((n,r)=>n+r.starts.length,0),oscillatorStarts:sources.filter(r=>r.kind==='createOscillator'&&r.starts.length).length,activeSources:sources.filter(r=>!r.disconnected&&r.starts.length&&r.starts[0]<=r.context.currentTime&&r.stops.at(-1)>r.context.currentTime).length,pendingSources:sources.filter(r=>!r.disconnected&&r.starts.length&&r.starts[0]>r.context.currentTime&&r.stops.at(-1)>r.starts[0]).length,sources:sources.map(({context,source,...r})=>({...structuredClone(r),currentTime:context.currentTime,sampleRate:context.sampleRate,wave:source.type||null})),parameters:structuredClone(parameters)};},restore(){for(const restore of restores.reverse())restore();}};
+ for(const proto of prototypes){
+  for(const method of ['createOscillator','createBufferSource'])wrap(proto,method,original=>function(...args){
+   const source=Reflect.apply(original,this,args);if(sources.length>=128)throw Error('Performance source observation bound exceeded');
+   const graph=observeNode(source,method),row={context:this,source,nodeId:graph.id,kind:method,starts:[],stops:[],stopCalls:[],frequencies:[],disconnected:false};sources.push(row);
+   if(source.frequency)wrap(source.frequency,'setValueAtTime',original=>function(value,at,...rest){const result=Reflect.apply(original,this,[value,at,...rest]);if(row.frequencies.length>=12)throw Error('Pitch-bend frequency observation bound exceeded');row.frequencies.push({value,at});return result;});
+   wrap(source,'start',original=>function(...values){const result=Reflect.apply(original,this,values);if(this===source){if(row.starts.length>=4)throw Error('Performance source call bound exceeded');row.starts.push(Number(values[0])||0);}return result;});
+   wrap(source,'stop',original=>function(...values){
+    if(row.stopCalls.length>=4)throw Error('Performance source call bound exceeded');
+    const call={operation:++operation,when:Number(values[0])||0,silenceSequence,currentTime:source.context.currentTime,completedTime:null,success:false};row.stopCalls.push(call);
+    try{const result=Reflect.apply(original,this,values);call.success=true;if(this===source)row.stops.push(call.when);return result;}finally{call.completedTime=source.context.currentTime;}
+   });
+   wrap(source,'disconnect',original=>function(...args){const result=Reflect.apply(original,this,args);if(this===source&&args.length===0)row.disconnected=true;return result;});return source;
+  });
+  for(const [method,key]of [['createGain','gain'],['createStereoPanner','pan']])wrap(proto,method,original=>function(...args){
+   const node=Reflect.apply(original,this,args);if(parameters.length>=256)throw Error('Performance parameter observation bound exceeded');
+   const graph=observeNode(node,method),row={nodeId:graph.id,kind:key,events:[],disconnected:false};parameters.push(row);const parameter=node[key];
+   wrap(parameter,'setValueAtTime',original=>function(value,at,...rest){const result=Reflect.apply(original,this,[value,at,...rest]);if(this===parameter){if(row.events.length>=64)throw Error('Performance parameter call bound exceeded');row.events.push({value,at});}return result;});
+   wrap(node,'disconnect',original=>function(...args){const result=Reflect.apply(original,this,args);if(this===node&&args.length===0)row.disconnected=true;return result;});return node;
+  });
+  for(const method of ['createConvolver','createBiquadFilter'])if(typeof proto[method]==='function')wrap(proto,method,original=>function(...args){const node=Reflect.apply(original,this,args);observeNode(node,method);return node;});
+ }
+ return{nodeId,get operation(){return operation;},setSilence(sequence){silenceSequence=sequence;},snapshot(){return {sourceStarts:sources.reduce((n,r)=>n+r.starts.length,0),oscillatorStarts:sources.filter(r=>r.kind==='createOscillator'&&r.starts.length).length,activeSources:sources.filter(r=>!r.disconnected&&r.starts.length&&r.starts[0]<=r.context.currentTime&&r.stops.at(-1)>r.context.currentTime).length,pendingSources:sources.filter(r=>!r.disconnected&&r.starts.length&&r.starts[0]>r.context.currentTime&&r.stops.at(-1)>r.starts[0]).length,sources:sources.map(({context,source,...r})=>({...structuredClone(r),currentTime:context.currentTime,sampleRate:context.sampleRate,wave:source.type||null})),parameters:structuredClone(parameters),nodes:structuredClone(nodes)};},restore(){for(const restore of restores.reverse())restore();}};
 }
 
-function observePitchBendAudio(Receiver, root=globalThis) {
- const audio=observePitchBendWebAudio(root),rows={schedules:[],retunes:[],silences:[]},restores=[];let receiverSequence=0;
- const wrap=(name,field,describe)=>{const proto=Receiver.prototype,original=proto[name],descriptor=Object.getOwnPropertyDescriptor(proto,name);if(typeof original!=='function')throw Error(`Missing actual receiver ${name}`);const observed=function(...args){if(rows[field].length>=128)throw Error('Pitch receiver observation bound exceeded');const row={sequence:++receiverSequence,...describe(args),currentTime:this.context.currentTime,success:false};rows[field].push(row);const value=Reflect.apply(original,this,args);row.success=true;return value;};Object.defineProperty(proto,name,{...descriptor,value:observed});restores.push(()=>{if(proto[name]===observed)Object.defineProperty(proto,name,descriptor);});};
- wrap('schedule','schedules',([voice,start,end,options={}])=>({eventId:voice.eventId,channel:voice.channel,key:voice.key,start,end,resumed:options.resumed===true,pitchSemitones:options.pitchSemitones??0,strictPitchRange:options.strictPitchRange===true}));
+function observePitchBendAudio(Receiver,Mixer,root=globalThis) {
+ const audio=observePitchBendWebAudio(root),rows={schedules:[],retunes:[],silences:[]},cutoffs=[],restores=[];let receiverSequence=0,pendingCutoff=null;
+ const now=()=>root.performance.now();
+ const wrap=(name,field,describe)=>{const proto=Receiver.prototype,original=proto[name],descriptor=Object.getOwnPropertyDescriptor(proto,name);if(typeof original!=='function')throw Error(`Missing actual receiver ${name}`);const observed=function(...args){
+  if(rows[field].length>=128)throw Error('Pitch receiver observation bound exceeded');
+  const row={sequence:++receiverSequence,...describe.call(this,args),currentTime:this.context.currentTime,completedTime:null,success:false};rows[field].push(row);
+  if(name==='silence'){row.cutoffId=pendingCutoff;pendingCutoff=null;row.elapsedMs=now();audio.setSilence(row.sequence);}
+  try{const value=Reflect.apply(original,this,args);row.success=true;return value;}finally{row.completedTime=this.context.currentTime;if(name==='silence'){row.completedMs=now();audio.setSilence(null);}}
+ };Object.defineProperty(proto,name,{...descriptor,value:observed});restores.push(()=>{if(proto[name]===observed)Object.defineProperty(proto,name,descriptor);});};
+ wrap('schedule','schedules',function([voice,start,end,options={}]){return{eventId:voice.eventId,channel:voice.channel,key:voice.key,start,end,resumed:options.resumed===true,pitchSemitones:options.pitchSemitones??0,strictPitchRange:options.strictPitchRange===true,outputNodeId:audio.nodeId(options.output||this.output),receiverOutputNodeId:audio.nodeId(this.output)};});
  wrap('retune','retunes',([channel,semitones,at])=>({channel,semitones,at}));
  wrap('silence','silences',()=>({}));
- return{snapshot(){return{...audio.snapshot(),receiver:structuredClone(rows)};},restore(){for(const restore of restores.reverse())restore();audio.restore();}};
+ const proto=Mixer.prototype,original=proto.close,descriptor=Object.getOwnPropertyDescriptor(proto,'close');
+ const close=function(...args){
+  if(cutoffs.length>=128)throw Error('Pitch cutoff observation bound exceeded');
+  const row={id:cutoffs.length+1,currentTime:this.context.currentTime,completedTime:null,elapsedMs:now(),completedMs:null,masterNodeId:this.master?audio.nodeId(this.master):null,outputNodeId:audio.nodeId(this.output),operationStart:audio.operation,success:false};cutoffs.push(row);pendingCutoff=row.id;
+  try{const value=Reflect.apply(original,this,args);row.success=true;return value;}finally{row.completedTime=this.context.currentTime;row.completedMs=now();}
+ };
+ Object.defineProperty(proto,'close',{...descriptor,value:close});restores.push(()=>{if(proto.close===close)Object.defineProperty(proto,'close',descriptor);});
+ return{snapshot(){return{...audio.snapshot(),receiver:structuredClone(rows),cutoffs:structuredClone(cutoffs)};},restore(){for(const restore of restores.reverse())restore();audio.restore();}};
 }
 (() => {
  const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,$=id=>document.getElementById(id),assert=(v,m)=>{if(!v)throw Error(m);};
  const originalFetch=globalThis.fetch,fetcher=originalFetch.bind(globalThis),waits=createAcceptanceWait(),json=(path,body)=>waits.json(fetcher,path,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},10000);
  const controls=createPerformanceControlObserver(document),report={version:1,phase,origin:location.origin,ok:false,stage:'initialization',checks:[],errors:[],requests:[],imports:[],trusted:controls.trusted,pickerObservations:controls.pickers,files:{},screenshots:{},diagnostics:[],variants:[],blocked:[],opened:[]};
- let sequence=0,probe=null,observing=true,Receiver=null;
+ let sequence=0,probe=null,observing=true,Receiver=null,Mixer=null;
  const checkpoint=stage=>{report.stage=stage;assert(report.diagnostics.length<64,'Performance diagnostic bound exceeded');report.diagnostics.push({stage,elapsedMs:performance.now()});};
  const until=(condition,label,ms=10000)=>waits.until(condition,`Performance ${report.stage}: ${label}`,ms),frame=()=>new Promise(requestAnimationFrame);
  const closeDialogs=()=>{for(const d of document.querySelectorAll('dialog[open]'))d.close();};
@@ -43,7 +90,7 @@ function observePitchBendAudio(Receiver, root=globalThis) {
  const takeState=()=>({title:$('score-title').textContent,mode:$('session-mode').value,clock:globalThis.__wmhReadPlaybackClock(document).positionMs,captured:$('hud-captured').textContent,pass:document.querySelector('.performance-status').dataset.passId,revision:document.querySelector('.performance-status').dataset.revision});
  const audio=()=>probe?.snapshot()??{sourceStarts:0,oscillatorStarts:0,activeSources:0,pendingSources:0,sources:[],parameters:[],receiver:{schedules:[],retunes:[],silences:[]}};
  const silence=async label=>{await until(()=>audio().activeSources===0&&audio().pendingSources===0,label,5000);return audio();};
- function observe(){assert(!probe,'Performance observer already active');probe=observePitchBendAudio(Receiver);}
+ function observe(){assert(!probe,'Performance observer already active');probe=observePitchBendAudio(Receiver,Mixer);}
  function finish(){const result=audio();probe.restore();probe=null;return result;}
  function choiceState(){return{preview:$('song-lobby').dataset.previewStatus,notation:$('complete-performance-coverage').textContent,policy:$('complete-performance-policy').dataset.policyId,policyOpen:$('complete-performance-policy').open,accepted:$('complete-performance-policy-accept').checked,acceptDisabled:$('complete-performance-policy-accept').disabled,policyLabel:$('complete-performance-policy-label').textContent,pitch:{hidden:$('complete-performance-policy-pitch').hidden,text:$('complete-performance-policy-pitch').textContent},routing:{hidden:$('complete-performance-policy-routing').hidden,text:$('complete-performance-policy-routing').textContent},problems:{hidden:$('complete-performance-problems').hidden,text:$('complete-performance-problems').textContent},playDisabled:$('complete-performance-play').disabled,listenDisabled:$('start-performance').disabled,practiceDisabled:$('start-performance').disabled,counts:{tracks:Number($('complete-performance-counts').dataset.trackCount),events:Number($('complete-performance-counts').dataset.eventCount),attacks:Number($('complete-performance-counts').dataset.onsetCount)},tracks:[...$('complete-performance-tracks').children].map(n=>({index:Number(n.dataset.trackIndex),events:Number(n.dataset.eventCount),attacks:Number(n.dataset.onsetCount),text:n.querySelector('strong').textContent,checked:n.querySelector('input').checked,disabled:n.querySelector('input').disabled})),audio:audio()};}
  async function select(entry){await until(()=>$('catalog').querySelector(`[data-library-key="native:${entry.key}"]`),'stored complete performance row');await native('click',$('catalog').querySelector(`[data-library-key="native:${entry.key}"]`));await until(()=>$('song-lobby').dataset.previewStatus==='performance'&&$('song-lobby').dataset.previewId===`native:${entry.key}`&&$('complete-performance-counts').dataset.trackCount===String(entry.clean_package.coverage.performance.source_tracks),'null-notation preview');const value=choiceState();assert(!value.accepted&&value.playDisabled&&value.listenDisabled&&value.practiceDisabled,'Performance interpretation or graded mode was implicitly enabled');return value;}
@@ -55,6 +102,7 @@ function observePitchBendAudio(Receiver, root=globalThis) {
   try{await prepareNativePlaybackClock({document,until});
    assert(['pitch-bend-seed','pitch-bend-restart'].includes(phase),'Unknown pitch-bend phase');assert(localStorage.getItem('wmh.pitch.acceptance.marker')===null,'Pitch acceptance needs a fresh browser profile');report.profileMarkerAbsent=true;localStorage.setItem('wmh.pitch.acceptance.marker',phase);
    ({ReferenceAudioReceiver:Receiver}=await import('/midi-reference-synth.js'));
+   ({CompletePerformanceMixer:Mixer}=await import('/clean-performance-controls.js'));
    await menu.enterLibrary();const {getAppI18n}=await import('/app-locale.js');getAppI18n(document).setLocale('en');assert((await json('/api/health')).network==='native-protocol-no-listener','Pitch acceptance requires actual Rust native protocol');
    await preparePerformanceBaseline({phase:phase==='pitch-bend-seed'?'performance-seed':'performance-restart',importSeed:async()=>{
     report.importSetup={before:readPerformanceImportState(document),actionStart:sequence,requestStart:report.requests.length};observe();

@@ -39,7 +39,15 @@ function validateReceiverLedger(audio) {
  const receiver=audio.receiver;assert.deepEqual(Object.keys(receiver).sort(),['retunes','schedules','silences']);
  for(const rows of Object.values(receiver))assert.ok(Array.isArray(rows)&&rows.length<=128);
  const calls=Object.values(receiver).flat().sort((a,b)=>a.sequence-b.sequence);
- for(const [index,row]of calls.entries()){assert.equal(row.sequence,index+1);assert.equal(row.success,true);assert.ok(finite(row.currentTime)&&row.currentTime>=0);if(index)assert.ok(row.currentTime>=calls[index-1].currentTime,'Native receiver clock regressed');}
+ for(const [index,row]of calls.entries()){assert.equal(row.sequence,index+1);assert.equal(row.success,true);assert.ok(finite(row.currentTime)&&row.currentTime>=0&&finite(row.completedTime)&&row.completedTime>=row.currentTime);if(index)assert.ok(row.currentTime>=calls[index-1].completedTime,'Native receiver clock regressed');}
+ assert.ok(Array.isArray(audio.nodes)&&audio.nodes.length<=512&&Array.isArray(audio.cutoffs)&&audio.cutoffs.length<=128);
+ assert.equal(new Set(audio.nodes.map(node=>node.id)).size,audio.nodes.length);
+ assert.equal(new Set(audio.sources.map(source=>source.nodeId)).size,audio.sources.length,'Actual sources must keep distinct node identities');
+ const operations=[];
+ for(const node of audio.nodes){assert.ok(positive(node.id)&&Array.isArray(node.connections)&&node.connections.length<=8&&Array.isArray(node.disconnects)&&node.disconnects.length<=4);operations.push(...node.connections,...node.disconnects);for(const call of node.connections)assert.ok(positive(call.destination));}
+ for(const source of audio.sources){assert.ok(positive(source.nodeId));assert.equal(audio.nodes.find(node=>node.id===source.nodeId)?.kind,source.kind);assert.ok(Array.isArray(source.stopCalls)&&source.stopCalls.length<=4);assert.deepEqual(source.stopCalls.map(call=>call.when),source.stops);operations.push(...source.stopCalls);}
+ operations.sort((a,b)=>a.operation-b.operation);
+ for(const [index,call]of operations.entries()){assert.equal(call.operation,index+1);assert.equal(call.success,true);assert.ok(finite(call.currentTime)&&call.currentTime>=0&&finite(call.completedTime)&&call.completedTime>=call.currentTime);if(index)assert.ok(call.currentTime>=operations[index-1].completedTime,'Native graph clock regressed');}
  assert.equal(audio.sources.length,receiver.schedules.length*2,'Each melodic voice must expose its two actual oscillators');
  assert.equal(audio.sourceStarts,audio.sources.length);assert.equal(audio.oscillatorStarts,audio.sources.length);
  for(const [index,schedule]of receiver.schedules.entries()){
@@ -100,17 +108,60 @@ export function validatePitchBendRun(run,fixture) {
 }
 const sameLedgerPrefix=(before,after)=>{
  for(const field of ['schedules','retunes','silences'])assert.deepEqual(after.receiver[field].slice(0,before.receiver[field].length),before.receiver[field]);
+ assert.deepEqual(after.cutoffs.slice(0,before.cutoffs.length),before.cutoffs);
+ for(const node of before.nodes){const newer=after.nodes.find(row=>row.id===node.id);assert.ok(newer);assert.equal(newer.kind,node.kind);if(node.disconnected)assert.equal(newer.disconnected,true);for(const field of ['connections','disconnects'])assert.deepEqual(newer[field].slice(0,node[field].length),node[field]);}
  for(const [index,row]of before.sources.entries()){
-  const newer=after.sources[index];for(const field of ['kind','wave','sampleRate','starts'])assert.deepEqual(newer[field],row[field]);
-  for(const field of ['frequencies','stops'])assert.deepEqual(newer[field].slice(0,row[field].length),row[field]);
+  const newer=after.sources[index];for(const field of ['nodeId','kind','wave','sampleRate','starts'])assert.deepEqual(newer[field],row[field]);
+  for(const field of ['frequencies','stops','stopCalls'])assert.deepEqual(newer[field].slice(0,row[field].length),row[field]);
  }
 };
+// This measures successful submission of the actual shared graph disconnection,
+// not speaker audibility. Source disposal has a separate, explicit cleanup window.
+export function validatePitchPauseCutoff(before,after) {
+ assert.equal(before.cutoffs.length,0);assert.equal(after.cutoffs.length,1);
+ const cutoff=after.cutoffs[0],silence=after.receiver.silences[0];
+ assert.equal(cutoff.id,1);assert.equal(cutoff.success,true);assert.equal(silence.cutoffId,cutoff.id);
+ for(const row of [cutoff,silence])assert.ok(finite(row.currentTime)&&finite(row.completedTime)&&row.completedTime>=row.currentTime&&finite(row.elapsedMs)&&finite(row.completedMs)&&row.completedMs>=row.elapsedMs);
+ assert.ok(cutoff.completedTime<=silence.currentTime&&cutoff.completedMs<=silence.elapsedMs,'Source cleanup must follow output cutoff');
+ // The existing five-second cleanup budget is measured from cancellation entry,
+ // including synchronous cleanup, rather than only after native click completion.
+ assert.ok(silence.completedMs-cutoff.elapsedMs<5000,'Pause source cleanup exceeded its existing five-second budget');
+ assert.ok(silence.completedTime-cutoff.currentTime<5,'Pause source cleanup exceeded its audio-clock budget');
+ const nodes=new Map(after.nodes.map(node=>[node.id,node])),master=nodes.get(cutoff.masterNodeId);
+ assert.ok(master&&master.kind==='createGain'&&positive(cutoff.outputNodeId));
+ assert.equal(master.disconnects.length,1,'Master requires exactly one actual disconnection');
+ const cut=master.disconnects[0];assert.equal(cut.all,true);assert.equal(cut.success,true);assert.equal(cut.operation,cutoff.operationStart+1,'Master must be the first cleanup operation');
+ assert.ok(cut.currentTime>=cutoff.currentTime&&cut.completedTime>=cut.currentTime&&cut.completedTime<=cutoff.completedTime);
+ assert.ok(cut.completedTime-cutoff.currentTime<.01,'Pause output disconnection exceeded the unchanged 10 ms submission gate');
+ assert.deepEqual(master.connections.map(call=>call.destination),[cutoff.outputNodeId]);
+ function route(id,scheduledOutput,throughMaster=false,throughScheduledOutput=false,visited=new Set(),pathNodes=new Set()){
+  if(id===cutoff.outputNodeId){assert.equal(throughMaster,true,'A playing source bypassed the cut master');assert.equal(throughScheduledOutput,true,'Source bypassed its scheduled channel output');return;}
+  assert.ok(!visited.has(id),'Cyclic or incomplete observed output route');const node=nodes.get(id);assert.ok(node,'Missing observed output-route node');
+  pathNodes.add(id);const next=new Set(visited);next.add(id);const connected=node.connections.filter(call=>call.operation<=cutoff.operationStart);
+  assert.ok(connected.length>0&&connected.every(call=>call.success),'Missing successful output connection');
+  assert.ok(!node.disconnects.some(call=>call.operation<=cutoff.operationStart),'Playing route was already disconnected');
+  assert.ok(node.connections.every(call=>call.operation<cut.operation),'Output path reconnected after cutoff');
+  for(const call of connected)route(call.destination,scheduledOutput,throughMaster||id===master.id,throughScheduledOutput||id===scheduledOutput,next,pathNodes);
+ }
+ for(const [index,source]of before.sources.entries()){
+  const schedule=before.receiver.schedules[Math.floor(index/2)];assert.equal(schedule.receiverOutputNodeId,cutoff.outputNodeId);
+  const pathNodes=new Set();route(source.nodeId,schedule.outputNodeId,false,false,new Set(),pathNodes);
+  for(const id of pathNodes){const node=nodes.get(id);assert.equal(node.disconnected,true,'A routed node survived cleanup');assert.equal(node.disconnects.length,1);const call=node.disconnects[0];assert.equal(call.all,true);assert.equal(call.success,true);assert.ok(call.completedTime<=silence.completedTime,'A routed node outlived the cleanup window');}
+  const newer=after.sources.find(row=>row.nodeId===source.nodeId);assert.ok(newer);assert.equal(newer.stopCalls.length,source.stopCalls.length+1,'Each playing source needs exactly one pause stop');
+  const stop=newer.stopCalls.at(-1);assert.equal(stop.silenceSequence,silence.sequence);assert.equal(stop.success,true);
+  assert.ok(stop.when>=silence.currentTime&&stop.when<=stop.currentTime&&stop.currentTime<=stop.completedTime&&stop.completedTime<=silence.completedTime,'Pause stop must be immediate inside its actual receiver call');
+  assert.ok(stop.operation>cut.operation,'Source disposal preceded the common output cut');
+  const node=nodes.get(source.nodeId);assert.equal(node.disconnected,true);assert.equal(node.disconnects.length,1);const disconnected=node.disconnects[0];
+  assert.equal(disconnected.all,true);assert.equal(disconnected.success,true);assert.ok(disconnected.operation>stop.operation&&disconnected.completedTime<=silence.completedTime);
+ }
+ assert.equal(master.disconnected,true);
+ return {currentTime:cutoff.currentTime,outputSubmissionMs:(cut.completedTime-cutoff.currentTime)*1000,cleanupMs:silence.completedMs-cutoff.elapsedMs};
+}
 export function validatePitchBendInterruption(value,fixture) {
  assert.deepEqual(Object.keys(value).sort(),['playing','paused','resumed','ended','stopped','pauseClock','resumeClock','endClock','stopClock'].sort());
  validateLivePerformanceAudio(value.playing);assert.equal(value.playing.activeSources,6);validatePitchSegment(value.playing,fixture,{complete:false});
  silent(value.paused,'pause');const original=validatePitchSegment(value.paused,fixture,{complete:false});assert.equal(value.paused.receiver.silences.length,1);
- const pausedAt=value.paused.receiver.silences[0].currentTime-original.anchor;assert.ok(pausedAt>=3&&pausedAt<4,'Pause must preserve three pedal-held layers before future center');
- for(const source of value.paused.sources)near(source.stops.at(-1),value.paused.receiver.silences[0].currentTime,'Pause cancels native sources',.01);
+ const cutoff=validatePitchPauseCutoff(value.playing,value.paused),pausedAt=cutoff.currentTime-original.anchor;assert.ok(pausedAt>=3&&pausedAt<4,'Pause must preserve three pedal-held layers before future center');
  assert.equal(value.pauseClock.before,value.pauseClock.after);assert.match(value.pauseClock.before,/^0:03\.[0-9] \/ 0:05\.0$/);
  validateLivePerformanceAudio(value.resumed);assert.equal(value.resumed.activeSources,6);
  const restored=value.resumed.receiver.schedules.slice(value.paused.receiver.schedules.length);assert.equal(restored.length,3);assert.ok(restored.every(row=>row.resumed));
