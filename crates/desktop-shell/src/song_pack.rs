@@ -216,6 +216,8 @@ pub fn is_large_operation(path: &str) -> bool {
                 | "/api/library/assistance/generate"
                 | "/api/library/assistance/create"
                 | "/api/library/assistance/validate"
+                | "/api/library/progression/generate"
+                | "/api/library/progression/validate"
         )
 }
 pub fn valid_history_query(uri: &http::Uri) -> bool {

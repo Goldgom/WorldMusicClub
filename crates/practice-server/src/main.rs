@@ -111,13 +111,18 @@ async fn route(
         );
     }
     if request.method() != Method::POST
-        && path.starts_with("/api/practice-assistance/")
+        && (path.starts_with("/api/practice-assistance/")
+            || path.starts_with("/api/practice-progression/"))
         && song_route
     {
         return engine_reply(song_api_error(
             405,
             "method_not_allowed",
-            "Practice assistance operations require POST",
+            if path.starts_with("/api/practice-progression/") {
+                "Practice progression operations require POST"
+            } else {
+                "Practice assistance operations require POST"
+            },
         ));
     }
     if request.method() == Method::GET {

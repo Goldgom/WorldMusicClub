@@ -1,0 +1,1310 @@
+{
+  "empty": {
+    "checked": {
+      "assistance": {
+        "all_selected_human": false,
+        "coverage": {
+          "human_occurrence_count": 0,
+          "human_source_unit_count": 0,
+          "human_target_count": 0,
+          "machine_occurrence_count": 6,
+          "machine_selected_target_count": 6,
+          "machine_source_unit_count": 6,
+          "occurrence_count": 6,
+          "selected_source_unit_count": 6,
+          "selected_target_count": 6,
+          "source_unit_count": 6
+        },
+        "diagnostics": [
+          {
+            "code": "basic_key_rendition_interpretation",
+            "message": "Complete basic-key rendition uses the named FIFO virtual-route/tempo policy and the same all-attack practice timeline. Percussion is a named selector pulse; channel stops close gates and other effects remain uninterpreted. Inferred ends and 20ms zero gates are receiver choices, never original durations or hold-scoring targets.",
+            "note_id": null,
+            "severity": "warning"
+          },
+          {
+            "code": "assistance_scope_limits",
+            "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.",
+            "note_id": null,
+            "severity": "warning"
+          }
+        ],
+        "exclusion_reasons": [
+          {
+            "code": "explicit_machine",
+            "source_ids": [
+              "midi-t1-e11"
+            ]
+          },
+          {
+            "code": "explicit_machine",
+            "source_ids": [
+              "midi-t1-e13"
+            ]
+          },
+          {
+            "code": "explicit_machine",
+            "source_ids": [
+              "midi-t1-e3"
+            ]
+          },
+          {
+            "code": "explicit_machine",
+            "source_ids": [
+              "midi-t1-e4"
+            ]
+          },
+          {
+            "code": "explicit_machine",
+            "source_ids": [
+              "midi-t1-e7"
+            ]
+          },
+          {
+            "code": "explicit_machine",
+            "source_ids": [
+              "midi-t1-e8"
+            ]
+          }
+        ],
+        "human_targets": {
+          "diagnostics": [],
+          "groups": [],
+          "playable": false,
+          "source_note_count": 0,
+          "target_count": 0,
+          "timeline": {
+            "duration_ms": 1000.0,
+            "notes": []
+          }
+        },
+        "machine_occurrence_ids": [
+          "midi-t1-e11",
+          "midi-t1-e13",
+          "midi-t1-e3",
+          "midi-t1-e4",
+          "midi-t1-e7",
+          "midi-t1-e8"
+        ],
+        "plan": {
+          "format": "wmc-practice-assistance",
+          "human_source_ids": [],
+          "mode": "explicit",
+          "planner_revision": 1,
+          "receipt": {
+            "choice": null,
+            "runtime_digest": "2386197578512be033cf4ffcd47f6931f46cfd3b88641a3d69cd9e9512e244e8",
+            "runtime_policy": "wmh-basic-key-rendition-fifo-v1",
+            "saved_package_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+            "source_binding": {
+              "digest": "5b4be4ca9962ae2870c5da32a4aa86a6ef9696114a18a5675b8ec80a8bba9136",
+              "domain": "wmc-basic-complete-serde-json",
+              "serialization_revision": 1
+            },
+            "source_profile": "wmh-basic-keys-midi1-v1"
+          },
+          "revision": 1,
+          "schema_version": 1,
+          "selection": {
+            "profile": {
+              "key_count": 12,
+              "kind": "piano",
+              "lowest_midi": 0
+            },
+            "selected_part_ids": [
+              "midi-t1-c1-r0",
+              "midi-t1-c10-r0"
+            ]
+          },
+          "selection_digest": "0ccfb6bd3327fcfb6e3a251712d394a17ac8018793a484701bd6dd8aaed53a33",
+          "settings": null
+        },
+        "receipt": {
+          "choice": null,
+          "runtime_digest": "2386197578512be033cf4ffcd47f6931f46cfd3b88641a3d69cd9e9512e244e8",
+          "runtime_policy": "wmh-basic-key-rendition-fifo-v1",
+          "saved_package_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+          "source_binding": {
+            "digest": "5b4be4ca9962ae2870c5da32a4aa86a6ef9696114a18a5675b8ec80a8bba9136",
+            "domain": "wmc-basic-complete-serde-json",
+            "serialization_revision": 1
+          },
+          "source_profile": "wmh-basic-keys-midi1-v1"
+        },
+        "scored_mode_allowed": false,
+        "source_ownership": [
+          {
+            "in_selected_scope": true,
+            "owner": "machine",
+            "part_id": "midi-t1-c1-r0",
+            "source_id": "midi-t1-e11"
+          },
+          {
+            "in_selected_scope": true,
+            "owner": "machine",
+            "part_id": "midi-t1-c10-r0",
+            "source_id": "midi-t1-e13"
+          },
+          {
+            "in_selected_scope": true,
+            "owner": "machine",
+            "part_id": "midi-t1-c1-r0",
+            "source_id": "midi-t1-e3"
+          },
+          {
+            "in_selected_scope": true,
+            "owner": "machine",
+            "part_id": "midi-t1-c1-r0",
+            "source_id": "midi-t1-e4"
+          },
+          {
+            "in_selected_scope": true,
+            "owner": "machine",
+            "part_id": "midi-t1-c1-r0",
+            "source_id": "midi-t1-e7"
+          },
+          {
+            "in_selected_scope": true,
+            "owner": "machine",
+            "part_id": "midi-t1-c1-r0",
+            "source_id": "midi-t1-e8"
+          }
+        ]
+      },
+      "layers": [
+        {
+          "constraints": {
+            "max_held_span_semitones": 0,
+            "max_simultaneous_keys": 1,
+            "max_targets_per_onset": 1,
+            "min_onset_interval_ms": 500
+          },
+          "equals_previous_layer": false,
+          "human_occurrence_count": 0,
+          "human_source_unit_count": 0,
+          "human_target_count": 0,
+          "layer": "single",
+          "scored_mode_allowed": false
+        },
+        {
+          "constraints": {
+            "max_held_span_semitones": 7,
+            "max_simultaneous_keys": 3,
+            "max_targets_per_onset": 2,
+            "min_onset_interval_ms": 250
+          },
+          "equals_previous_layer": true,
+          "human_occurrence_count": 0,
+          "human_source_unit_count": 0,
+          "human_target_count": 0,
+          "layer": "balanced",
+          "scored_mode_allowed": false
+        },
+        {
+          "constraints": {
+            "max_held_span_semitones": 12,
+            "max_simultaneous_keys": 6,
+            "max_targets_per_onset": 4,
+            "min_onset_interval_ms": 125
+          },
+          "equals_previous_layer": true,
+          "human_occurrence_count": 0,
+          "human_source_unit_count": 0,
+          "human_target_count": 0,
+          "layer": "dense",
+          "scored_mode_allowed": false
+        }
+      ],
+      "plan": {
+        "algorithm_id": "wmc-keyboard-progression-v1",
+        "format": "wmc-practice-progression",
+        "hierarchy_digest": "764d09c02c6968890c27756c934eb4251ae8c0ec0e1983846b2e517e53fca28e",
+        "layer": "single",
+        "plan_digest": "1452afa794c39ff9d0fc6f3ba73efc7eeb5101d9cfd5bf1226ae4ef9f7954cef",
+        "planner_revision": 1,
+        "receipt": {
+          "choice": null,
+          "runtime_digest": "2386197578512be033cf4ffcd47f6931f46cfd3b88641a3d69cd9e9512e244e8",
+          "runtime_policy": "wmh-basic-key-rendition-fifo-v1",
+          "saved_package_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+          "source_binding": {
+            "digest": "5b4be4ca9962ae2870c5da32a4aa86a6ef9696114a18a5675b8ec80a8bba9136",
+            "domain": "wmc-basic-complete-serde-json",
+            "serialization_revision": 1
+          },
+          "source_profile": "wmh-basic-keys-midi1-v1"
+        },
+        "revision": 1,
+        "schema_version": 1,
+        "scheme_digest": "c814f934746ea4e7e1a5a1d5dbb19ccc42c83bd0cbba838ed12d663c85477ff8",
+        "scheme_id": "wmc-keyboard-three-layer-v1",
+        "selection": {
+          "profile": {
+            "key_count": 12,
+            "kind": "piano",
+            "lowest_midi": 0
+          },
+          "selected_part_ids": [
+            "midi-t1-c1-r0",
+            "midi-t1-c10-r0"
+          ]
+        },
+        "selection_digest": "805b98ea1f369b9d85d1bedae527143c531f2835a5d2ba44d539885b967cf63d"
+      }
+    },
+    "source": {
+      "choice": null,
+      "content_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+      "key": "song-1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+      "profile": "wmh-basic-keys-midi1-v1",
+      "runtime_policy": "wmh-basic-key-rendition-fifo-v1"
+    }
+  },
+  "layers": {
+    "balanced": {
+      "response": {
+        "checked": {
+          "assistance": {
+            "all_selected_human": false,
+            "coverage": {
+              "human_occurrence_count": 4,
+              "human_source_unit_count": 4,
+              "human_target_count": 4,
+              "machine_occurrence_count": 2,
+              "machine_selected_target_count": 2,
+              "machine_source_unit_count": 2,
+              "occurrence_count": 6,
+              "selected_source_unit_count": 6,
+              "selected_target_count": 6,
+              "source_unit_count": 6
+            },
+            "diagnostics": [
+              {
+                "code": "basic_key_rendition_interpretation",
+                "message": "Complete basic-key rendition uses the named FIFO virtual-route/tempo policy and the same all-attack practice timeline. Percussion is a named selector pulse; channel stops close gates and other effects remain uninterpreted. Inferred ends and 20ms zero gates are receiver choices, never original durations or hold-scoring targets.",
+                "note_id": null,
+                "severity": "warning"
+              },
+              {
+                "code": "assistance_scope_limits",
+                "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.",
+                "note_id": null,
+                "severity": "warning"
+              }
+            ],
+            "exclusion_reasons": [
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "midi-t1-e13"
+                ]
+              },
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "midi-t1-e4"
+                ]
+              }
+            ],
+            "human_targets": {
+              "diagnostics": [],
+              "groups": [
+                {
+                  "part_ids": [
+                    "midi-t1-c1-r0"
+                  ],
+                  "source_note_ids": [
+                    "midi-t1-e3"
+                  ],
+                  "source_occurrence_ids": [
+                    "midi-t1-e3"
+                  ],
+                  "target_id": "midi-t1-e3"
+                },
+                {
+                  "part_ids": [
+                    "midi-t1-c1-r0"
+                  ],
+                  "source_note_ids": [
+                    "midi-t1-e7"
+                  ],
+                  "source_occurrence_ids": [
+                    "midi-t1-e7"
+                  ],
+                  "target_id": "midi-t1-e7"
+                },
+                {
+                  "part_ids": [
+                    "midi-t1-c1-r0"
+                  ],
+                  "source_note_ids": [
+                    "midi-t1-e8"
+                  ],
+                  "source_occurrence_ids": [
+                    "midi-t1-e8"
+                  ],
+                  "target_id": "midi-t1-e8"
+                },
+                {
+                  "part_ids": [
+                    "midi-t1-c1-r0"
+                  ],
+                  "source_note_ids": [
+                    "midi-t1-e11"
+                  ],
+                  "source_occurrence_ids": [
+                    "midi-t1-e11"
+                  ],
+                  "target_id": "midi-t1-e11"
+                }
+              ],
+              "playable": true,
+              "source_note_count": 4,
+              "target_count": 4,
+              "timeline": {
+                "duration_ms": 1000.0,
+                "notes": [
+                  {
+                    "duration_ms": 250.0,
+                    "id": "midi-t1-e3",
+                    "midi": 60,
+                    "part_id": "midi-t1-c1-r0",
+                    "source_note_id": "midi-t1-e3",
+                    "source_note_ids": [
+                      "midi-t1-e3"
+                    ],
+                    "staff": 1,
+                    "start_ms": 0.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 250.0,
+                    "id": "midi-t1-e7",
+                    "midi": 64,
+                    "part_id": "midi-t1-c1-r0",
+                    "source_note_id": "midi-t1-e7",
+                    "source_note_ids": [
+                      "midi-t1-e7"
+                    ],
+                    "staff": 1,
+                    "start_ms": 500.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 250.0,
+                    "id": "midi-t1-e8",
+                    "midi": 67,
+                    "part_id": "midi-t1-c1-r0",
+                    "source_note_id": "midi-t1-e8",
+                    "source_note_ids": [
+                      "midi-t1-e8"
+                    ],
+                    "staff": 1,
+                    "start_ms": 500.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 20.0,
+                    "id": "midi-t1-e11",
+                    "midi": 72,
+                    "part_id": "midi-t1-c1-r0",
+                    "source_note_id": "midi-t1-e11",
+                    "source_note_ids": [
+                      "midi-t1-e11"
+                    ],
+                    "staff": 1,
+                    "start_ms": 750.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  }
+                ]
+              }
+            },
+            "machine_occurrence_ids": [
+              "midi-t1-e13",
+              "midi-t1-e4"
+            ],
+            "plan": {
+              "format": "wmc-practice-assistance",
+              "human_source_ids": [
+                "midi-t1-e11",
+                "midi-t1-e3",
+                "midi-t1-e7",
+                "midi-t1-e8"
+              ],
+              "mode": "explicit",
+              "planner_revision": 1,
+              "receipt": {
+                "choice": null,
+                "runtime_digest": "2386197578512be033cf4ffcd47f6931f46cfd3b88641a3d69cd9e9512e244e8",
+                "runtime_policy": "wmh-basic-key-rendition-fifo-v1",
+                "saved_package_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+                "source_binding": {
+                  "digest": "5b4be4ca9962ae2870c5da32a4aa86a6ef9696114a18a5675b8ec80a8bba9136",
+                  "domain": "wmc-basic-complete-serde-json",
+                  "serialization_revision": 1
+                },
+                "source_profile": "wmh-basic-keys-midi1-v1"
+              },
+              "revision": 1,
+              "schema_version": 1,
+              "selection": {
+                "profile": {
+                  "key_count": 88,
+                  "kind": "piano",
+                  "lowest_midi": 21
+                },
+                "selected_part_ids": [
+                  "midi-t1-c1-r0",
+                  "midi-t1-c10-r0"
+                ]
+              },
+              "selection_digest": "ad5ec4abf9d9e2507a718d2678b9729d28f47abee4c630c30560e3b2b936c238",
+              "settings": null
+            },
+            "receipt": {
+              "choice": null,
+              "runtime_digest": "2386197578512be033cf4ffcd47f6931f46cfd3b88641a3d69cd9e9512e244e8",
+              "runtime_policy": "wmh-basic-key-rendition-fifo-v1",
+              "saved_package_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+              "source_binding": {
+                "digest": "5b4be4ca9962ae2870c5da32a4aa86a6ef9696114a18a5675b8ec80a8bba9136",
+                "domain": "wmc-basic-complete-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmh-basic-keys-midi1-v1"
+            },
+            "scored_mode_allowed": true,
+            "source_ownership": [
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "midi-t1-c1-r0",
+                "source_id": "midi-t1-e11"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "midi-t1-c10-r0",
+                "source_id": "midi-t1-e13"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "midi-t1-c1-r0",
+                "source_id": "midi-t1-e3"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "midi-t1-c1-r0",
+                "source_id": "midi-t1-e4"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "midi-t1-c1-r0",
+                "source_id": "midi-t1-e7"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "midi-t1-c1-r0",
+                "source_id": "midi-t1-e8"
+              }
+            ]
+          },
+          "layers": [
+            {
+              "constraints": {
+                "max_held_span_semitones": 0,
+                "max_simultaneous_keys": 1,
+                "max_targets_per_onset": 1,
+                "min_onset_interval_ms": 500
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 2,
+              "human_source_unit_count": 2,
+              "human_target_count": 2,
+              "layer": "single",
+              "scored_mode_allowed": true
+            },
+            {
+              "constraints": {
+                "max_held_span_semitones": 7,
+                "max_simultaneous_keys": 3,
+                "max_targets_per_onset": 2,
+                "min_onset_interval_ms": 250
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 4,
+              "human_source_unit_count": 4,
+              "human_target_count": 4,
+              "layer": "balanced",
+              "scored_mode_allowed": true
+            },
+            {
+              "constraints": {
+                "max_held_span_semitones": 12,
+                "max_simultaneous_keys": 6,
+                "max_targets_per_onset": 4,
+                "min_onset_interval_ms": 125
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 5,
+              "human_source_unit_count": 5,
+              "human_target_count": 5,
+              "layer": "dense",
+              "scored_mode_allowed": true
+            }
+          ],
+          "plan": {
+            "algorithm_id": "wmc-keyboard-progression-v1",
+            "format": "wmc-practice-progression",
+            "hierarchy_digest": "d9e6f427a6a5dd09a1e7295b1cdb5caea638b15bcc12bb95e670d1b0a184382a",
+            "layer": "balanced",
+            "plan_digest": "d80c0ab0036bbc5a9e4917fd62bd6905139f2a14befcee78c6c29b4a23c08891",
+            "planner_revision": 1,
+            "receipt": {
+              "choice": null,
+              "runtime_digest": "2386197578512be033cf4ffcd47f6931f46cfd3b88641a3d69cd9e9512e244e8",
+              "runtime_policy": "wmh-basic-key-rendition-fifo-v1",
+              "saved_package_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+              "source_binding": {
+                "digest": "5b4be4ca9962ae2870c5da32a4aa86a6ef9696114a18a5675b8ec80a8bba9136",
+                "domain": "wmc-basic-complete-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmh-basic-keys-midi1-v1"
+            },
+            "revision": 1,
+            "schema_version": 1,
+            "scheme_digest": "c814f934746ea4e7e1a5a1d5dbb19ccc42c83bd0cbba838ed12d663c85477ff8",
+            "scheme_id": "wmc-keyboard-three-layer-v1",
+            "selection": {
+              "profile": {
+                "key_count": 88,
+                "kind": "piano",
+                "lowest_midi": 21
+              },
+              "selected_part_ids": [
+                "midi-t1-c1-r0",
+                "midi-t1-c10-r0"
+              ]
+            },
+            "selection_digest": "4ea77145f76a770e0f14e7ee557078fd2b77bba1a6e28821263ef6efde92a36e"
+          }
+        },
+        "source": {
+          "choice": null,
+          "content_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+          "key": "song-1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+          "profile": "wmh-basic-keys-midi1-v1",
+          "runtime_policy": "wmh-basic-key-rendition-fifo-v1"
+        }
+      }
+    },
+    "dense": {
+      "response": {
+        "checked": {
+          "assistance": {
+            "all_selected_human": false,
+            "coverage": {
+              "human_occurrence_count": 5,
+              "human_source_unit_count": 5,
+              "human_target_count": 5,
+              "machine_occurrence_count": 1,
+              "machine_selected_target_count": 1,
+              "machine_source_unit_count": 1,
+              "occurrence_count": 6,
+              "selected_source_unit_count": 6,
+              "selected_target_count": 6,
+              "source_unit_count": 6
+            },
+            "diagnostics": [
+              {
+                "code": "basic_key_rendition_interpretation",
+                "message": "Complete basic-key rendition uses the named FIFO virtual-route/tempo policy and the same all-attack practice timeline. Percussion is a named selector pulse; channel stops close gates and other effects remain uninterpreted. Inferred ends and 20ms zero gates are receiver choices, never original durations or hold-scoring targets.",
+                "note_id": null,
+                "severity": "warning"
+              },
+              {
+                "code": "assistance_scope_limits",
+                "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.",
+                "note_id": null,
+                "severity": "warning"
+              }
+            ],
+            "exclusion_reasons": [
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "midi-t1-e13"
+                ]
+              }
+            ],
+            "human_targets": {
+              "diagnostics": [
+                {
+                  "code": "piano_overlapping_key_gates",
+                  "message": "MIDI key 60 target midi-t1-e4 starts at 125 ms while target midi-t1-e3 continues until 250 ms. These separate attacks remain scored; independent same-key holds are not certified, and neither source duration is changed.",
+                  "note_id": "midi-t1-e4",
+                  "severity": "warning"
+                }
+              ],
+              "groups": [
+                {
+                  "part_ids": [
+                    "midi-t1-c1-r0"
+                  ],
+                  "source_note_ids": [
+                    "midi-t1-e3"
+                  ],
+                  "source_occurrence_ids": [
+                    "midi-t1-e3"
+                  ],
+                  "target_id": "midi-t1-e3"
+                },
+                {
+                  "part_ids": [
+                    "midi-t1-c1-r0"
+                  ],
+                  "source_note_ids": [
+                    "midi-t1-e4"
+                  ],
+                  "source_occurrence_ids": [
+                    "midi-t1-e4"
+                  ],
+                  "target_id": "midi-t1-e4"
+                },
+                {
+                  "part_ids": [
+                    "midi-t1-c1-r0"
+                  ],
+                  "source_note_ids": [
+                    "midi-t1-e7"
+                  ],
+                  "source_occurrence_ids": [
+                    "midi-t1-e7"
+                  ],
+                  "target_id": "midi-t1-e7"
+                },
+                {
+                  "part_ids": [
+                    "midi-t1-c1-r0"
+                  ],
+                  "source_note_ids": [
+                    "midi-t1-e8"
+                  ],
+                  "source_occurrence_ids": [
+                    "midi-t1-e8"
+                  ],
+                  "target_id": "midi-t1-e8"
+                },
+                {
+                  "part_ids": [
+                    "midi-t1-c1-r0"
+                  ],
+                  "source_note_ids": [
+                    "midi-t1-e11"
+                  ],
+                  "source_occurrence_ids": [
+                    "midi-t1-e11"
+                  ],
+                  "target_id": "midi-t1-e11"
+                }
+              ],
+              "playable": true,
+              "source_note_count": 5,
+              "target_count": 5,
+              "timeline": {
+                "duration_ms": 1000.0,
+                "notes": [
+                  {
+                    "duration_ms": 250.0,
+                    "id": "midi-t1-e3",
+                    "midi": 60,
+                    "part_id": "midi-t1-c1-r0",
+                    "source_note_id": "midi-t1-e3",
+                    "source_note_ids": [
+                      "midi-t1-e3"
+                    ],
+                    "staff": 1,
+                    "start_ms": 0.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 375.0,
+                    "id": "midi-t1-e4",
+                    "midi": 60,
+                    "part_id": "midi-t1-c1-r0",
+                    "source_note_id": "midi-t1-e4",
+                    "source_note_ids": [
+                      "midi-t1-e4"
+                    ],
+                    "staff": 1,
+                    "start_ms": 125.0,
+                    "velocity": 80,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 250.0,
+                    "id": "midi-t1-e7",
+                    "midi": 64,
+                    "part_id": "midi-t1-c1-r0",
+                    "source_note_id": "midi-t1-e7",
+                    "source_note_ids": [
+                      "midi-t1-e7"
+                    ],
+                    "staff": 1,
+                    "start_ms": 500.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 250.0,
+                    "id": "midi-t1-e8",
+                    "midi": 67,
+                    "part_id": "midi-t1-c1-r0",
+                    "source_note_id": "midi-t1-e8",
+                    "source_note_ids": [
+                      "midi-t1-e8"
+                    ],
+                    "staff": 1,
+                    "start_ms": 500.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 20.0,
+                    "id": "midi-t1-e11",
+                    "midi": 72,
+                    "part_id": "midi-t1-c1-r0",
+                    "source_note_id": "midi-t1-e11",
+                    "source_note_ids": [
+                      "midi-t1-e11"
+                    ],
+                    "staff": 1,
+                    "start_ms": 750.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  }
+                ]
+              }
+            },
+            "machine_occurrence_ids": [
+              "midi-t1-e13"
+            ],
+            "plan": {
+              "format": "wmc-practice-assistance",
+              "human_source_ids": [
+                "midi-t1-e11",
+                "midi-t1-e3",
+                "midi-t1-e4",
+                "midi-t1-e7",
+                "midi-t1-e8"
+              ],
+              "mode": "explicit",
+              "planner_revision": 1,
+              "receipt": {
+                "choice": null,
+                "runtime_digest": "2386197578512be033cf4ffcd47f6931f46cfd3b88641a3d69cd9e9512e244e8",
+                "runtime_policy": "wmh-basic-key-rendition-fifo-v1",
+                "saved_package_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+                "source_binding": {
+                  "digest": "5b4be4ca9962ae2870c5da32a4aa86a6ef9696114a18a5675b8ec80a8bba9136",
+                  "domain": "wmc-basic-complete-serde-json",
+                  "serialization_revision": 1
+                },
+                "source_profile": "wmh-basic-keys-midi1-v1"
+              },
+              "revision": 1,
+              "schema_version": 1,
+              "selection": {
+                "profile": {
+                  "key_count": 88,
+                  "kind": "piano",
+                  "lowest_midi": 21
+                },
+                "selected_part_ids": [
+                  "midi-t1-c1-r0",
+                  "midi-t1-c10-r0"
+                ]
+              },
+              "selection_digest": "e91281f811dcef7ba0df0f9ca7f51e6a47ac7d351bdd228b27b4b7bc2c2846f8",
+              "settings": null
+            },
+            "receipt": {
+              "choice": null,
+              "runtime_digest": "2386197578512be033cf4ffcd47f6931f46cfd3b88641a3d69cd9e9512e244e8",
+              "runtime_policy": "wmh-basic-key-rendition-fifo-v1",
+              "saved_package_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+              "source_binding": {
+                "digest": "5b4be4ca9962ae2870c5da32a4aa86a6ef9696114a18a5675b8ec80a8bba9136",
+                "domain": "wmc-basic-complete-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmh-basic-keys-midi1-v1"
+            },
+            "scored_mode_allowed": true,
+            "source_ownership": [
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "midi-t1-c1-r0",
+                "source_id": "midi-t1-e11"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "midi-t1-c10-r0",
+                "source_id": "midi-t1-e13"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "midi-t1-c1-r0",
+                "source_id": "midi-t1-e3"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "midi-t1-c1-r0",
+                "source_id": "midi-t1-e4"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "midi-t1-c1-r0",
+                "source_id": "midi-t1-e7"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "midi-t1-c1-r0",
+                "source_id": "midi-t1-e8"
+              }
+            ]
+          },
+          "layers": [
+            {
+              "constraints": {
+                "max_held_span_semitones": 0,
+                "max_simultaneous_keys": 1,
+                "max_targets_per_onset": 1,
+                "min_onset_interval_ms": 500
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 2,
+              "human_source_unit_count": 2,
+              "human_target_count": 2,
+              "layer": "single",
+              "scored_mode_allowed": true
+            },
+            {
+              "constraints": {
+                "max_held_span_semitones": 7,
+                "max_simultaneous_keys": 3,
+                "max_targets_per_onset": 2,
+                "min_onset_interval_ms": 250
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 4,
+              "human_source_unit_count": 4,
+              "human_target_count": 4,
+              "layer": "balanced",
+              "scored_mode_allowed": true
+            },
+            {
+              "constraints": {
+                "max_held_span_semitones": 12,
+                "max_simultaneous_keys": 6,
+                "max_targets_per_onset": 4,
+                "min_onset_interval_ms": 125
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 5,
+              "human_source_unit_count": 5,
+              "human_target_count": 5,
+              "layer": "dense",
+              "scored_mode_allowed": true
+            }
+          ],
+          "plan": {
+            "algorithm_id": "wmc-keyboard-progression-v1",
+            "format": "wmc-practice-progression",
+            "hierarchy_digest": "d9e6f427a6a5dd09a1e7295b1cdb5caea638b15bcc12bb95e670d1b0a184382a",
+            "layer": "dense",
+            "plan_digest": "31c9f5ff25b88b051e059994ba46d1bda81b8cd6b2eb90665a2de80986973d6b",
+            "planner_revision": 1,
+            "receipt": {
+              "choice": null,
+              "runtime_digest": "2386197578512be033cf4ffcd47f6931f46cfd3b88641a3d69cd9e9512e244e8",
+              "runtime_policy": "wmh-basic-key-rendition-fifo-v1",
+              "saved_package_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+              "source_binding": {
+                "digest": "5b4be4ca9962ae2870c5da32a4aa86a6ef9696114a18a5675b8ec80a8bba9136",
+                "domain": "wmc-basic-complete-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmh-basic-keys-midi1-v1"
+            },
+            "revision": 1,
+            "schema_version": 1,
+            "scheme_digest": "c814f934746ea4e7e1a5a1d5dbb19ccc42c83bd0cbba838ed12d663c85477ff8",
+            "scheme_id": "wmc-keyboard-three-layer-v1",
+            "selection": {
+              "profile": {
+                "key_count": 88,
+                "kind": "piano",
+                "lowest_midi": 21
+              },
+              "selected_part_ids": [
+                "midi-t1-c1-r0",
+                "midi-t1-c10-r0"
+              ]
+            },
+            "selection_digest": "4ea77145f76a770e0f14e7ee557078fd2b77bba1a6e28821263ef6efde92a36e"
+          }
+        },
+        "source": {
+          "choice": null,
+          "content_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+          "key": "song-1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+          "profile": "wmh-basic-keys-midi1-v1",
+          "runtime_policy": "wmh-basic-key-rendition-fifo-v1"
+        }
+      }
+    },
+    "single": {
+      "response": {
+        "checked": {
+          "assistance": {
+            "all_selected_human": false,
+            "coverage": {
+              "human_occurrence_count": 2,
+              "human_source_unit_count": 2,
+              "human_target_count": 2,
+              "machine_occurrence_count": 4,
+              "machine_selected_target_count": 4,
+              "machine_source_unit_count": 4,
+              "occurrence_count": 6,
+              "selected_source_unit_count": 6,
+              "selected_target_count": 6,
+              "source_unit_count": 6
+            },
+            "diagnostics": [
+              {
+                "code": "basic_key_rendition_interpretation",
+                "message": "Complete basic-key rendition uses the named FIFO virtual-route/tempo policy and the same all-attack practice timeline. Percussion is a named selector pulse; channel stops close gates and other effects remain uninterpreted. Inferred ends and 20ms zero gates are receiver choices, never original durations or hold-scoring targets.",
+                "note_id": null,
+                "severity": "warning"
+              },
+              {
+                "code": "assistance_scope_limits",
+                "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.",
+                "note_id": null,
+                "severity": "warning"
+              }
+            ],
+            "exclusion_reasons": [
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "midi-t1-e11"
+                ]
+              },
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "midi-t1-e13"
+                ]
+              },
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "midi-t1-e4"
+                ]
+              },
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "midi-t1-e8"
+                ]
+              }
+            ],
+            "human_targets": {
+              "diagnostics": [],
+              "groups": [
+                {
+                  "part_ids": [
+                    "midi-t1-c1-r0"
+                  ],
+                  "source_note_ids": [
+                    "midi-t1-e3"
+                  ],
+                  "source_occurrence_ids": [
+                    "midi-t1-e3"
+                  ],
+                  "target_id": "midi-t1-e3"
+                },
+                {
+                  "part_ids": [
+                    "midi-t1-c1-r0"
+                  ],
+                  "source_note_ids": [
+                    "midi-t1-e7"
+                  ],
+                  "source_occurrence_ids": [
+                    "midi-t1-e7"
+                  ],
+                  "target_id": "midi-t1-e7"
+                }
+              ],
+              "playable": true,
+              "source_note_count": 2,
+              "target_count": 2,
+              "timeline": {
+                "duration_ms": 1000.0,
+                "notes": [
+                  {
+                    "duration_ms": 250.0,
+                    "id": "midi-t1-e3",
+                    "midi": 60,
+                    "part_id": "midi-t1-c1-r0",
+                    "source_note_id": "midi-t1-e3",
+                    "source_note_ids": [
+                      "midi-t1-e3"
+                    ],
+                    "staff": 1,
+                    "start_ms": 0.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 250.0,
+                    "id": "midi-t1-e7",
+                    "midi": 64,
+                    "part_id": "midi-t1-c1-r0",
+                    "source_note_id": "midi-t1-e7",
+                    "source_note_ids": [
+                      "midi-t1-e7"
+                    ],
+                    "staff": 1,
+                    "start_ms": 500.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  }
+                ]
+              }
+            },
+            "machine_occurrence_ids": [
+              "midi-t1-e11",
+              "midi-t1-e13",
+              "midi-t1-e4",
+              "midi-t1-e8"
+            ],
+            "plan": {
+              "format": "wmc-practice-assistance",
+              "human_source_ids": [
+                "midi-t1-e3",
+                "midi-t1-e7"
+              ],
+              "mode": "explicit",
+              "planner_revision": 1,
+              "receipt": {
+                "choice": null,
+                "runtime_digest": "2386197578512be033cf4ffcd47f6931f46cfd3b88641a3d69cd9e9512e244e8",
+                "runtime_policy": "wmh-basic-key-rendition-fifo-v1",
+                "saved_package_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+                "source_binding": {
+                  "digest": "5b4be4ca9962ae2870c5da32a4aa86a6ef9696114a18a5675b8ec80a8bba9136",
+                  "domain": "wmc-basic-complete-serde-json",
+                  "serialization_revision": 1
+                },
+                "source_profile": "wmh-basic-keys-midi1-v1"
+              },
+              "revision": 1,
+              "schema_version": 1,
+              "selection": {
+                "profile": {
+                  "key_count": 88,
+                  "kind": "piano",
+                  "lowest_midi": 21
+                },
+                "selected_part_ids": [
+                  "midi-t1-c1-r0",
+                  "midi-t1-c10-r0"
+                ]
+              },
+              "selection_digest": "aecc7abc83290408cba01ddb47d91d1885a2b04d664fac60b60c1c10875a0491",
+              "settings": null
+            },
+            "receipt": {
+              "choice": null,
+              "runtime_digest": "2386197578512be033cf4ffcd47f6931f46cfd3b88641a3d69cd9e9512e244e8",
+              "runtime_policy": "wmh-basic-key-rendition-fifo-v1",
+              "saved_package_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+              "source_binding": {
+                "digest": "5b4be4ca9962ae2870c5da32a4aa86a6ef9696114a18a5675b8ec80a8bba9136",
+                "domain": "wmc-basic-complete-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmh-basic-keys-midi1-v1"
+            },
+            "scored_mode_allowed": true,
+            "source_ownership": [
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "midi-t1-c1-r0",
+                "source_id": "midi-t1-e11"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "midi-t1-c10-r0",
+                "source_id": "midi-t1-e13"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "midi-t1-c1-r0",
+                "source_id": "midi-t1-e3"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "midi-t1-c1-r0",
+                "source_id": "midi-t1-e4"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "midi-t1-c1-r0",
+                "source_id": "midi-t1-e7"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "midi-t1-c1-r0",
+                "source_id": "midi-t1-e8"
+              }
+            ]
+          },
+          "layers": [
+            {
+              "constraints": {
+                "max_held_span_semitones": 0,
+                "max_simultaneous_keys": 1,
+                "max_targets_per_onset": 1,
+                "min_onset_interval_ms": 500
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 2,
+              "human_source_unit_count": 2,
+              "human_target_count": 2,
+              "layer": "single",
+              "scored_mode_allowed": true
+            },
+            {
+              "constraints": {
+                "max_held_span_semitones": 7,
+                "max_simultaneous_keys": 3,
+                "max_targets_per_onset": 2,
+                "min_onset_interval_ms": 250
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 4,
+              "human_source_unit_count": 4,
+              "human_target_count": 4,
+              "layer": "balanced",
+              "scored_mode_allowed": true
+            },
+            {
+              "constraints": {
+                "max_held_span_semitones": 12,
+                "max_simultaneous_keys": 6,
+                "max_targets_per_onset": 4,
+                "min_onset_interval_ms": 125
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 5,
+              "human_source_unit_count": 5,
+              "human_target_count": 5,
+              "layer": "dense",
+              "scored_mode_allowed": true
+            }
+          ],
+          "plan": {
+            "algorithm_id": "wmc-keyboard-progression-v1",
+            "format": "wmc-practice-progression",
+            "hierarchy_digest": "d9e6f427a6a5dd09a1e7295b1cdb5caea638b15bcc12bb95e670d1b0a184382a",
+            "layer": "single",
+            "plan_digest": "3cd7e18be0bdc3d2f9c95d6f01f8c9affd8148a12c9cdc3b733ff56a1a181cef",
+            "planner_revision": 1,
+            "receipt": {
+              "choice": null,
+              "runtime_digest": "2386197578512be033cf4ffcd47f6931f46cfd3b88641a3d69cd9e9512e244e8",
+              "runtime_policy": "wmh-basic-key-rendition-fifo-v1",
+              "saved_package_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+              "source_binding": {
+                "digest": "5b4be4ca9962ae2870c5da32a4aa86a6ef9696114a18a5675b8ec80a8bba9136",
+                "domain": "wmc-basic-complete-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmh-basic-keys-midi1-v1"
+            },
+            "revision": 1,
+            "schema_version": 1,
+            "scheme_digest": "c814f934746ea4e7e1a5a1d5dbb19ccc42c83bd0cbba838ed12d663c85477ff8",
+            "scheme_id": "wmc-keyboard-three-layer-v1",
+            "selection": {
+              "profile": {
+                "key_count": 88,
+                "kind": "piano",
+                "lowest_midi": 21
+              },
+              "selected_part_ids": [
+                "midi-t1-c1-r0",
+                "midi-t1-c10-r0"
+              ]
+            },
+            "selection_digest": "4ea77145f76a770e0f14e7ee557078fd2b77bba1a6e28821263ef6efde92a36e"
+          }
+        },
+        "source": {
+          "choice": null,
+          "content_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+          "key": "song-1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+          "profile": "wmh-basic-keys-midi1-v1",
+          "runtime_policy": "wmh-basic-key-rendition-fifo-v1"
+        }
+      }
+    }
+  },
+  "narrow_scope": null,
+  "selection": {
+    "profile": {
+      "key_count": 88,
+      "kind": "piano",
+      "lowest_midi": 21
+    },
+    "selected_part_ids": [
+      "midi-t1-c1-r0",
+      "midi-t1-c10-r0"
+    ]
+  },
+  "source": {
+    "choice": null,
+    "content_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+    "key": "song-1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+    "profile": "wmh-basic-keys-midi1-v1",
+    "runtime_policy": "wmh-basic-key-rendition-fifo-v1"
+  },
+  "source_fixture": "assistance-native-basic.json"
+}

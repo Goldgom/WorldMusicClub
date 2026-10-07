@@ -1,0 +1,1110 @@
+{
+  "empty": {
+    "checked": {
+      "assistance": {
+        "all_selected_human": false,
+        "coverage": {
+          "human_occurrence_count": 0,
+          "human_source_unit_count": 0,
+          "human_target_count": 0,
+          "machine_occurrence_count": 2,
+          "machine_selected_target_count": 1,
+          "machine_source_unit_count": 2,
+          "occurrence_count": 2,
+          "selected_source_unit_count": 2,
+          "selected_target_count": 1,
+          "source_unit_count": 2
+        },
+        "diagnostics": [
+          {
+            "code": "assistance_scope_limits",
+            "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.",
+            "note_id": null,
+            "severity": "warning"
+          }
+        ],
+        "exclusion_reasons": [
+          {
+            "code": "explicit_machine",
+            "source_ids": [
+              "vsq-t1-ID#0001",
+              "vsq-t2-ID#0001"
+            ]
+          }
+        ],
+        "human_targets": {
+          "diagnostics": [],
+          "groups": [],
+          "playable": false,
+          "source_note_count": 0,
+          "target_count": 0,
+          "timeline": {
+            "duration_ms": 4083.3371666666667,
+            "notes": []
+          }
+        },
+        "machine_occurrence_ids": [
+          "vsq-t1-ID#0001",
+          "vsq-t2-ID#0001"
+        ],
+        "plan": {
+          "format": "wmc-practice-assistance",
+          "human_source_ids": [],
+          "mode": "explicit",
+          "planner_revision": 1,
+          "receipt": {
+            "choice": "base_notes_instrumental",
+            "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+            "runtime_policy": "wmh-vsq-base-note-practice-v1",
+            "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+            "source_binding": {
+              "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+              "domain": "wmc-vsq-complete-serde-json",
+              "serialization_revision": 1
+            },
+            "source_profile": "wmh-vsq-clean-v1"
+          },
+          "revision": 1,
+          "schema_version": 1,
+          "selection": {
+            "profile": {
+              "key_count": 12,
+              "kind": "piano",
+              "lowest_midi": 0
+            },
+            "selected_part_ids": [
+              "vsq-track-1",
+              "vsq-track-2"
+            ]
+          },
+          "selection_digest": "6afda2a7afe0ddd1a107dc501912052c89a4991be00589cefa1f31a9a6c1383c",
+          "settings": null
+        },
+        "receipt": {
+          "choice": "base_notes_instrumental",
+          "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+          "runtime_policy": "wmh-vsq-base-note-practice-v1",
+          "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+          "source_binding": {
+            "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+            "domain": "wmc-vsq-complete-serde-json",
+            "serialization_revision": 1
+          },
+          "source_profile": "wmh-vsq-clean-v1"
+        },
+        "scored_mode_allowed": false,
+        "source_ownership": [
+          {
+            "in_selected_scope": true,
+            "owner": "machine",
+            "part_id": "vsq-track-1",
+            "source_id": "vsq-t1-ID#0001"
+          },
+          {
+            "in_selected_scope": true,
+            "owner": "machine",
+            "part_id": "vsq-track-2",
+            "source_id": "vsq-t2-ID#0001"
+          }
+        ]
+      },
+      "layers": [
+        {
+          "constraints": {
+            "max_held_span_semitones": 0,
+            "max_simultaneous_keys": 1,
+            "max_targets_per_onset": 1,
+            "min_onset_interval_ms": 500
+          },
+          "equals_previous_layer": false,
+          "human_occurrence_count": 0,
+          "human_source_unit_count": 0,
+          "human_target_count": 0,
+          "layer": "single",
+          "scored_mode_allowed": false
+        },
+        {
+          "constraints": {
+            "max_held_span_semitones": 7,
+            "max_simultaneous_keys": 3,
+            "max_targets_per_onset": 2,
+            "min_onset_interval_ms": 250
+          },
+          "equals_previous_layer": true,
+          "human_occurrence_count": 0,
+          "human_source_unit_count": 0,
+          "human_target_count": 0,
+          "layer": "balanced",
+          "scored_mode_allowed": false
+        },
+        {
+          "constraints": {
+            "max_held_span_semitones": 12,
+            "max_simultaneous_keys": 6,
+            "max_targets_per_onset": 4,
+            "min_onset_interval_ms": 125
+          },
+          "equals_previous_layer": true,
+          "human_occurrence_count": 0,
+          "human_source_unit_count": 0,
+          "human_target_count": 0,
+          "layer": "dense",
+          "scored_mode_allowed": false
+        }
+      ],
+      "plan": {
+        "algorithm_id": "wmc-keyboard-progression-v1",
+        "format": "wmc-practice-progression",
+        "hierarchy_digest": "23576c210f2f2ff4867828fe0d8b679b686550ffa9d7bce03d378e08cda079d6",
+        "layer": "single",
+        "plan_digest": "1a36cd605188bd09ec61c78392e5aa2225b92487b861760dcd85c80397ffccd0",
+        "planner_revision": 1,
+        "receipt": {
+          "choice": "base_notes_instrumental",
+          "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+          "runtime_policy": "wmh-vsq-base-note-practice-v1",
+          "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+          "source_binding": {
+            "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+            "domain": "wmc-vsq-complete-serde-json",
+            "serialization_revision": 1
+          },
+          "source_profile": "wmh-vsq-clean-v1"
+        },
+        "revision": 1,
+        "schema_version": 1,
+        "scheme_digest": "c814f934746ea4e7e1a5a1d5dbb19ccc42c83bd0cbba838ed12d663c85477ff8",
+        "scheme_id": "wmc-keyboard-three-layer-v1",
+        "selection": {
+          "profile": {
+            "key_count": 12,
+            "kind": "piano",
+            "lowest_midi": 0
+          },
+          "selected_part_ids": [
+            "vsq-track-1",
+            "vsq-track-2"
+          ]
+        },
+        "selection_digest": "b7a704d3ba07d531843abe23f921782d684358635f0325ced143cb3864be2638"
+      }
+    },
+    "source": {
+      "choice": "base_notes_instrumental",
+      "content_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+      "key": "song-cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+      "profile": "wmh-vsq-clean-v1",
+      "runtime_policy": "wmh-vsq-base-note-practice-v1"
+    }
+  },
+  "layers": {
+    "balanced": {
+      "response": {
+        "checked": {
+          "assistance": {
+            "all_selected_human": true,
+            "coverage": {
+              "human_occurrence_count": 2,
+              "human_source_unit_count": 2,
+              "human_target_count": 1,
+              "machine_occurrence_count": 0,
+              "machine_selected_target_count": 0,
+              "machine_source_unit_count": 0,
+              "occurrence_count": 2,
+              "selected_source_unit_count": 2,
+              "selected_target_count": 1,
+              "source_unit_count": 2
+            },
+            "diagnostics": [
+              {
+                "code": "assistance_scope_limits",
+                "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.",
+                "note_id": null,
+                "severity": "warning"
+              }
+            ],
+            "exclusion_reasons": [],
+            "human_targets": {
+              "diagnostics": [
+                {
+                  "code": "piano_unison_targets",
+                  "message": "1 exact simultaneous same-key events share a physical piano attack. Every source occurrence and tied segment remains mapped; playback and the original score are unchanged. Timing grades measure attacks only, not independent voice releases.",
+                  "note_id": null,
+                  "severity": "warning"
+                }
+              ],
+              "groups": [
+                {
+                  "part_ids": [
+                    "vsq-track-1",
+                    "vsq-track-2"
+                  ],
+                  "source_note_ids": [
+                    "vsq-t1-ID#0001",
+                    "vsq-t2-ID#0001"
+                  ],
+                  "source_occurrence_ids": [
+                    "vsq-t1-ID#0001",
+                    "vsq-t2-ID#0001"
+                  ],
+                  "target_id": "vsq-t1-ID#0001"
+                }
+              ],
+              "playable": true,
+              "source_note_count": 2,
+              "target_count": 1,
+              "timeline": {
+                "duration_ms": 4083.3371666666667,
+                "notes": [
+                  {
+                    "duration_ms": 1418.75116875,
+                    "id": "vsq-t1-ID#0001",
+                    "midi": 63,
+                    "part_id": "vsq-track-1",
+                    "source_note_id": "vsq-t1-ID#0001",
+                    "source_note_ids": [
+                      "vsq-t1-ID#0001",
+                      "vsq-t2-ID#0001"
+                    ],
+                    "staff": 1,
+                    "start_ms": 0.0,
+                    "velocity": 90,
+                    "voice": "ID#0000"
+                  }
+                ]
+              }
+            },
+            "machine_occurrence_ids": [],
+            "plan": {
+              "format": "wmc-practice-assistance",
+              "human_source_ids": [
+                "vsq-t1-ID#0001",
+                "vsq-t2-ID#0001"
+              ],
+              "mode": "explicit",
+              "planner_revision": 1,
+              "receipt": {
+                "choice": "base_notes_instrumental",
+                "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+                "runtime_policy": "wmh-vsq-base-note-practice-v1",
+                "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+                "source_binding": {
+                  "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+                  "domain": "wmc-vsq-complete-serde-json",
+                  "serialization_revision": 1
+                },
+                "source_profile": "wmh-vsq-clean-v1"
+              },
+              "revision": 1,
+              "schema_version": 1,
+              "selection": {
+                "profile": {
+                  "key_count": 88,
+                  "kind": "piano",
+                  "lowest_midi": 21
+                },
+                "selected_part_ids": [
+                  "vsq-track-1",
+                  "vsq-track-2"
+                ]
+              },
+              "selection_digest": "7ca9742aba2e6200850e5d71d5fb0ad3ed16540708ae738af6827ebad1abfb8e",
+              "settings": null
+            },
+            "receipt": {
+              "choice": "base_notes_instrumental",
+              "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+              "runtime_policy": "wmh-vsq-base-note-practice-v1",
+              "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+              "source_binding": {
+                "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+                "domain": "wmc-vsq-complete-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmh-vsq-clean-v1"
+            },
+            "scored_mode_allowed": true,
+            "source_ownership": [
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "vsq-track-1",
+                "source_id": "vsq-t1-ID#0001"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "vsq-track-2",
+                "source_id": "vsq-t2-ID#0001"
+              }
+            ]
+          },
+          "layers": [
+            {
+              "constraints": {
+                "max_held_span_semitones": 0,
+                "max_simultaneous_keys": 1,
+                "max_targets_per_onset": 1,
+                "min_onset_interval_ms": 500
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 2,
+              "human_source_unit_count": 2,
+              "human_target_count": 1,
+              "layer": "single",
+              "scored_mode_allowed": true
+            },
+            {
+              "constraints": {
+                "max_held_span_semitones": 7,
+                "max_simultaneous_keys": 3,
+                "max_targets_per_onset": 2,
+                "min_onset_interval_ms": 250
+              },
+              "equals_previous_layer": true,
+              "human_occurrence_count": 2,
+              "human_source_unit_count": 2,
+              "human_target_count": 1,
+              "layer": "balanced",
+              "scored_mode_allowed": true
+            },
+            {
+              "constraints": {
+                "max_held_span_semitones": 12,
+                "max_simultaneous_keys": 6,
+                "max_targets_per_onset": 4,
+                "min_onset_interval_ms": 125
+              },
+              "equals_previous_layer": true,
+              "human_occurrence_count": 2,
+              "human_source_unit_count": 2,
+              "human_target_count": 1,
+              "layer": "dense",
+              "scored_mode_allowed": true
+            }
+          ],
+          "plan": {
+            "algorithm_id": "wmc-keyboard-progression-v1",
+            "format": "wmc-practice-progression",
+            "hierarchy_digest": "1ca55263f5fb571b1f8d18ddecd661aad48d72414cadad592f26461c4bb83d6d",
+            "layer": "balanced",
+            "plan_digest": "1ac8bcc0fbed76990c0a8b459851d694d4914873279ff3b10b8f1130840350f5",
+            "planner_revision": 1,
+            "receipt": {
+              "choice": "base_notes_instrumental",
+              "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+              "runtime_policy": "wmh-vsq-base-note-practice-v1",
+              "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+              "source_binding": {
+                "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+                "domain": "wmc-vsq-complete-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmh-vsq-clean-v1"
+            },
+            "revision": 1,
+            "schema_version": 1,
+            "scheme_digest": "c814f934746ea4e7e1a5a1d5dbb19ccc42c83bd0cbba838ed12d663c85477ff8",
+            "scheme_id": "wmc-keyboard-three-layer-v1",
+            "selection": {
+              "profile": {
+                "key_count": 88,
+                "kind": "piano",
+                "lowest_midi": 21
+              },
+              "selected_part_ids": [
+                "vsq-track-1",
+                "vsq-track-2"
+              ]
+            },
+            "selection_digest": "8181c68980e4a9c514d4e2b9ae0177cd3b1ea6d5646021d9736b195f706b145f"
+          }
+        },
+        "source": {
+          "choice": "base_notes_instrumental",
+          "content_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+          "key": "song-cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+          "profile": "wmh-vsq-clean-v1",
+          "runtime_policy": "wmh-vsq-base-note-practice-v1"
+        }
+      }
+    },
+    "dense": {
+      "response": {
+        "checked": {
+          "assistance": {
+            "all_selected_human": true,
+            "coverage": {
+              "human_occurrence_count": 2,
+              "human_source_unit_count": 2,
+              "human_target_count": 1,
+              "machine_occurrence_count": 0,
+              "machine_selected_target_count": 0,
+              "machine_source_unit_count": 0,
+              "occurrence_count": 2,
+              "selected_source_unit_count": 2,
+              "selected_target_count": 1,
+              "source_unit_count": 2
+            },
+            "diagnostics": [
+              {
+                "code": "assistance_scope_limits",
+                "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.",
+                "note_id": null,
+                "severity": "warning"
+              }
+            ],
+            "exclusion_reasons": [],
+            "human_targets": {
+              "diagnostics": [
+                {
+                  "code": "piano_unison_targets",
+                  "message": "1 exact simultaneous same-key events share a physical piano attack. Every source occurrence and tied segment remains mapped; playback and the original score are unchanged. Timing grades measure attacks only, not independent voice releases.",
+                  "note_id": null,
+                  "severity": "warning"
+                }
+              ],
+              "groups": [
+                {
+                  "part_ids": [
+                    "vsq-track-1",
+                    "vsq-track-2"
+                  ],
+                  "source_note_ids": [
+                    "vsq-t1-ID#0001",
+                    "vsq-t2-ID#0001"
+                  ],
+                  "source_occurrence_ids": [
+                    "vsq-t1-ID#0001",
+                    "vsq-t2-ID#0001"
+                  ],
+                  "target_id": "vsq-t1-ID#0001"
+                }
+              ],
+              "playable": true,
+              "source_note_count": 2,
+              "target_count": 1,
+              "timeline": {
+                "duration_ms": 4083.3371666666667,
+                "notes": [
+                  {
+                    "duration_ms": 1418.75116875,
+                    "id": "vsq-t1-ID#0001",
+                    "midi": 63,
+                    "part_id": "vsq-track-1",
+                    "source_note_id": "vsq-t1-ID#0001",
+                    "source_note_ids": [
+                      "vsq-t1-ID#0001",
+                      "vsq-t2-ID#0001"
+                    ],
+                    "staff": 1,
+                    "start_ms": 0.0,
+                    "velocity": 90,
+                    "voice": "ID#0000"
+                  }
+                ]
+              }
+            },
+            "machine_occurrence_ids": [],
+            "plan": {
+              "format": "wmc-practice-assistance",
+              "human_source_ids": [
+                "vsq-t1-ID#0001",
+                "vsq-t2-ID#0001"
+              ],
+              "mode": "explicit",
+              "planner_revision": 1,
+              "receipt": {
+                "choice": "base_notes_instrumental",
+                "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+                "runtime_policy": "wmh-vsq-base-note-practice-v1",
+                "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+                "source_binding": {
+                  "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+                  "domain": "wmc-vsq-complete-serde-json",
+                  "serialization_revision": 1
+                },
+                "source_profile": "wmh-vsq-clean-v1"
+              },
+              "revision": 1,
+              "schema_version": 1,
+              "selection": {
+                "profile": {
+                  "key_count": 88,
+                  "kind": "piano",
+                  "lowest_midi": 21
+                },
+                "selected_part_ids": [
+                  "vsq-track-1",
+                  "vsq-track-2"
+                ]
+              },
+              "selection_digest": "7ca9742aba2e6200850e5d71d5fb0ad3ed16540708ae738af6827ebad1abfb8e",
+              "settings": null
+            },
+            "receipt": {
+              "choice": "base_notes_instrumental",
+              "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+              "runtime_policy": "wmh-vsq-base-note-practice-v1",
+              "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+              "source_binding": {
+                "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+                "domain": "wmc-vsq-complete-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmh-vsq-clean-v1"
+            },
+            "scored_mode_allowed": true,
+            "source_ownership": [
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "vsq-track-1",
+                "source_id": "vsq-t1-ID#0001"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "vsq-track-2",
+                "source_id": "vsq-t2-ID#0001"
+              }
+            ]
+          },
+          "layers": [
+            {
+              "constraints": {
+                "max_held_span_semitones": 0,
+                "max_simultaneous_keys": 1,
+                "max_targets_per_onset": 1,
+                "min_onset_interval_ms": 500
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 2,
+              "human_source_unit_count": 2,
+              "human_target_count": 1,
+              "layer": "single",
+              "scored_mode_allowed": true
+            },
+            {
+              "constraints": {
+                "max_held_span_semitones": 7,
+                "max_simultaneous_keys": 3,
+                "max_targets_per_onset": 2,
+                "min_onset_interval_ms": 250
+              },
+              "equals_previous_layer": true,
+              "human_occurrence_count": 2,
+              "human_source_unit_count": 2,
+              "human_target_count": 1,
+              "layer": "balanced",
+              "scored_mode_allowed": true
+            },
+            {
+              "constraints": {
+                "max_held_span_semitones": 12,
+                "max_simultaneous_keys": 6,
+                "max_targets_per_onset": 4,
+                "min_onset_interval_ms": 125
+              },
+              "equals_previous_layer": true,
+              "human_occurrence_count": 2,
+              "human_source_unit_count": 2,
+              "human_target_count": 1,
+              "layer": "dense",
+              "scored_mode_allowed": true
+            }
+          ],
+          "plan": {
+            "algorithm_id": "wmc-keyboard-progression-v1",
+            "format": "wmc-practice-progression",
+            "hierarchy_digest": "1ca55263f5fb571b1f8d18ddecd661aad48d72414cadad592f26461c4bb83d6d",
+            "layer": "dense",
+            "plan_digest": "a888817c510d1817560f90ef7560ee793e260fc9c5b33d2f7e1291d6880273c6",
+            "planner_revision": 1,
+            "receipt": {
+              "choice": "base_notes_instrumental",
+              "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+              "runtime_policy": "wmh-vsq-base-note-practice-v1",
+              "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+              "source_binding": {
+                "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+                "domain": "wmc-vsq-complete-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmh-vsq-clean-v1"
+            },
+            "revision": 1,
+            "schema_version": 1,
+            "scheme_digest": "c814f934746ea4e7e1a5a1d5dbb19ccc42c83bd0cbba838ed12d663c85477ff8",
+            "scheme_id": "wmc-keyboard-three-layer-v1",
+            "selection": {
+              "profile": {
+                "key_count": 88,
+                "kind": "piano",
+                "lowest_midi": 21
+              },
+              "selected_part_ids": [
+                "vsq-track-1",
+                "vsq-track-2"
+              ]
+            },
+            "selection_digest": "8181c68980e4a9c514d4e2b9ae0177cd3b1ea6d5646021d9736b195f706b145f"
+          }
+        },
+        "source": {
+          "choice": "base_notes_instrumental",
+          "content_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+          "key": "song-cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+          "profile": "wmh-vsq-clean-v1",
+          "runtime_policy": "wmh-vsq-base-note-practice-v1"
+        }
+      }
+    },
+    "single": {
+      "response": {
+        "checked": {
+          "assistance": {
+            "all_selected_human": true,
+            "coverage": {
+              "human_occurrence_count": 2,
+              "human_source_unit_count": 2,
+              "human_target_count": 1,
+              "machine_occurrence_count": 0,
+              "machine_selected_target_count": 0,
+              "machine_source_unit_count": 0,
+              "occurrence_count": 2,
+              "selected_source_unit_count": 2,
+              "selected_target_count": 1,
+              "source_unit_count": 2
+            },
+            "diagnostics": [
+              {
+                "code": "assistance_scope_limits",
+                "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.",
+                "note_id": null,
+                "severity": "warning"
+              }
+            ],
+            "exclusion_reasons": [],
+            "human_targets": {
+              "diagnostics": [
+                {
+                  "code": "piano_unison_targets",
+                  "message": "1 exact simultaneous same-key events share a physical piano attack. Every source occurrence and tied segment remains mapped; playback and the original score are unchanged. Timing grades measure attacks only, not independent voice releases.",
+                  "note_id": null,
+                  "severity": "warning"
+                }
+              ],
+              "groups": [
+                {
+                  "part_ids": [
+                    "vsq-track-1",
+                    "vsq-track-2"
+                  ],
+                  "source_note_ids": [
+                    "vsq-t1-ID#0001",
+                    "vsq-t2-ID#0001"
+                  ],
+                  "source_occurrence_ids": [
+                    "vsq-t1-ID#0001",
+                    "vsq-t2-ID#0001"
+                  ],
+                  "target_id": "vsq-t1-ID#0001"
+                }
+              ],
+              "playable": true,
+              "source_note_count": 2,
+              "target_count": 1,
+              "timeline": {
+                "duration_ms": 4083.3371666666667,
+                "notes": [
+                  {
+                    "duration_ms": 1418.75116875,
+                    "id": "vsq-t1-ID#0001",
+                    "midi": 63,
+                    "part_id": "vsq-track-1",
+                    "source_note_id": "vsq-t1-ID#0001",
+                    "source_note_ids": [
+                      "vsq-t1-ID#0001",
+                      "vsq-t2-ID#0001"
+                    ],
+                    "staff": 1,
+                    "start_ms": 0.0,
+                    "velocity": 90,
+                    "voice": "ID#0000"
+                  }
+                ]
+              }
+            },
+            "machine_occurrence_ids": [],
+            "plan": {
+              "format": "wmc-practice-assistance",
+              "human_source_ids": [
+                "vsq-t1-ID#0001",
+                "vsq-t2-ID#0001"
+              ],
+              "mode": "explicit",
+              "planner_revision": 1,
+              "receipt": {
+                "choice": "base_notes_instrumental",
+                "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+                "runtime_policy": "wmh-vsq-base-note-practice-v1",
+                "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+                "source_binding": {
+                  "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+                  "domain": "wmc-vsq-complete-serde-json",
+                  "serialization_revision": 1
+                },
+                "source_profile": "wmh-vsq-clean-v1"
+              },
+              "revision": 1,
+              "schema_version": 1,
+              "selection": {
+                "profile": {
+                  "key_count": 88,
+                  "kind": "piano",
+                  "lowest_midi": 21
+                },
+                "selected_part_ids": [
+                  "vsq-track-1",
+                  "vsq-track-2"
+                ]
+              },
+              "selection_digest": "7ca9742aba2e6200850e5d71d5fb0ad3ed16540708ae738af6827ebad1abfb8e",
+              "settings": null
+            },
+            "receipt": {
+              "choice": "base_notes_instrumental",
+              "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+              "runtime_policy": "wmh-vsq-base-note-practice-v1",
+              "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+              "source_binding": {
+                "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+                "domain": "wmc-vsq-complete-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmh-vsq-clean-v1"
+            },
+            "scored_mode_allowed": true,
+            "source_ownership": [
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "vsq-track-1",
+                "source_id": "vsq-t1-ID#0001"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "vsq-track-2",
+                "source_id": "vsq-t2-ID#0001"
+              }
+            ]
+          },
+          "layers": [
+            {
+              "constraints": {
+                "max_held_span_semitones": 0,
+                "max_simultaneous_keys": 1,
+                "max_targets_per_onset": 1,
+                "min_onset_interval_ms": 500
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 2,
+              "human_source_unit_count": 2,
+              "human_target_count": 1,
+              "layer": "single",
+              "scored_mode_allowed": true
+            },
+            {
+              "constraints": {
+                "max_held_span_semitones": 7,
+                "max_simultaneous_keys": 3,
+                "max_targets_per_onset": 2,
+                "min_onset_interval_ms": 250
+              },
+              "equals_previous_layer": true,
+              "human_occurrence_count": 2,
+              "human_source_unit_count": 2,
+              "human_target_count": 1,
+              "layer": "balanced",
+              "scored_mode_allowed": true
+            },
+            {
+              "constraints": {
+                "max_held_span_semitones": 12,
+                "max_simultaneous_keys": 6,
+                "max_targets_per_onset": 4,
+                "min_onset_interval_ms": 125
+              },
+              "equals_previous_layer": true,
+              "human_occurrence_count": 2,
+              "human_source_unit_count": 2,
+              "human_target_count": 1,
+              "layer": "dense",
+              "scored_mode_allowed": true
+            }
+          ],
+          "plan": {
+            "algorithm_id": "wmc-keyboard-progression-v1",
+            "format": "wmc-practice-progression",
+            "hierarchy_digest": "1ca55263f5fb571b1f8d18ddecd661aad48d72414cadad592f26461c4bb83d6d",
+            "layer": "single",
+            "plan_digest": "c7e5941fdd873bcfac51c70296dc0c6068825f52087dd086e3d56d717c0792cf",
+            "planner_revision": 1,
+            "receipt": {
+              "choice": "base_notes_instrumental",
+              "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+              "runtime_policy": "wmh-vsq-base-note-practice-v1",
+              "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+              "source_binding": {
+                "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+                "domain": "wmc-vsq-complete-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmh-vsq-clean-v1"
+            },
+            "revision": 1,
+            "schema_version": 1,
+            "scheme_digest": "c814f934746ea4e7e1a5a1d5dbb19ccc42c83bd0cbba838ed12d663c85477ff8",
+            "scheme_id": "wmc-keyboard-three-layer-v1",
+            "selection": {
+              "profile": {
+                "key_count": 88,
+                "kind": "piano",
+                "lowest_midi": 21
+              },
+              "selected_part_ids": [
+                "vsq-track-1",
+                "vsq-track-2"
+              ]
+            },
+            "selection_digest": "8181c68980e4a9c514d4e2b9ae0177cd3b1ea6d5646021d9736b195f706b145f"
+          }
+        },
+        "source": {
+          "choice": "base_notes_instrumental",
+          "content_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+          "key": "song-cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+          "profile": "wmh-vsq-clean-v1",
+          "runtime_policy": "wmh-vsq-base-note-practice-v1"
+        }
+      }
+    }
+  },
+  "narrow_scope": {
+    "checked": {
+      "assistance": {
+        "all_selected_human": false,
+        "coverage": {
+          "human_occurrence_count": 0,
+          "human_source_unit_count": 0,
+          "human_target_count": 0,
+          "machine_occurrence_count": 2,
+          "machine_selected_target_count": 1,
+          "machine_source_unit_count": 2,
+          "occurrence_count": 2,
+          "selected_source_unit_count": 1,
+          "selected_target_count": 1,
+          "source_unit_count": 2
+        },
+        "diagnostics": [
+          {
+            "code": "assistance_scope_limits",
+            "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.",
+            "note_id": null,
+            "severity": "warning"
+          }
+        ],
+        "exclusion_reasons": [
+          {
+            "code": "cross_scope_physical_group",
+            "source_ids": [
+              "vsq-t1-ID#0001",
+              "vsq-t2-ID#0001"
+            ]
+          }
+        ],
+        "human_targets": {
+          "diagnostics": [],
+          "groups": [],
+          "playable": false,
+          "source_note_count": 0,
+          "target_count": 0,
+          "timeline": {
+            "duration_ms": 4083.3371666666667,
+            "notes": []
+          }
+        },
+        "machine_occurrence_ids": [
+          "vsq-t1-ID#0001",
+          "vsq-t2-ID#0001"
+        ],
+        "plan": {
+          "format": "wmc-practice-assistance",
+          "human_source_ids": [],
+          "mode": "explicit",
+          "planner_revision": 1,
+          "receipt": {
+            "choice": "base_notes_instrumental",
+            "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+            "runtime_policy": "wmh-vsq-base-note-practice-v1",
+            "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+            "source_binding": {
+              "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+              "domain": "wmc-vsq-complete-serde-json",
+              "serialization_revision": 1
+            },
+            "source_profile": "wmh-vsq-clean-v1"
+          },
+          "revision": 1,
+          "schema_version": 1,
+          "selection": {
+            "profile": {
+              "key_count": 88,
+              "kind": "piano",
+              "lowest_midi": 21
+            },
+            "selected_part_ids": [
+              "vsq-track-1"
+            ]
+          },
+          "selection_digest": "210ff552a191dadce4bdde8176068e87e4a18d4af2b49d1e6a404a6d64f70498",
+          "settings": null
+        },
+        "receipt": {
+          "choice": "base_notes_instrumental",
+          "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+          "runtime_policy": "wmh-vsq-base-note-practice-v1",
+          "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+          "source_binding": {
+            "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+            "domain": "wmc-vsq-complete-serde-json",
+            "serialization_revision": 1
+          },
+          "source_profile": "wmh-vsq-clean-v1"
+        },
+        "scored_mode_allowed": false,
+        "source_ownership": [
+          {
+            "in_selected_scope": true,
+            "owner": "machine",
+            "part_id": "vsq-track-1",
+            "source_id": "vsq-t1-ID#0001"
+          },
+          {
+            "in_selected_scope": false,
+            "owner": "machine",
+            "part_id": "vsq-track-2",
+            "source_id": "vsq-t2-ID#0001"
+          }
+        ]
+      },
+      "layers": [
+        {
+          "constraints": {
+            "max_held_span_semitones": 0,
+            "max_simultaneous_keys": 1,
+            "max_targets_per_onset": 1,
+            "min_onset_interval_ms": 500
+          },
+          "equals_previous_layer": false,
+          "human_occurrence_count": 0,
+          "human_source_unit_count": 0,
+          "human_target_count": 0,
+          "layer": "single",
+          "scored_mode_allowed": false
+        },
+        {
+          "constraints": {
+            "max_held_span_semitones": 7,
+            "max_simultaneous_keys": 3,
+            "max_targets_per_onset": 2,
+            "min_onset_interval_ms": 250
+          },
+          "equals_previous_layer": true,
+          "human_occurrence_count": 0,
+          "human_source_unit_count": 0,
+          "human_target_count": 0,
+          "layer": "balanced",
+          "scored_mode_allowed": false
+        },
+        {
+          "constraints": {
+            "max_held_span_semitones": 12,
+            "max_simultaneous_keys": 6,
+            "max_targets_per_onset": 4,
+            "min_onset_interval_ms": 125
+          },
+          "equals_previous_layer": true,
+          "human_occurrence_count": 0,
+          "human_source_unit_count": 0,
+          "human_target_count": 0,
+          "layer": "dense",
+          "scored_mode_allowed": false
+        }
+      ],
+      "plan": {
+        "algorithm_id": "wmc-keyboard-progression-v1",
+        "format": "wmc-practice-progression",
+        "hierarchy_digest": "f571a08d7faa3c286f3faf7210fc3514a7ac16775349a9bb3ca626034c1b7a87",
+        "layer": "dense",
+        "plan_digest": "cbff715b3fab8fd7e4814535a1b5349cf3b24dca67ed42945f7abc1b78cd10db",
+        "planner_revision": 1,
+        "receipt": {
+          "choice": "base_notes_instrumental",
+          "runtime_digest": "798139f245bee3d76a6d3a0330b7061418e70a9d1d95e3e91b8dfe53732873b7",
+          "runtime_policy": "wmh-vsq-base-note-practice-v1",
+          "saved_package_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+          "source_binding": {
+            "digest": "89901d2c84961e23308d2d1492298a3f56c2c6e1151ee7ce9e2cc1f1a5f17e6e",
+            "domain": "wmc-vsq-complete-serde-json",
+            "serialization_revision": 1
+          },
+          "source_profile": "wmh-vsq-clean-v1"
+        },
+        "revision": 1,
+        "schema_version": 1,
+        "scheme_digest": "c814f934746ea4e7e1a5a1d5dbb19ccc42c83bd0cbba838ed12d663c85477ff8",
+        "scheme_id": "wmc-keyboard-three-layer-v1",
+        "selection": {
+          "profile": {
+            "key_count": 88,
+            "kind": "piano",
+            "lowest_midi": 21
+          },
+          "selected_part_ids": [
+            "vsq-track-1"
+          ]
+        },
+        "selection_digest": "f9eb442c7b027130893b9ec390addd62e32dcb1ad519db8db90ed3669e26ad40"
+      }
+    },
+    "source": {
+      "choice": "base_notes_instrumental",
+      "content_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+      "key": "song-cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+      "profile": "wmh-vsq-clean-v1",
+      "runtime_policy": "wmh-vsq-base-note-practice-v1"
+    }
+  },
+  "selection": {
+    "profile": {
+      "key_count": 88,
+      "kind": "piano",
+      "lowest_midi": 21
+    },
+    "selected_part_ids": [
+      "vsq-track-1",
+      "vsq-track-2"
+    ]
+  },
+  "source": {
+    "choice": "base_notes_instrumental",
+    "content_sha256": "cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+    "key": "song-cd77138c08f0154c6ba3a4222b61d623c5cfff7ef6a50aa4e9cc05acb0e77cbd",
+    "profile": "wmh-vsq-clean-v1",
+    "runtime_policy": "wmh-vsq-base-note-practice-v1"
+  },
+  "source_fixture": "assistance-native-vsq.json"
+}

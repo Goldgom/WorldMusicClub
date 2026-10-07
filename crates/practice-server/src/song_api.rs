@@ -5,6 +5,8 @@ use serde_json::json;
 use std::io::{self, Write};
 #[path = "practice_assistance_api.rs"]
 mod practice_assistance_api;
+#[path = "practice_progression_api.rs"]
+mod practice_progression_api;
 
 pub const MAX_REQUEST_BYTES: usize = 8 * 1024 * 1024;
 /// Complete encoded new-route responses, including metadata. Never truncate.
@@ -26,6 +28,8 @@ pub fn is_song_api_route(path: &str) -> bool {
             | "/api/practice-assistance/generate"
             | "/api/practice-assistance/create"
             | "/api/practice-assistance/validate"
+            | "/api/practice-progression/generate"
+            | "/api/practice-progression/validate"
             | "/api/midi/events"
             | "/api/clean-song/basic-keys"
             | "/api/clean-song/draft"
@@ -169,6 +173,9 @@ pub fn api_response(path: &str, bytes: Vec<u8>) -> ApiResponse {
         | "/api/practice-assistance/generate"
         | "/api/practice-assistance/create"
         | "/api/practice-assistance/validate" => practice_assistance_api::response(path, &bytes),
+        "/api/practice-progression/generate" | "/api/practice-progression/validate" => {
+            practice_progression_api::response(path, &bytes)
+        }
         "/api/clean-song/basic-keys" => crate::basic_keys_api::response(&bytes),
         "/api/clean-song/draft" => crate::clean_draft_api::response(&bytes, false),
         "/api/clean-song/draft/pack" => crate::clean_draft_api::response(&bytes, true),

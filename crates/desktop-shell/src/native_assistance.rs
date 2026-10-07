@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct Source {
+pub(crate) struct Source {
     key: String,
     content_sha256: String,
     profile: String,
@@ -72,7 +72,7 @@ fn unavailable(message: impl Into<String>) -> LibraryError {
     fail(422, "library_assistance_unavailable", message)
 }
 
-fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, LibraryError> {
+pub(crate) fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, LibraryError> {
     // Native dispatch also enforces this bound. Retain it here so future
     // internal callers cannot bypass request admission.
     if bytes.len() > crate::MAX_BODY {
@@ -85,7 +85,10 @@ fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, LibraryErro
     serde_json::from_slice(bytes).map_err(|error| invalid(error.to_string()))
 }
 
-fn load_source(library: &NativeLibrary, source: &Source) -> Result<PracticeSource, LibraryError> {
+pub(crate) fn load_source(
+    library: &NativeLibrary,
+    source: &Source,
+) -> Result<PracticeSource, LibraryError> {
     if source.content_sha256.len() != 64
         || !source
             .content_sha256

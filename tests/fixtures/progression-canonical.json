@@ -1,0 +1,2992 @@
+{
+  "audio_profile": {
+    "compiled_fingerprint": "577175ed41fdf0ccbb066ed0f0ed5ee0ccae77b312d73b8d9e2df11844eefbd6",
+    "duration_ms": 8000.0,
+    "occurrences": [
+      {
+        "duration_ms": 125.0,
+        "id": "step-00",
+        "midi": 60,
+        "part_index": 0,
+        "source_indices": [
+          0
+        ],
+        "start_ms": 0.0,
+        "velocity": 90
+      },
+      {
+        "duration_ms": 125.0,
+        "id": "step-01",
+        "midi": 64,
+        "part_index": 0,
+        "source_indices": [
+          1
+        ],
+        "start_ms": 125.0,
+        "velocity": 90
+      },
+      {
+        "duration_ms": 125.0,
+        "id": "step-02",
+        "midi": 67,
+        "part_index": 0,
+        "source_indices": [
+          2
+        ],
+        "start_ms": 250.0,
+        "velocity": 90
+      },
+      {
+        "duration_ms": 125.0,
+        "id": "step-03",
+        "midi": 60,
+        "part_index": 0,
+        "source_indices": [
+          3
+        ],
+        "start_ms": 375.0,
+        "velocity": 90
+      },
+      {
+        "duration_ms": 125.0,
+        "id": "step-04",
+        "midi": 64,
+        "part_index": 0,
+        "source_indices": [
+          4
+        ],
+        "start_ms": 500.0,
+        "velocity": 90
+      },
+      {
+        "duration_ms": 125.0,
+        "id": "step-05",
+        "midi": 67,
+        "part_index": 0,
+        "source_indices": [
+          5
+        ],
+        "start_ms": 625.0,
+        "velocity": 90
+      },
+      {
+        "duration_ms": 125.0,
+        "id": "step-06",
+        "midi": 60,
+        "part_index": 0,
+        "source_indices": [
+          6
+        ],
+        "start_ms": 750.0,
+        "velocity": 90
+      },
+      {
+        "duration_ms": 125.0,
+        "id": "step-07",
+        "midi": 64,
+        "part_index": 0,
+        "source_indices": [
+          7
+        ],
+        "start_ms": 875.0,
+        "velocity": 90
+      },
+      {
+        "duration_ms": 125.0,
+        "id": "step-08",
+        "midi": 67,
+        "part_index": 0,
+        "source_indices": [
+          8
+        ],
+        "start_ms": 1000.0,
+        "velocity": 90
+      },
+      {
+        "duration_ms": 125.0,
+        "id": "step-09",
+        "midi": 60,
+        "part_index": 0,
+        "source_indices": [
+          9
+        ],
+        "start_ms": 1125.0,
+        "velocity": 90
+      },
+      {
+        "duration_ms": 125.0,
+        "id": "step-10",
+        "midi": 64,
+        "part_index": 0,
+        "source_indices": [
+          10
+        ],
+        "start_ms": 1250.0,
+        "velocity": 90
+      },
+      {
+        "duration_ms": 125.0,
+        "id": "step-11",
+        "midi": 67,
+        "part_index": 0,
+        "source_indices": [
+          11
+        ],
+        "start_ms": 1375.0,
+        "velocity": 90
+      }
+    ],
+    "part_ids": [
+      "piano"
+    ],
+    "policy_id": "wmh-canonical-sine-ms-v1",
+    "profile": "wmh-canonical-compiled-audio-v1",
+    "source_fingerprint": "4ae95f7bf4da87db9613c0b8ec85dd74a314e14dccfc25c86e27e781efee3fb0",
+    "source_note_ids": [
+      "step-00",
+      "step-01",
+      "step-02",
+      "step-03",
+      "step-04",
+      "step-05",
+      "step-06",
+      "step-07",
+      "step-08",
+      "step-09",
+      "step-10",
+      "step-11"
+    ],
+    "source_references": 12
+  },
+  "compilation": {
+    "diagnostics": [],
+    "score": {
+      "composer": "WorldMusicHub original exercise",
+      "format_metadata": {
+        "producer": "WorldMusicHub",
+        "producer_version": "0.2.0-alpha.1",
+        "schema_revision": 2
+      },
+      "id": "original-progression-api-fixture",
+      "keys": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "fifths": 0,
+          "mode": "major"
+        }
+      ],
+      "measures": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 1
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 2
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 8
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 3
+        },
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 12
+          },
+          "length": {
+            "denominator": 1,
+            "numerator": 4
+          },
+          "number": 4
+        }
+      ],
+      "meters": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "denominator": 4,
+          "numerator": 4
+        }
+      ],
+      "parts": [
+        {
+          "id": "piano",
+          "instrument": "piano",
+          "name": "Piano",
+          "notes": [
+            {
+              "at": {
+                "denominator": 4,
+                "numerator": 0
+              },
+              "duration": {
+                "denominator": 4,
+                "numerator": 1
+              },
+              "id": "step-00",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "C"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 4,
+                "numerator": 1
+              },
+              "duration": {
+                "denominator": 4,
+                "numerator": 1
+              },
+              "id": "step-01",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "E"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 4,
+                "numerator": 2
+              },
+              "duration": {
+                "denominator": 4,
+                "numerator": 1
+              },
+              "id": "step-02",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "G"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 4,
+                "numerator": 3
+              },
+              "duration": {
+                "denominator": 4,
+                "numerator": 1
+              },
+              "id": "step-03",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "C"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 4,
+                "numerator": 4
+              },
+              "duration": {
+                "denominator": 4,
+                "numerator": 1
+              },
+              "id": "step-04",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "E"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 4,
+                "numerator": 5
+              },
+              "duration": {
+                "denominator": 4,
+                "numerator": 1
+              },
+              "id": "step-05",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "G"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 4,
+                "numerator": 6
+              },
+              "duration": {
+                "denominator": 4,
+                "numerator": 1
+              },
+              "id": "step-06",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "C"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 4,
+                "numerator": 7
+              },
+              "duration": {
+                "denominator": 4,
+                "numerator": 1
+              },
+              "id": "step-07",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "E"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 4,
+                "numerator": 8
+              },
+              "duration": {
+                "denominator": 4,
+                "numerator": 1
+              },
+              "id": "step-08",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "G"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 4,
+                "numerator": 9
+              },
+              "duration": {
+                "denominator": 4,
+                "numerator": 1
+              },
+              "id": "step-09",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "C"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 4,
+                "numerator": 10
+              },
+              "duration": {
+                "denominator": 4,
+                "numerator": 1
+              },
+              "id": "step-10",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "E"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "at": {
+                "denominator": 4,
+                "numerator": 11
+              },
+              "duration": {
+                "denominator": 4,
+                "numerator": 1
+              },
+              "id": "step-11",
+              "pitch": {
+                "alter": 0,
+                "octave": 4,
+                "step": "G"
+              },
+              "staff": 1,
+              "tie_start": false,
+              "tie_stop": false,
+              "velocity": 90,
+              "voice": "1"
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "attribution": "Newly authored pedagogical scale exercise for WorldMusicHub; not a transcription of a song",
+        "kind": "original_exercise",
+        "license": "CC0-1.0",
+        "source_url": null
+      },
+      "repeats": [],
+      "source": null,
+      "tempo": [
+        {
+          "at": {
+            "denominator": 1,
+            "numerator": 0
+          },
+          "bpm": 120.0
+        }
+      ],
+      "title": "Original progressive quarter-beat exercise",
+      "version": 1
+    },
+    "timeline": {
+      "duration_ms": 8000.0,
+      "notes": [
+        {
+          "duration_ms": 125.0,
+          "id": "step-00",
+          "midi": 60,
+          "part_id": "piano",
+          "source_note_id": "step-00",
+          "source_note_ids": [
+            "step-00"
+          ],
+          "staff": 1,
+          "start_ms": 0.0,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 125.0,
+          "id": "step-01",
+          "midi": 64,
+          "part_id": "piano",
+          "source_note_id": "step-01",
+          "source_note_ids": [
+            "step-01"
+          ],
+          "staff": 1,
+          "start_ms": 125.0,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 125.0,
+          "id": "step-02",
+          "midi": 67,
+          "part_id": "piano",
+          "source_note_id": "step-02",
+          "source_note_ids": [
+            "step-02"
+          ],
+          "staff": 1,
+          "start_ms": 250.0,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 125.0,
+          "id": "step-03",
+          "midi": 60,
+          "part_id": "piano",
+          "source_note_id": "step-03",
+          "source_note_ids": [
+            "step-03"
+          ],
+          "staff": 1,
+          "start_ms": 375.0,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 125.0,
+          "id": "step-04",
+          "midi": 64,
+          "part_id": "piano",
+          "source_note_id": "step-04",
+          "source_note_ids": [
+            "step-04"
+          ],
+          "staff": 1,
+          "start_ms": 500.0,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 125.0,
+          "id": "step-05",
+          "midi": 67,
+          "part_id": "piano",
+          "source_note_id": "step-05",
+          "source_note_ids": [
+            "step-05"
+          ],
+          "staff": 1,
+          "start_ms": 625.0,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 125.0,
+          "id": "step-06",
+          "midi": 60,
+          "part_id": "piano",
+          "source_note_id": "step-06",
+          "source_note_ids": [
+            "step-06"
+          ],
+          "staff": 1,
+          "start_ms": 750.0,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 125.0,
+          "id": "step-07",
+          "midi": 64,
+          "part_id": "piano",
+          "source_note_id": "step-07",
+          "source_note_ids": [
+            "step-07"
+          ],
+          "staff": 1,
+          "start_ms": 875.0,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 125.0,
+          "id": "step-08",
+          "midi": 67,
+          "part_id": "piano",
+          "source_note_id": "step-08",
+          "source_note_ids": [
+            "step-08"
+          ],
+          "staff": 1,
+          "start_ms": 1000.0,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 125.0,
+          "id": "step-09",
+          "midi": 60,
+          "part_id": "piano",
+          "source_note_id": "step-09",
+          "source_note_ids": [
+            "step-09"
+          ],
+          "staff": 1,
+          "start_ms": 1125.0,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 125.0,
+          "id": "step-10",
+          "midi": 64,
+          "part_id": "piano",
+          "source_note_id": "step-10",
+          "source_note_ids": [
+            "step-10"
+          ],
+          "staff": 1,
+          "start_ms": 1250.0,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "duration_ms": 125.0,
+          "id": "step-11",
+          "midi": 67,
+          "part_id": "piano",
+          "source_note_id": "step-11",
+          "source_note_ids": [
+            "step-11"
+          ],
+          "staff": 1,
+          "start_ms": 1375.0,
+          "velocity": 90,
+          "voice": "1"
+        }
+      ]
+    }
+  },
+  "layers": {
+    "balanced": {
+      "response": {
+        "checked": {
+          "assistance": {
+            "all_selected_human": false,
+            "coverage": {
+              "human_occurrence_count": 6,
+              "human_source_unit_count": 6,
+              "human_target_count": 6,
+              "machine_occurrence_count": 6,
+              "machine_selected_target_count": 6,
+              "machine_source_unit_count": 6,
+              "occurrence_count": 12,
+              "selected_source_unit_count": 12,
+              "selected_target_count": 12,
+              "source_unit_count": 12
+            },
+            "diagnostics": [
+              {
+                "code": "assistance_scope_limits",
+                "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.",
+                "note_id": null,
+                "severity": "warning"
+              }
+            ],
+            "exclusion_reasons": [
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "step-01"
+                ]
+              },
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "step-03"
+                ]
+              },
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "step-05"
+                ]
+              },
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "step-07"
+                ]
+              },
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "step-09"
+                ]
+              },
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "step-11"
+                ]
+              }
+            ],
+            "human_targets": {
+              "diagnostics": [],
+              "groups": [
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-00"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-00"
+                  ],
+                  "target_id": "step-00"
+                },
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-02"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-02"
+                  ],
+                  "target_id": "step-02"
+                },
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-04"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-04"
+                  ],
+                  "target_id": "step-04"
+                },
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-06"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-06"
+                  ],
+                  "target_id": "step-06"
+                },
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-08"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-08"
+                  ],
+                  "target_id": "step-08"
+                },
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-10"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-10"
+                  ],
+                  "target_id": "step-10"
+                }
+              ],
+              "playable": true,
+              "source_note_count": 6,
+              "target_count": 6,
+              "timeline": {
+                "duration_ms": 8000.0,
+                "notes": [
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-00",
+                    "midi": 60,
+                    "part_id": "piano",
+                    "source_note_id": "step-00",
+                    "source_note_ids": [
+                      "step-00"
+                    ],
+                    "staff": 1,
+                    "start_ms": 0.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-02",
+                    "midi": 67,
+                    "part_id": "piano",
+                    "source_note_id": "step-02",
+                    "source_note_ids": [
+                      "step-02"
+                    ],
+                    "staff": 1,
+                    "start_ms": 250.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-04",
+                    "midi": 64,
+                    "part_id": "piano",
+                    "source_note_id": "step-04",
+                    "source_note_ids": [
+                      "step-04"
+                    ],
+                    "staff": 1,
+                    "start_ms": 500.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-06",
+                    "midi": 60,
+                    "part_id": "piano",
+                    "source_note_id": "step-06",
+                    "source_note_ids": [
+                      "step-06"
+                    ],
+                    "staff": 1,
+                    "start_ms": 750.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-08",
+                    "midi": 67,
+                    "part_id": "piano",
+                    "source_note_id": "step-08",
+                    "source_note_ids": [
+                      "step-08"
+                    ],
+                    "staff": 1,
+                    "start_ms": 1000.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-10",
+                    "midi": 64,
+                    "part_id": "piano",
+                    "source_note_id": "step-10",
+                    "source_note_ids": [
+                      "step-10"
+                    ],
+                    "staff": 1,
+                    "start_ms": 1250.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  }
+                ]
+              }
+            },
+            "machine_occurrence_ids": [
+              "step-01",
+              "step-03",
+              "step-05",
+              "step-07",
+              "step-09",
+              "step-11"
+            ],
+            "plan": {
+              "format": "wmc-practice-assistance",
+              "human_source_ids": [
+                "step-00",
+                "step-02",
+                "step-04",
+                "step-06",
+                "step-08",
+                "step-10"
+              ],
+              "mode": "explicit",
+              "planner_revision": 1,
+              "receipt": {
+                "choice": null,
+                "runtime_digest": "4bc406346c65b54b7f6b34fa48e517aac4799bb069a48cecaea15f264810fb76",
+                "runtime_policy": "wmc-canonical-practice-v1",
+                "saved_package_sha256": null,
+                "source_binding": {
+                  "digest": "cea767f414c3c6d9f750bece90b17782d885f498548003225e41f88e2ac4b00c",
+                  "domain": "wmc-canonical-score-serde-json",
+                  "serialization_revision": 1
+                },
+                "source_profile": "wmc-canonical-score-v1"
+              },
+              "revision": 1,
+              "schema_version": 1,
+              "selection": {
+                "profile": {
+                  "key_count": 88,
+                  "kind": "piano",
+                  "lowest_midi": null
+                },
+                "selected_part_ids": [
+                  "piano"
+                ]
+              },
+              "selection_digest": "0720aa4bb9d3d9c84ad52fdb189e991f50ce8d21cb41b2e49dd30226ae8973ee",
+              "settings": null
+            },
+            "receipt": {
+              "choice": null,
+              "runtime_digest": "4bc406346c65b54b7f6b34fa48e517aac4799bb069a48cecaea15f264810fb76",
+              "runtime_policy": "wmc-canonical-practice-v1",
+              "saved_package_sha256": null,
+              "source_binding": {
+                "digest": "cea767f414c3c6d9f750bece90b17782d885f498548003225e41f88e2ac4b00c",
+                "domain": "wmc-canonical-score-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmc-canonical-score-v1"
+            },
+            "scored_mode_allowed": true,
+            "source_ownership": [
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-00"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "piano",
+                "source_id": "step-01"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-02"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "piano",
+                "source_id": "step-03"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-04"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "piano",
+                "source_id": "step-05"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-06"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "piano",
+                "source_id": "step-07"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-08"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "piano",
+                "source_id": "step-09"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-10"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "piano",
+                "source_id": "step-11"
+              }
+            ]
+          },
+          "layers": [
+            {
+              "constraints": {
+                "max_held_span_semitones": 0,
+                "max_simultaneous_keys": 1,
+                "max_targets_per_onset": 1,
+                "min_onset_interval_ms": 500
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 3,
+              "human_source_unit_count": 3,
+              "human_target_count": 3,
+              "layer": "single",
+              "scored_mode_allowed": true
+            },
+            {
+              "constraints": {
+                "max_held_span_semitones": 7,
+                "max_simultaneous_keys": 3,
+                "max_targets_per_onset": 2,
+                "min_onset_interval_ms": 250
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 6,
+              "human_source_unit_count": 6,
+              "human_target_count": 6,
+              "layer": "balanced",
+              "scored_mode_allowed": true
+            },
+            {
+              "constraints": {
+                "max_held_span_semitones": 12,
+                "max_simultaneous_keys": 6,
+                "max_targets_per_onset": 4,
+                "min_onset_interval_ms": 125
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 12,
+              "human_source_unit_count": 12,
+              "human_target_count": 12,
+              "layer": "dense",
+              "scored_mode_allowed": true
+            }
+          ],
+          "plan": {
+            "algorithm_id": "wmc-keyboard-progression-v1",
+            "format": "wmc-practice-progression",
+            "hierarchy_digest": "4d38c7f6c346a51838e6507578d21000abe2ea08b46ba6e14ad9cc5a397c488b",
+            "layer": "balanced",
+            "plan_digest": "4c3ad224faeecc2eed76dc0a80e72ff50038ab53913edf5ada26286887200a2e",
+            "planner_revision": 1,
+            "receipt": {
+              "choice": null,
+              "runtime_digest": "4bc406346c65b54b7f6b34fa48e517aac4799bb069a48cecaea15f264810fb76",
+              "runtime_policy": "wmc-canonical-practice-v1",
+              "saved_package_sha256": null,
+              "source_binding": {
+                "digest": "cea767f414c3c6d9f750bece90b17782d885f498548003225e41f88e2ac4b00c",
+                "domain": "wmc-canonical-score-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmc-canonical-score-v1"
+            },
+            "revision": 1,
+            "schema_version": 1,
+            "scheme_digest": "c814f934746ea4e7e1a5a1d5dbb19ccc42c83bd0cbba838ed12d663c85477ff8",
+            "scheme_id": "wmc-keyboard-three-layer-v1",
+            "selection": {
+              "profile": {
+                "key_count": 88,
+                "kind": "piano",
+                "lowest_midi": null
+              },
+              "selected_part_ids": [
+                "piano"
+              ]
+            },
+            "selection_digest": "83f53f9afa1f97e12741b450a28cafb368416e26b7c9db0dfc0aff30d2f2c1f0"
+          }
+        },
+        "source": {
+          "choice": null,
+          "kind": "canonical",
+          "profile": "wmc-canonical-score-v1",
+          "runtime_policy": "wmc-canonical-practice-v1",
+          "source_binding": {
+            "digest": "cea767f414c3c6d9f750bece90b17782d885f498548003225e41f88e2ac4b00c",
+            "domain": "wmc-canonical-score-serde-json",
+            "serialization_revision": 1
+          }
+        }
+      }
+    },
+    "dense": {
+      "response": {
+        "checked": {
+          "assistance": {
+            "all_selected_human": true,
+            "coverage": {
+              "human_occurrence_count": 12,
+              "human_source_unit_count": 12,
+              "human_target_count": 12,
+              "machine_occurrence_count": 0,
+              "machine_selected_target_count": 0,
+              "machine_source_unit_count": 0,
+              "occurrence_count": 12,
+              "selected_source_unit_count": 12,
+              "selected_target_count": 12,
+              "source_unit_count": 12
+            },
+            "diagnostics": [
+              {
+                "code": "assistance_scope_limits",
+                "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.",
+                "note_id": null,
+                "severity": "warning"
+              }
+            ],
+            "exclusion_reasons": [],
+            "human_targets": {
+              "diagnostics": [],
+              "groups": [
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-00"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-00"
+                  ],
+                  "target_id": "step-00"
+                },
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-01"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-01"
+                  ],
+                  "target_id": "step-01"
+                },
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-02"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-02"
+                  ],
+                  "target_id": "step-02"
+                },
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-03"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-03"
+                  ],
+                  "target_id": "step-03"
+                },
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-04"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-04"
+                  ],
+                  "target_id": "step-04"
+                },
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-05"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-05"
+                  ],
+                  "target_id": "step-05"
+                },
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-06"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-06"
+                  ],
+                  "target_id": "step-06"
+                },
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-07"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-07"
+                  ],
+                  "target_id": "step-07"
+                },
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-08"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-08"
+                  ],
+                  "target_id": "step-08"
+                },
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-09"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-09"
+                  ],
+                  "target_id": "step-09"
+                },
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-10"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-10"
+                  ],
+                  "target_id": "step-10"
+                },
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-11"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-11"
+                  ],
+                  "target_id": "step-11"
+                }
+              ],
+              "playable": true,
+              "source_note_count": 12,
+              "target_count": 12,
+              "timeline": {
+                "duration_ms": 8000.0,
+                "notes": [
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-00",
+                    "midi": 60,
+                    "part_id": "piano",
+                    "source_note_id": "step-00",
+                    "source_note_ids": [
+                      "step-00"
+                    ],
+                    "staff": 1,
+                    "start_ms": 0.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-01",
+                    "midi": 64,
+                    "part_id": "piano",
+                    "source_note_id": "step-01",
+                    "source_note_ids": [
+                      "step-01"
+                    ],
+                    "staff": 1,
+                    "start_ms": 125.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-02",
+                    "midi": 67,
+                    "part_id": "piano",
+                    "source_note_id": "step-02",
+                    "source_note_ids": [
+                      "step-02"
+                    ],
+                    "staff": 1,
+                    "start_ms": 250.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-03",
+                    "midi": 60,
+                    "part_id": "piano",
+                    "source_note_id": "step-03",
+                    "source_note_ids": [
+                      "step-03"
+                    ],
+                    "staff": 1,
+                    "start_ms": 375.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-04",
+                    "midi": 64,
+                    "part_id": "piano",
+                    "source_note_id": "step-04",
+                    "source_note_ids": [
+                      "step-04"
+                    ],
+                    "staff": 1,
+                    "start_ms": 500.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-05",
+                    "midi": 67,
+                    "part_id": "piano",
+                    "source_note_id": "step-05",
+                    "source_note_ids": [
+                      "step-05"
+                    ],
+                    "staff": 1,
+                    "start_ms": 625.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-06",
+                    "midi": 60,
+                    "part_id": "piano",
+                    "source_note_id": "step-06",
+                    "source_note_ids": [
+                      "step-06"
+                    ],
+                    "staff": 1,
+                    "start_ms": 750.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-07",
+                    "midi": 64,
+                    "part_id": "piano",
+                    "source_note_id": "step-07",
+                    "source_note_ids": [
+                      "step-07"
+                    ],
+                    "staff": 1,
+                    "start_ms": 875.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-08",
+                    "midi": 67,
+                    "part_id": "piano",
+                    "source_note_id": "step-08",
+                    "source_note_ids": [
+                      "step-08"
+                    ],
+                    "staff": 1,
+                    "start_ms": 1000.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-09",
+                    "midi": 60,
+                    "part_id": "piano",
+                    "source_note_id": "step-09",
+                    "source_note_ids": [
+                      "step-09"
+                    ],
+                    "staff": 1,
+                    "start_ms": 1125.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-10",
+                    "midi": 64,
+                    "part_id": "piano",
+                    "source_note_id": "step-10",
+                    "source_note_ids": [
+                      "step-10"
+                    ],
+                    "staff": 1,
+                    "start_ms": 1250.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-11",
+                    "midi": 67,
+                    "part_id": "piano",
+                    "source_note_id": "step-11",
+                    "source_note_ids": [
+                      "step-11"
+                    ],
+                    "staff": 1,
+                    "start_ms": 1375.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  }
+                ]
+              }
+            },
+            "machine_occurrence_ids": [],
+            "plan": {
+              "format": "wmc-practice-assistance",
+              "human_source_ids": [
+                "step-00",
+                "step-01",
+                "step-02",
+                "step-03",
+                "step-04",
+                "step-05",
+                "step-06",
+                "step-07",
+                "step-08",
+                "step-09",
+                "step-10",
+                "step-11"
+              ],
+              "mode": "explicit",
+              "planner_revision": 1,
+              "receipt": {
+                "choice": null,
+                "runtime_digest": "4bc406346c65b54b7f6b34fa48e517aac4799bb069a48cecaea15f264810fb76",
+                "runtime_policy": "wmc-canonical-practice-v1",
+                "saved_package_sha256": null,
+                "source_binding": {
+                  "digest": "cea767f414c3c6d9f750bece90b17782d885f498548003225e41f88e2ac4b00c",
+                  "domain": "wmc-canonical-score-serde-json",
+                  "serialization_revision": 1
+                },
+                "source_profile": "wmc-canonical-score-v1"
+              },
+              "revision": 1,
+              "schema_version": 1,
+              "selection": {
+                "profile": {
+                  "key_count": 88,
+                  "kind": "piano",
+                  "lowest_midi": null
+                },
+                "selected_part_ids": [
+                  "piano"
+                ]
+              },
+              "selection_digest": "adcf37e35851a55d5e0be9e69047458e2f79ebacee57a8830ec60b18759a97b0",
+              "settings": null
+            },
+            "receipt": {
+              "choice": null,
+              "runtime_digest": "4bc406346c65b54b7f6b34fa48e517aac4799bb069a48cecaea15f264810fb76",
+              "runtime_policy": "wmc-canonical-practice-v1",
+              "saved_package_sha256": null,
+              "source_binding": {
+                "digest": "cea767f414c3c6d9f750bece90b17782d885f498548003225e41f88e2ac4b00c",
+                "domain": "wmc-canonical-score-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmc-canonical-score-v1"
+            },
+            "scored_mode_allowed": true,
+            "source_ownership": [
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-00"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-01"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-02"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-03"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-04"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-05"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-06"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-07"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-08"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-09"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-10"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-11"
+              }
+            ]
+          },
+          "layers": [
+            {
+              "constraints": {
+                "max_held_span_semitones": 0,
+                "max_simultaneous_keys": 1,
+                "max_targets_per_onset": 1,
+                "min_onset_interval_ms": 500
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 3,
+              "human_source_unit_count": 3,
+              "human_target_count": 3,
+              "layer": "single",
+              "scored_mode_allowed": true
+            },
+            {
+              "constraints": {
+                "max_held_span_semitones": 7,
+                "max_simultaneous_keys": 3,
+                "max_targets_per_onset": 2,
+                "min_onset_interval_ms": 250
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 6,
+              "human_source_unit_count": 6,
+              "human_target_count": 6,
+              "layer": "balanced",
+              "scored_mode_allowed": true
+            },
+            {
+              "constraints": {
+                "max_held_span_semitones": 12,
+                "max_simultaneous_keys": 6,
+                "max_targets_per_onset": 4,
+                "min_onset_interval_ms": 125
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 12,
+              "human_source_unit_count": 12,
+              "human_target_count": 12,
+              "layer": "dense",
+              "scored_mode_allowed": true
+            }
+          ],
+          "plan": {
+            "algorithm_id": "wmc-keyboard-progression-v1",
+            "format": "wmc-practice-progression",
+            "hierarchy_digest": "4d38c7f6c346a51838e6507578d21000abe2ea08b46ba6e14ad9cc5a397c488b",
+            "layer": "dense",
+            "plan_digest": "2d76f3f0e23986263117c91c72db160364177a3ec8730fee3cd2ef4958023875",
+            "planner_revision": 1,
+            "receipt": {
+              "choice": null,
+              "runtime_digest": "4bc406346c65b54b7f6b34fa48e517aac4799bb069a48cecaea15f264810fb76",
+              "runtime_policy": "wmc-canonical-practice-v1",
+              "saved_package_sha256": null,
+              "source_binding": {
+                "digest": "cea767f414c3c6d9f750bece90b17782d885f498548003225e41f88e2ac4b00c",
+                "domain": "wmc-canonical-score-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmc-canonical-score-v1"
+            },
+            "revision": 1,
+            "schema_version": 1,
+            "scheme_digest": "c814f934746ea4e7e1a5a1d5dbb19ccc42c83bd0cbba838ed12d663c85477ff8",
+            "scheme_id": "wmc-keyboard-three-layer-v1",
+            "selection": {
+              "profile": {
+                "key_count": 88,
+                "kind": "piano",
+                "lowest_midi": null
+              },
+              "selected_part_ids": [
+                "piano"
+              ]
+            },
+            "selection_digest": "83f53f9afa1f97e12741b450a28cafb368416e26b7c9db0dfc0aff30d2f2c1f0"
+          }
+        },
+        "source": {
+          "choice": null,
+          "kind": "canonical",
+          "profile": "wmc-canonical-score-v1",
+          "runtime_policy": "wmc-canonical-practice-v1",
+          "source_binding": {
+            "digest": "cea767f414c3c6d9f750bece90b17782d885f498548003225e41f88e2ac4b00c",
+            "domain": "wmc-canonical-score-serde-json",
+            "serialization_revision": 1
+          }
+        }
+      }
+    },
+    "single": {
+      "response": {
+        "checked": {
+          "assistance": {
+            "all_selected_human": false,
+            "coverage": {
+              "human_occurrence_count": 3,
+              "human_source_unit_count": 3,
+              "human_target_count": 3,
+              "machine_occurrence_count": 9,
+              "machine_selected_target_count": 9,
+              "machine_source_unit_count": 9,
+              "occurrence_count": 12,
+              "selected_source_unit_count": 12,
+              "selected_target_count": 12,
+              "source_unit_count": 12
+            },
+            "diagnostics": [
+              {
+                "code": "assistance_scope_limits",
+                "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.",
+                "note_id": null,
+                "severity": "warning"
+              }
+            ],
+            "exclusion_reasons": [
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "step-01"
+                ]
+              },
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "step-02"
+                ]
+              },
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "step-03"
+                ]
+              },
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "step-05"
+                ]
+              },
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "step-06"
+                ]
+              },
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "step-07"
+                ]
+              },
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "step-09"
+                ]
+              },
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "step-10"
+                ]
+              },
+              {
+                "code": "explicit_machine",
+                "source_ids": [
+                  "step-11"
+                ]
+              }
+            ],
+            "human_targets": {
+              "diagnostics": [],
+              "groups": [
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-00"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-00"
+                  ],
+                  "target_id": "step-00"
+                },
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-04"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-04"
+                  ],
+                  "target_id": "step-04"
+                },
+                {
+                  "part_ids": [
+                    "piano"
+                  ],
+                  "source_note_ids": [
+                    "step-08"
+                  ],
+                  "source_occurrence_ids": [
+                    "step-08"
+                  ],
+                  "target_id": "step-08"
+                }
+              ],
+              "playable": true,
+              "source_note_count": 3,
+              "target_count": 3,
+              "timeline": {
+                "duration_ms": 8000.0,
+                "notes": [
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-00",
+                    "midi": 60,
+                    "part_id": "piano",
+                    "source_note_id": "step-00",
+                    "source_note_ids": [
+                      "step-00"
+                    ],
+                    "staff": 1,
+                    "start_ms": 0.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-04",
+                    "midi": 64,
+                    "part_id": "piano",
+                    "source_note_id": "step-04",
+                    "source_note_ids": [
+                      "step-04"
+                    ],
+                    "staff": 1,
+                    "start_ms": 500.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  },
+                  {
+                    "duration_ms": 125.0,
+                    "id": "step-08",
+                    "midi": 67,
+                    "part_id": "piano",
+                    "source_note_id": "step-08",
+                    "source_note_ids": [
+                      "step-08"
+                    ],
+                    "staff": 1,
+                    "start_ms": 1000.0,
+                    "velocity": 90,
+                    "voice": "1"
+                  }
+                ]
+              }
+            },
+            "machine_occurrence_ids": [
+              "step-01",
+              "step-02",
+              "step-03",
+              "step-05",
+              "step-06",
+              "step-07",
+              "step-09",
+              "step-10",
+              "step-11"
+            ],
+            "plan": {
+              "format": "wmc-practice-assistance",
+              "human_source_ids": [
+                "step-00",
+                "step-04",
+                "step-08"
+              ],
+              "mode": "explicit",
+              "planner_revision": 1,
+              "receipt": {
+                "choice": null,
+                "runtime_digest": "4bc406346c65b54b7f6b34fa48e517aac4799bb069a48cecaea15f264810fb76",
+                "runtime_policy": "wmc-canonical-practice-v1",
+                "saved_package_sha256": null,
+                "source_binding": {
+                  "digest": "cea767f414c3c6d9f750bece90b17782d885f498548003225e41f88e2ac4b00c",
+                  "domain": "wmc-canonical-score-serde-json",
+                  "serialization_revision": 1
+                },
+                "source_profile": "wmc-canonical-score-v1"
+              },
+              "revision": 1,
+              "schema_version": 1,
+              "selection": {
+                "profile": {
+                  "key_count": 88,
+                  "kind": "piano",
+                  "lowest_midi": null
+                },
+                "selected_part_ids": [
+                  "piano"
+                ]
+              },
+              "selection_digest": "cd06362b9890e9a61d3ef8ce2642d34ddeea4af30b8a78e910c583b66a6c74e5",
+              "settings": null
+            },
+            "receipt": {
+              "choice": null,
+              "runtime_digest": "4bc406346c65b54b7f6b34fa48e517aac4799bb069a48cecaea15f264810fb76",
+              "runtime_policy": "wmc-canonical-practice-v1",
+              "saved_package_sha256": null,
+              "source_binding": {
+                "digest": "cea767f414c3c6d9f750bece90b17782d885f498548003225e41f88e2ac4b00c",
+                "domain": "wmc-canonical-score-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmc-canonical-score-v1"
+            },
+            "scored_mode_allowed": true,
+            "source_ownership": [
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-00"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "piano",
+                "source_id": "step-01"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "piano",
+                "source_id": "step-02"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "piano",
+                "source_id": "step-03"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-04"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "piano",
+                "source_id": "step-05"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "piano",
+                "source_id": "step-06"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "piano",
+                "source_id": "step-07"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "human",
+                "part_id": "piano",
+                "source_id": "step-08"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "piano",
+                "source_id": "step-09"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "piano",
+                "source_id": "step-10"
+              },
+              {
+                "in_selected_scope": true,
+                "owner": "machine",
+                "part_id": "piano",
+                "source_id": "step-11"
+              }
+            ]
+          },
+          "layers": [
+            {
+              "constraints": {
+                "max_held_span_semitones": 0,
+                "max_simultaneous_keys": 1,
+                "max_targets_per_onset": 1,
+                "min_onset_interval_ms": 500
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 3,
+              "human_source_unit_count": 3,
+              "human_target_count": 3,
+              "layer": "single",
+              "scored_mode_allowed": true
+            },
+            {
+              "constraints": {
+                "max_held_span_semitones": 7,
+                "max_simultaneous_keys": 3,
+                "max_targets_per_onset": 2,
+                "min_onset_interval_ms": 250
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 6,
+              "human_source_unit_count": 6,
+              "human_target_count": 6,
+              "layer": "balanced",
+              "scored_mode_allowed": true
+            },
+            {
+              "constraints": {
+                "max_held_span_semitones": 12,
+                "max_simultaneous_keys": 6,
+                "max_targets_per_onset": 4,
+                "min_onset_interval_ms": 125
+              },
+              "equals_previous_layer": false,
+              "human_occurrence_count": 12,
+              "human_source_unit_count": 12,
+              "human_target_count": 12,
+              "layer": "dense",
+              "scored_mode_allowed": true
+            }
+          ],
+          "plan": {
+            "algorithm_id": "wmc-keyboard-progression-v1",
+            "format": "wmc-practice-progression",
+            "hierarchy_digest": "4d38c7f6c346a51838e6507578d21000abe2ea08b46ba6e14ad9cc5a397c488b",
+            "layer": "single",
+            "plan_digest": "74c8217aef83d7daeac01eed90a8197ff0677c9942184f1817b795020f56bfd0",
+            "planner_revision": 1,
+            "receipt": {
+              "choice": null,
+              "runtime_digest": "4bc406346c65b54b7f6b34fa48e517aac4799bb069a48cecaea15f264810fb76",
+              "runtime_policy": "wmc-canonical-practice-v1",
+              "saved_package_sha256": null,
+              "source_binding": {
+                "digest": "cea767f414c3c6d9f750bece90b17782d885f498548003225e41f88e2ac4b00c",
+                "domain": "wmc-canonical-score-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmc-canonical-score-v1"
+            },
+            "revision": 1,
+            "schema_version": 1,
+            "scheme_digest": "c814f934746ea4e7e1a5a1d5dbb19ccc42c83bd0cbba838ed12d663c85477ff8",
+            "scheme_id": "wmc-keyboard-three-layer-v1",
+            "selection": {
+              "profile": {
+                "key_count": 88,
+                "kind": "piano",
+                "lowest_midi": null
+              },
+              "selected_part_ids": [
+                "piano"
+              ]
+            },
+            "selection_digest": "83f53f9afa1f97e12741b450a28cafb368416e26b7c9db0dfc0aff30d2f2c1f0"
+          }
+        },
+        "source": {
+          "choice": null,
+          "kind": "canonical",
+          "profile": "wmc-canonical-score-v1",
+          "runtime_policy": "wmc-canonical-practice-v1",
+          "source_binding": {
+            "digest": "cea767f414c3c6d9f750bece90b17782d885f498548003225e41f88e2ac4b00c",
+            "domain": "wmc-canonical-score-serde-json",
+            "serialization_revision": 1
+          }
+        }
+      }
+    }
+  },
+  "original": {
+    "checked": {
+      "all_selected_human": true,
+      "coverage": {
+        "human_occurrence_count": 12,
+        "human_source_unit_count": 12,
+        "human_target_count": 12,
+        "machine_occurrence_count": 0,
+        "machine_selected_target_count": 0,
+        "machine_source_unit_count": 0,
+        "occurrence_count": 12,
+        "selected_source_unit_count": 12,
+        "selected_target_count": 12,
+        "source_unit_count": 12
+      },
+      "diagnostics": [
+        {
+          "code": "assistance_scope_limits",
+          "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.",
+          "note_id": null,
+          "severity": "warning"
+        }
+      ],
+      "exclusion_reasons": [],
+      "human_targets": {
+        "diagnostics": [],
+        "groups": [
+          {
+            "part_ids": [
+              "piano"
+            ],
+            "source_note_ids": [
+              "step-00"
+            ],
+            "source_occurrence_ids": [
+              "step-00"
+            ],
+            "target_id": "step-00"
+          },
+          {
+            "part_ids": [
+              "piano"
+            ],
+            "source_note_ids": [
+              "step-01"
+            ],
+            "source_occurrence_ids": [
+              "step-01"
+            ],
+            "target_id": "step-01"
+          },
+          {
+            "part_ids": [
+              "piano"
+            ],
+            "source_note_ids": [
+              "step-02"
+            ],
+            "source_occurrence_ids": [
+              "step-02"
+            ],
+            "target_id": "step-02"
+          },
+          {
+            "part_ids": [
+              "piano"
+            ],
+            "source_note_ids": [
+              "step-03"
+            ],
+            "source_occurrence_ids": [
+              "step-03"
+            ],
+            "target_id": "step-03"
+          },
+          {
+            "part_ids": [
+              "piano"
+            ],
+            "source_note_ids": [
+              "step-04"
+            ],
+            "source_occurrence_ids": [
+              "step-04"
+            ],
+            "target_id": "step-04"
+          },
+          {
+            "part_ids": [
+              "piano"
+            ],
+            "source_note_ids": [
+              "step-05"
+            ],
+            "source_occurrence_ids": [
+              "step-05"
+            ],
+            "target_id": "step-05"
+          },
+          {
+            "part_ids": [
+              "piano"
+            ],
+            "source_note_ids": [
+              "step-06"
+            ],
+            "source_occurrence_ids": [
+              "step-06"
+            ],
+            "target_id": "step-06"
+          },
+          {
+            "part_ids": [
+              "piano"
+            ],
+            "source_note_ids": [
+              "step-07"
+            ],
+            "source_occurrence_ids": [
+              "step-07"
+            ],
+            "target_id": "step-07"
+          },
+          {
+            "part_ids": [
+              "piano"
+            ],
+            "source_note_ids": [
+              "step-08"
+            ],
+            "source_occurrence_ids": [
+              "step-08"
+            ],
+            "target_id": "step-08"
+          },
+          {
+            "part_ids": [
+              "piano"
+            ],
+            "source_note_ids": [
+              "step-09"
+            ],
+            "source_occurrence_ids": [
+              "step-09"
+            ],
+            "target_id": "step-09"
+          },
+          {
+            "part_ids": [
+              "piano"
+            ],
+            "source_note_ids": [
+              "step-10"
+            ],
+            "source_occurrence_ids": [
+              "step-10"
+            ],
+            "target_id": "step-10"
+          },
+          {
+            "part_ids": [
+              "piano"
+            ],
+            "source_note_ids": [
+              "step-11"
+            ],
+            "source_occurrence_ids": [
+              "step-11"
+            ],
+            "target_id": "step-11"
+          }
+        ],
+        "playable": true,
+        "source_note_count": 12,
+        "target_count": 12,
+        "timeline": {
+          "duration_ms": 8000.0,
+          "notes": [
+            {
+              "duration_ms": 125.0,
+              "id": "step-00",
+              "midi": 60,
+              "part_id": "piano",
+              "source_note_id": "step-00",
+              "source_note_ids": [
+                "step-00"
+              ],
+              "staff": 1,
+              "start_ms": 0.0,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "duration_ms": 125.0,
+              "id": "step-01",
+              "midi": 64,
+              "part_id": "piano",
+              "source_note_id": "step-01",
+              "source_note_ids": [
+                "step-01"
+              ],
+              "staff": 1,
+              "start_ms": 125.0,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "duration_ms": 125.0,
+              "id": "step-02",
+              "midi": 67,
+              "part_id": "piano",
+              "source_note_id": "step-02",
+              "source_note_ids": [
+                "step-02"
+              ],
+              "staff": 1,
+              "start_ms": 250.0,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "duration_ms": 125.0,
+              "id": "step-03",
+              "midi": 60,
+              "part_id": "piano",
+              "source_note_id": "step-03",
+              "source_note_ids": [
+                "step-03"
+              ],
+              "staff": 1,
+              "start_ms": 375.0,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "duration_ms": 125.0,
+              "id": "step-04",
+              "midi": 64,
+              "part_id": "piano",
+              "source_note_id": "step-04",
+              "source_note_ids": [
+                "step-04"
+              ],
+              "staff": 1,
+              "start_ms": 500.0,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "duration_ms": 125.0,
+              "id": "step-05",
+              "midi": 67,
+              "part_id": "piano",
+              "source_note_id": "step-05",
+              "source_note_ids": [
+                "step-05"
+              ],
+              "staff": 1,
+              "start_ms": 625.0,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "duration_ms": 125.0,
+              "id": "step-06",
+              "midi": 60,
+              "part_id": "piano",
+              "source_note_id": "step-06",
+              "source_note_ids": [
+                "step-06"
+              ],
+              "staff": 1,
+              "start_ms": 750.0,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "duration_ms": 125.0,
+              "id": "step-07",
+              "midi": 64,
+              "part_id": "piano",
+              "source_note_id": "step-07",
+              "source_note_ids": [
+                "step-07"
+              ],
+              "staff": 1,
+              "start_ms": 875.0,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "duration_ms": 125.0,
+              "id": "step-08",
+              "midi": 67,
+              "part_id": "piano",
+              "source_note_id": "step-08",
+              "source_note_ids": [
+                "step-08"
+              ],
+              "staff": 1,
+              "start_ms": 1000.0,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "duration_ms": 125.0,
+              "id": "step-09",
+              "midi": 60,
+              "part_id": "piano",
+              "source_note_id": "step-09",
+              "source_note_ids": [
+                "step-09"
+              ],
+              "staff": 1,
+              "start_ms": 1125.0,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "duration_ms": 125.0,
+              "id": "step-10",
+              "midi": 64,
+              "part_id": "piano",
+              "source_note_id": "step-10",
+              "source_note_ids": [
+                "step-10"
+              ],
+              "staff": 1,
+              "start_ms": 1250.0,
+              "velocity": 90,
+              "voice": "1"
+            },
+            {
+              "duration_ms": 125.0,
+              "id": "step-11",
+              "midi": 67,
+              "part_id": "piano",
+              "source_note_id": "step-11",
+              "source_note_ids": [
+                "step-11"
+              ],
+              "staff": 1,
+              "start_ms": 1375.0,
+              "velocity": 90,
+              "voice": "1"
+            }
+          ]
+        }
+      },
+      "machine_occurrence_ids": [],
+      "plan": {
+        "format": "wmc-practice-assistance",
+        "human_source_ids": [
+          "step-00",
+          "step-01",
+          "step-02",
+          "step-03",
+          "step-04",
+          "step-05",
+          "step-06",
+          "step-07",
+          "step-08",
+          "step-09",
+          "step-10",
+          "step-11"
+        ],
+        "mode": "original",
+        "planner_revision": 1,
+        "receipt": {
+          "choice": null,
+          "runtime_digest": "4bc406346c65b54b7f6b34fa48e517aac4799bb069a48cecaea15f264810fb76",
+          "runtime_policy": "wmc-canonical-practice-v1",
+          "saved_package_sha256": null,
+          "source_binding": {
+            "digest": "cea767f414c3c6d9f750bece90b17782d885f498548003225e41f88e2ac4b00c",
+            "domain": "wmc-canonical-score-serde-json",
+            "serialization_revision": 1
+          },
+          "source_profile": "wmc-canonical-score-v1"
+        },
+        "revision": 1,
+        "schema_version": 1,
+        "selection": {
+          "profile": {
+            "key_count": 88,
+            "kind": "piano",
+            "lowest_midi": null
+          },
+          "selected_part_ids": [
+            "piano"
+          ]
+        },
+        "selection_digest": "ec239ff2e545eb759869c36d24199405f0ae992c260184211223cd95043bd90f",
+        "settings": null
+      },
+      "receipt": {
+        "choice": null,
+        "runtime_digest": "4bc406346c65b54b7f6b34fa48e517aac4799bb069a48cecaea15f264810fb76",
+        "runtime_policy": "wmc-canonical-practice-v1",
+        "saved_package_sha256": null,
+        "source_binding": {
+          "digest": "cea767f414c3c6d9f750bece90b17782d885f498548003225e41f88e2ac4b00c",
+          "domain": "wmc-canonical-score-serde-json",
+          "serialization_revision": 1
+        },
+        "source_profile": "wmc-canonical-score-v1"
+      },
+      "scored_mode_allowed": true,
+      "source_ownership": [
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "piano",
+          "source_id": "step-00"
+        },
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "piano",
+          "source_id": "step-01"
+        },
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "piano",
+          "source_id": "step-02"
+        },
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "piano",
+          "source_id": "step-03"
+        },
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "piano",
+          "source_id": "step-04"
+        },
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "piano",
+          "source_id": "step-05"
+        },
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "piano",
+          "source_id": "step-06"
+        },
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "piano",
+          "source_id": "step-07"
+        },
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "piano",
+          "source_id": "step-08"
+        },
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "piano",
+          "source_id": "step-09"
+        },
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "piano",
+          "source_id": "step-10"
+        },
+        {
+          "in_selected_scope": true,
+          "owner": "human",
+          "part_id": "piano",
+          "source_id": "step-11"
+        }
+      ]
+    },
+    "source": {
+      "choice": null,
+      "kind": "canonical",
+      "profile": "wmc-canonical-score-v1",
+      "runtime_policy": "wmc-canonical-practice-v1",
+      "source_binding": {
+        "digest": "cea767f414c3c6d9f750bece90b17782d885f498548003225e41f88e2ac4b00c",
+        "domain": "wmc-canonical-score-serde-json",
+        "serialization_revision": 1
+      }
+    }
+  },
+  "score": {
+    "composer": "WorldMusicHub original exercise",
+    "format_metadata": {
+      "producer": "WorldMusicHub",
+      "producer_version": "0.2.0-alpha.1",
+      "schema_revision": 2
+    },
+    "id": "original-progression-api-fixture",
+    "keys": [
+      {
+        "at": {
+          "denominator": 1,
+          "numerator": 0
+        },
+        "fifths": 0,
+        "mode": "major"
+      }
+    ],
+    "measures": [
+      {
+        "at": {
+          "denominator": 1,
+          "numerator": 0
+        },
+        "length": {
+          "denominator": 1,
+          "numerator": 4
+        },
+        "number": 1
+      },
+      {
+        "at": {
+          "denominator": 1,
+          "numerator": 4
+        },
+        "length": {
+          "denominator": 1,
+          "numerator": 4
+        },
+        "number": 2
+      },
+      {
+        "at": {
+          "denominator": 1,
+          "numerator": 8
+        },
+        "length": {
+          "denominator": 1,
+          "numerator": 4
+        },
+        "number": 3
+      },
+      {
+        "at": {
+          "denominator": 1,
+          "numerator": 12
+        },
+        "length": {
+          "denominator": 1,
+          "numerator": 4
+        },
+        "number": 4
+      }
+    ],
+    "meters": [
+      {
+        "at": {
+          "denominator": 1,
+          "numerator": 0
+        },
+        "denominator": 4,
+        "numerator": 4
+      }
+    ],
+    "parts": [
+      {
+        "id": "piano",
+        "instrument": "piano",
+        "name": "Piano",
+        "notes": [
+          {
+            "at": {
+              "denominator": 4,
+              "numerator": 0
+            },
+            "duration": {
+              "denominator": 4,
+              "numerator": 1
+            },
+            "id": "step-00",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "C"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "at": {
+              "denominator": 4,
+              "numerator": 1
+            },
+            "duration": {
+              "denominator": 4,
+              "numerator": 1
+            },
+            "id": "step-01",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "E"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "at": {
+              "denominator": 4,
+              "numerator": 2
+            },
+            "duration": {
+              "denominator": 4,
+              "numerator": 1
+            },
+            "id": "step-02",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "G"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "at": {
+              "denominator": 4,
+              "numerator": 3
+            },
+            "duration": {
+              "denominator": 4,
+              "numerator": 1
+            },
+            "id": "step-03",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "C"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "at": {
+              "denominator": 4,
+              "numerator": 4
+            },
+            "duration": {
+              "denominator": 4,
+              "numerator": 1
+            },
+            "id": "step-04",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "E"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "at": {
+              "denominator": 4,
+              "numerator": 5
+            },
+            "duration": {
+              "denominator": 4,
+              "numerator": 1
+            },
+            "id": "step-05",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "G"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "at": {
+              "denominator": 4,
+              "numerator": 6
+            },
+            "duration": {
+              "denominator": 4,
+              "numerator": 1
+            },
+            "id": "step-06",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "C"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "at": {
+              "denominator": 4,
+              "numerator": 7
+            },
+            "duration": {
+              "denominator": 4,
+              "numerator": 1
+            },
+            "id": "step-07",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "E"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "at": {
+              "denominator": 4,
+              "numerator": 8
+            },
+            "duration": {
+              "denominator": 4,
+              "numerator": 1
+            },
+            "id": "step-08",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "G"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "at": {
+              "denominator": 4,
+              "numerator": 9
+            },
+            "duration": {
+              "denominator": 4,
+              "numerator": 1
+            },
+            "id": "step-09",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "C"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "at": {
+              "denominator": 4,
+              "numerator": 10
+            },
+            "duration": {
+              "denominator": 4,
+              "numerator": 1
+            },
+            "id": "step-10",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "E"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          },
+          {
+            "at": {
+              "denominator": 4,
+              "numerator": 11
+            },
+            "duration": {
+              "denominator": 4,
+              "numerator": 1
+            },
+            "id": "step-11",
+            "pitch": {
+              "alter": 0,
+              "octave": 4,
+              "step": "G"
+            },
+            "staff": 1,
+            "tie_start": false,
+            "tie_stop": false,
+            "velocity": 90,
+            "voice": "1"
+          }
+        ]
+      }
+    ],
+    "provenance": {
+      "attribution": "Newly authored pedagogical scale exercise for WorldMusicHub; not a transcription of a song",
+      "kind": "original_exercise",
+      "license": "CC0-1.0",
+      "source_url": null
+    },
+    "repeats": [],
+    "source": null,
+    "tempo": [
+      {
+        "at": {
+          "denominator": 1,
+          "numerator": 0
+        },
+        "bpm": 120.0
+      }
+    ],
+    "title": "Original progressive quarter-beat exercise",
+    "version": 1
+  },
+  "selection": {
+    "profile": {
+      "key_count": 88,
+      "kind": "piano",
+      "lowest_midi": null
+    },
+    "selected_part_ids": [
+      "piano"
+    ]
+  }
+}
