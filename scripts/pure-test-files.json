@@ -233,5 +233,7 @@
   "tests/progression-preview.test.js",
   "tests/native-progression-evidence.test.js",
   "tests/frontend-pitch-mod.test.js",
-  "tests/pitch-mod-receipts.test.js"
+  "tests/pitch-mod-receipts.test.js",
+  "tests/pitch-mod-preview.test.js",
+  "tests/native-pitch-mod-evidence.test.js"
 ]

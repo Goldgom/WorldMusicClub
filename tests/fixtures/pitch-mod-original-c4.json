@@ -1,0 +1,257 @@
+{
+  "composer": "WorldMusicHub original exercise",
+  "format_metadata": {
+    "producer": "WorldMusicHub",
+    "producer_version": "0.2.0-alpha.1",
+    "schema_revision": 2
+  },
+  "id": "original-pitch-mod-c4",
+  "keys": [
+    {
+      "at": {
+        "denominator": 1,
+        "numerator": 0
+      },
+      "fifths": 0,
+      "mode": "major"
+    }
+  ],
+  "measures": [
+    {
+      "at": {
+        "denominator": 1,
+        "numerator": 0
+      },
+      "length": {
+        "denominator": 1,
+        "numerator": 4
+      },
+      "number": 1
+    },
+    {
+      "at": {
+        "denominator": 1,
+        "numerator": 4
+      },
+      "length": {
+        "denominator": 1,
+        "numerator": 4
+      },
+      "number": 2
+    },
+    {
+      "at": {
+        "denominator": 1,
+        "numerator": 8
+      },
+      "length": {
+        "denominator": 1,
+        "numerator": 4
+      },
+      "number": 3
+    },
+    {
+      "at": {
+        "denominator": 1,
+        "numerator": 12
+      },
+      "length": {
+        "denominator": 1,
+        "numerator": 4
+      },
+      "number": 4
+    }
+  ],
+  "meters": [
+    {
+      "at": {
+        "denominator": 1,
+        "numerator": 0
+      },
+      "denominator": 4,
+      "numerator": 4
+    }
+  ],
+  "parts": [
+    {
+      "id": "human",
+      "instrument": "piano",
+      "name": "Human C4",
+      "notes": [
+        {
+          "at": {
+            "numerator": 4,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 2,
+            "denominator": 1
+          },
+          "id": "human-c4-1",
+          "pitch": {
+            "step": "C",
+            "alter": 0,
+            "octave": 4
+          },
+          "staff": 1,
+          "tie_start": false,
+          "tie_stop": false,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "at": {
+            "numerator": 8,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 2,
+            "denominator": 1
+          },
+          "id": "human-c4-2",
+          "pitch": {
+            "step": "C",
+            "alter": 0,
+            "octave": 4
+          },
+          "staff": 1,
+          "tie_start": false,
+          "tie_stop": false,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "at": {
+            "numerator": 12,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 2,
+            "denominator": 1
+          },
+          "id": "human-c4-3",
+          "pitch": {
+            "step": "C",
+            "alter": 0,
+            "octave": 4
+          },
+          "staff": 1,
+          "tie_start": false,
+          "tie_stop": false,
+          "velocity": 90,
+          "voice": "1"
+        }
+      ]
+    },
+    {
+      "id": "machine",
+      "instrument": "piano",
+      "name": "Machine C4",
+      "notes": [
+        {
+          "at": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 2,
+            "denominator": 1
+          },
+          "id": "machine-c4-1",
+          "pitch": {
+            "step": "C",
+            "alter": 0,
+            "octave": 4
+          },
+          "staff": 1,
+          "tie_start": false,
+          "tie_stop": false,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "at": {
+            "numerator": 4,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 2,
+            "denominator": 1
+          },
+          "id": "machine-c4-2",
+          "pitch": {
+            "step": "C",
+            "alter": 0,
+            "octave": 4
+          },
+          "staff": 1,
+          "tie_start": false,
+          "tie_stop": false,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "at": {
+            "numerator": 8,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 2,
+            "denominator": 1
+          },
+          "id": "machine-c4-3",
+          "pitch": {
+            "step": "C",
+            "alter": 0,
+            "octave": 4
+          },
+          "staff": 1,
+          "tie_start": false,
+          "tie_stop": false,
+          "velocity": 90,
+          "voice": "1"
+        },
+        {
+          "at": {
+            "numerator": 12,
+            "denominator": 1
+          },
+          "duration": {
+            "numerator": 2,
+            "denominator": 1
+          },
+          "id": "machine-c4-4",
+          "pitch": {
+            "step": "C",
+            "alter": 0,
+            "octave": 4
+          },
+          "staff": 1,
+          "tie_start": false,
+          "tie_stop": false,
+          "velocity": 90,
+          "voice": "1"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "attribution": "Newly authored C4-only acceptance exercise for whole-song Mod; not a transcription of any song",
+    "kind": "original_exercise",
+    "license": "CC0-1.0",
+    "source_url": null
+  },
+  "repeats": [],
+  "source": null,
+  "tempo": [
+    {
+      "at": {
+        "denominator": 1,
+        "numerator": 0
+      },
+      "bpm": 120.0
+    }
+  ],
+  "title": "Original C4 whole-song pitch Mod exercise",
+  "version": 1
+}

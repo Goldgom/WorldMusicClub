@@ -36,7 +36,7 @@ export const ASSISTANCE_RUNTIME_DEPENDENCIES=Object.freeze([
  'crates/score-core/src/vsq_clean/runtime.rs','crates/score-core/src/vsq_clean/tests.rs','crates/score-core/src/vsq_clean/validate.rs',
  'crates/score-core/src/vsq_engine.rs','crates/score-core/src/vsq_engine/normalize.rs','crates/score-core/src/vsq_engine/tests.rs',
  'crates/score-core/src/vsq_engine/validate.rs','scripts/check-authoring-workflow.py','web/adaptation-view.js',
- 'web/app-assistance.js','web/app-locale.js','web/basic-key-audio-core.js',
+ 'web/app-assistance.js','web/pitch-mod-context.js','web/app-locale.js','web/basic-key-audio-core.js',
  'web/basic-key-audio-plan.js','web/basic-key-audio-processor.js','web/basic-key-audio-receiver.js',
  'web/basic-key-notation.js','web/basic-key-numbered.js','web/basic-key-player.js',
  'web/basic-key-rendition-notation.js','web/basic-key-rendition.js','web/canonical-audio-fingerprint.js',
