@@ -72,7 +72,10 @@ test('native diagnostic renderer composes only its bounded runner and existing o
   assert.ok(script.indexOf('report.evidenceSettled = await observers.settle();') < script.indexOf('report.ok = true;'), 'Evidence must settle before the actual runner marks success');
   assert.match(host, /\$native.diagnostic_host.process_image_path=\$app.MainModule.FileName/);
   for (const part of ['capture_started_unix_ms', 'capture_finished_unix_ms', 'Get-BuildDiagnosticsExecutable', 'Get-BuildDiagnosticsLibrarySnapshot']) assert.ok(host.includes(part));
-  assert.match(host, /\$actionLimit=if\(\$phase -ceq 'build-diagnostics'\)\{32\}/);
+  // Other closed scenarios may precede diagnostics. Its own branch remains 32.
+  const actionLimit = host.match(/^\s*\$actionLimit=(.+)$/m)?.[1];
+  assert.ok(actionLimit, 'The native dispatch must retain an explicit action budget');
+  assert.match(actionLimit, /(?:^|else)if\(\$phase -ceq 'build-diagnostics'\)\{32\}/);
   assert.match(read('scripts/windows-desktop-profile.ps1'), /\$fresh=@\('build-diagnostics'/);
   assert.match(read('.gitignore'), /^\/desktop-build-diagnostics\/$/m);
 });
