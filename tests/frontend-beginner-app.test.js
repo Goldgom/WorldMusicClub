@@ -217,7 +217,8 @@ test('a beginner held-key probe needs source-clock progress to preserve a scored
     await app.click('play-button');await app.until(()=>app.sourceStartWall()!==null);app.frame();
     const anchor=app.sourceStartWall(),map=app.document.querySelector('#keyboard-map [data-code="KeyR"]');
     assert.ok(anchor>wall);
-    assert.equal(readPlaybackClock(app.document).running,true);
+    assert.equal(readPlaybackClock(app.document).running,false);
+    assert.equal(readPlaybackClock(app.document).phase,'preparing');
     assert.equal(readPlaybackClock(app.document).positionMs,0);
     app.emit(app.$('stage-title'),'keydown',physicalC);
     assert.equal(map.classList.contains('held'),true);
@@ -226,7 +227,17 @@ test('a beginner held-key probe needs source-clock progress to preserve a scored
     assert.equal(early.input_evidence.events[0].kind,'note_on');
     assert.equal(early.input_evidence.events[0].onset_capture,null);
 
+    // A complete render quantum can lead wall time; it must not start the
+    // displayed take or manufacture another onset from this held contact.
+    wall=anchor-1.2;app.renderAudioTo((wall-1000)/1000);
+    for(const harness of app.audioHarnesses)harness.renderBlock(128);
+    app.frame();assert.equal(readPlaybackClock(app.document).phase,'preparing');
+    assert.equal(readPlaybackClock(app.document).running,false);assert.equal(map.classList.contains('held'),true);
+    assert.deepEqual((await app.exported('export-takes')).passes.at(-1).inputs,[]);
+
     wall=anchor+60;app.renderAudioTo((wall-1000)/1000);app.frame();
+    assert.equal(readPlaybackClock(app.document).running,true);
+    assert.equal(readPlaybackClock(app.document).phase,'playing');
     assert.ok(readPlaybackClock(app.document).positionMs>0);
     assert.deepEqual((await app.exported('export-takes')).passes.at(-1).inputs,[],'Crossing the anchor cannot invent a later onset for a held key');
     app.emit(app.$('stage-title'),'keyup',physicalC);

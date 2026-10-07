@@ -211,7 +211,8 @@ test('practice baseline rejects a pre-anchor pointer, then waits for captured in
     // The old hosted fixture clicked at this exact UI state. Real app/recorder
     // code must retain that early event without manufacturing a scored input.
     assert.ok(app.sourceStartWall() > now); app.frame();
-    assert.equal(readPlaybackClock(app.document).running, true);
+    assert.equal(readPlaybackClock(app.document).running, false);
+    assert.equal(readPlaybackClock(app.document).phase, 'preparing');
     assert.equal(readPlaybackClock(app.document).positionMs, 0);
     const key = app.$('keyboard').querySelector('[data-midi="60"]');
     app.emit(key, 'pointerdown', {pointerId: 8, button: 0}); app.emit(key, 'pointerup', {pointerId: 8});
@@ -221,7 +222,16 @@ test('practice baseline rejects a pre-anchor pointer, then waits for captured in
     const earlyOnset = early.input_evidence.events.find(event => event.kind === 'note_on');
     assert.equal(earlyOnset.input_kind, 'on_screen_pointer'); assert.equal(earlyOnset.event_wall_ms, now);
     assert.equal(earlyOnset.onset_capture, null); assert.throws(() => assertPracticePointerCapture(early), /Exactly one practice input/);
+    // Advancing only a render quantum past the source anchor cannot make a
+    // still-earlier wall timestamp a valid input or settled practice baseline.
+    now=app.sourceStartWall()-1.2;app.renderAudioTo((now-10000)/1000);
+    for(const harness of app.audioHarnesses)harness.renderBlock(128);
+    app.frame();assert.equal(readPlaybackClock(app.document).phase,'preparing');
+    assert.equal(readPlaybackClock(app.document).running,false);assert.equal(practiceBaselineReady(app.document),false);
+    assert.deepEqual((await app.exported('export-takes')).passes[0].inputs,[]);
     now=app.sourceStartWall()+10;app.renderAudioTo((now-10000)/1000);app.frame();
+    assert.equal(readPlaybackClock(app.document).running,true);
+    assert.equal(readPlaybackClock(app.document).phase,'playing');
     assert.ok(readPlaybackClock(app.document).positionMs > 0);
     app.emit(key, 'pointerdown', {pointerId: 9, button: 0}); app.emit(key, 'pointerup', {pointerId: 9});
     app.frame(); assert.equal(app.$('hud-captured').textContent, '1');
