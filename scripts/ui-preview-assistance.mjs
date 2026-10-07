@@ -10,11 +10,13 @@ export const ASSISTANCE_PREVIEW_CASES = Object.freeze([
   'saved assistance recipe waits for a fresh Rust rebuild after browser reload',
   'cross-scope exact unison explicitly blocks empty human scoring and retains complete notation',
   'Rust Basic and VSQ fixture replay retains real worklet gates and explicit empty-scope ownership',
+  'explicit Off survives a checked Original response-limit fault and preserves the pinned take',
 ].map((name, index) => {
   const caseId = name.replace(/[^a-z0-9]+/gi, '-').slice(0, 100);
   const base = `worldmusichub-live-assistance-${caseId}-final`;
   return Object.freeze({name, caseId, report: `${base}.json`, screenshot: `${base}.png`,
-    scope: index === 4 ? 'Rust fixture replay in Chromium AudioWorklets; not desktop native acceptance'
+    scope: index === 5 ? 'Actual Rust application with endpoint fault injection on a tiny original exercise; not large/private-song GUI acceptance'
+      : index === 4 ? 'Rust fixture replay in Chromium AudioWorklets; not desktop native acceptance'
       : 'Actual Rust application in Chromium; not desktop package acceptance'});
 }));
 
@@ -51,7 +53,7 @@ export function verifyUiPreviewAssistance(directory) {
   // Read the separate mandatory suite, never substitute the broad UI TAP.
   const tapBytes = read('assistance.tap', 1024 * 1024), tap = decode(tapBytes);
   const rows = tap.split(/\r?\n/).filter(line => /^(?:not )?ok \d+ - /.test(line));
-  assert.equal(rows.length, ASSISTANCE_PREVIEW_CASES.length, 'Expected exactly five assistance TAP cases');
+  assert.equal(rows.length, ASSISTANCE_PREVIEW_CASES.length, 'Expected exactly six assistance TAP cases');
   assert.ok(!/^Bail out!/im.test(tap), 'Assistance TAP bailed out');
   for (const {name} of ASSISTANCE_PREVIEW_CASES) {
     const matching = rows.filter(line => line.replace(/^(?:not )?ok \d+ - /, '').split(/\s+#/)[0] === name);

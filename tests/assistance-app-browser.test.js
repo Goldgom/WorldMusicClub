@@ -379,3 +379,94 @@ test('Rust Basic and VSQ fixture replay retains real worklet gates and explicit 
   assert.equal(vsq.checked.scored_mode_allowed, false); assert.equal(vsq.automatic.notes.length, 0);
   assert.deepEqual(vsq.empty.notes, vsq.full.notes); assert.ok(vsq.plan.notes.every(note => note[2] === 0));
 });
+
+test('explicit Off survives a checked Original response-limit fault and preserves the pinned take', options, async () => {
+  const compilation = await importScore(), libraryKey = await page.locator('#song-lobby').getAttribute('data-preview-id');
+  const automatic = await automaticPreview(); assert.deepEqual(automatic, canonical.automatic);
+  await startPerformance(); await waitForPlaybackClockAdvance(page); await page.locator('#play-button').click();
+  await page.waitForFunction(() => !globalThis.__wmhReadPlaybackClock().running);
+  await page.locator('#count-in').uncheck();
+  const before = await exportJson('export-takes', 'results'), automaticRecipe = await recipes();
+  const faultInjection = {path: '/api/practice-assistance/original', status: 422, code: 'assistance_response_limit',
+    score_id: compilation.score.id, scope: 'Endpoint fault injection on a tiny original exercise; not a large or private song GUI run'};
+  let injected = 0;
+  await page.route('**/api/practice-assistance/original', async route => {
+    if (!isDeepStrictEqual(route.request().postDataJSON().score, compilation.score)) return route.continue();
+    injected++;
+    await route.fulfill({status: 422, contentType: 'application/json', body: JSON.stringify({code: faultInjection.code,
+      error: 'Complete assistance response exceeds 16 MiB; no IDs or ownership entries were truncated'})});
+  });
+  try {
+    await openSongMod(page, {origin: 'stage'}); await page.locator('#song-mod-assistance-mode').selectOption('original');
+    const failed = page.waitForResponse('**/api/practice-assistance/original'); await page.locator('#song-mod-assistance-check').click();
+    const failedResponse = await failed; assert.equal(failedResponse.status(), 422); assert.equal((await failedResponse.json()).code, faultInjection.code);
+    await page.waitForFunction(() => document.querySelector('#song-mod-assistance-status').dataset.phase === 'error');
+    await checkpoint('checked-original-fault', {faultInjection});
+    assert.match(await page.locator('#song-mod-assistance-status').innerText(), /16 MiB/);
+    assert.deepEqual(await recipes(), automaticRecipe, 'A failed checked Original request cannot silently switch assistance off');
+    await page.locator('#song-mod-cancel').click();
+    const failedTake = await exportJson('export-takes', 'results');
+    assert.deepEqual(failedTake.practice_assistance, before.practice_assistance); assert.deepEqual(failedTake.passes, before.passes);
+
+    await openSongMod(page, {origin: 'stage'}); await page.locator('#song-mod-assistance-off').click();
+    assert.equal(await page.locator('#song-mod-apply').isDisabled(), true, 'Stage Off must require explicit take-reset acknowledgement');
+    await page.locator('#song-mod-assistance-reset').check();
+    const fullTargets = page.waitForResponse(response => new URL(response.url()).pathname === '/api/practice-targets'
+      && isDeepStrictEqual(response.request().postDataJSON().timeline, compilation.timeline));
+    await applyMod(); const targetResponse = await fullTargets; assert.equal(targetResponse.status(), 200);
+    const fullPlan = await targetResponse.json(); await checkpoint('stage-off-reset', {fullPlan});
+    assert.deepEqual(fullPlan.timeline.notes, canonical.original.checked.human_targets.timeline.notes);
+    assert.equal(await page.locator('#export-takes').isDisabled(), true);
+    assert.equal((await page.locator('#progress').evaluate(node => JSON.parse(node.getAttribute('data-playback-clock')))).positionMs, 0);
+    const off = await recipes(); assert.equal(off.length, 1);
+    assert.deepEqual(Object.keys(off[0].recipe).sort(), ['format', 'preference_key', 'source', 'version']);
+    assert.equal(off[0].recipe.format, 'wmc-practice-assistance-off'); assert.equal(injected, 1, 'Explicit Off must bypass the failed checked endpoint');
+
+    // Re-establish a real Automatic take, then change only the lobby candidate.
+    // Resume must retain that take until the user explicitly starts a new one.
+    await page.locator('#back-to-library').click(); await automaticPreview(); await startPerformance(); await waitForPlaybackClockAdvance(page);
+    await page.locator('#back-to-library').click(); const pinned = await exportJson('export-takes', 'results');
+    await openSongMod(page); await page.locator('#song-mod-assistance-off').click(); await applyMod();
+    const savedOff = await recipes();
+    await page.locator('#resume-session').click(); await page.waitForFunction(() => !document.querySelector('#play-button').disabled);
+    const resumed = await exportJson('export-takes', 'results');
+    const pinnedProof = await checkpoint('preview-off-pinned', {pinned, resumed, savedOff});
+    assert.deepEqual(resumed.passes, pinned.passes); assert.deepEqual(resumed.target_plan, pinned.target_plan);
+    assert.deepEqual(resumed.practice_assistance, pinned.practice_assistance);
+    assert.equal(resumed.practice_assistance.plan.mode, 'automatic'); assert.equal(pinnedProof.ui.stage.clock.running, false);
+    const assistedRun = pinnedProof.audio.runs.filter(run => run.started).at(-1); assert.equal(assistedRun.plan.notes.length, 1);
+
+    await page.locator('#back-to-library').click(); await startPerformance(); await waitForPlaybackClockAdvance(page);
+    await page.locator('#keyboard .piano-key[data-midi="60"]').click();
+    await page.waitForFunction(() => document.querySelector('#hud-captured').textContent === '1');
+    await page.locator('#results-button').click();
+    const assessed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/assess'
+      && isDeepStrictEqual(response.request().postDataJSON().timeline.notes, fullPlan.timeline.notes));
+    await page.locator('#assess-button').click(); const assessedResponse = await assessed; assert.equal(assessedResponse.status(), 200);
+    const assessment = await assessedResponse.json(); await page.locator('#feedback-results').waitFor({state: 'visible'});
+    await page.locator('#results-dialog [data-close-panel]').click();
+    const fresh = await exportJson('export-takes', 'results'), source = await exportJson('export-button', 'score-tools');
+    const freshProof = await checkpoint('new-off-take', {fresh, assessment, exportedSource: source});
+    assert.equal(fresh.practice_assistance, null); assert.equal(fresh.practice_assistance_disabled, true);
+    assert.equal(fresh.passes.length, 1); assert.deepEqual(fresh.target_plan.timeline.notes, fullPlan.timeline.notes);
+    assert.deepEqual(fresh.passes[0].timeline.notes, fullPlan.timeline.notes); assert.deepEqual(fresh.passes[0].assessment, assessment);
+    assert.equal(fresh.passes[0].interpretation.practice_assistance, null); assert.equal(fresh.passes[0].interpretation.practice_assistance_disabled, true);
+    assert.equal(fresh.passes[0].inputs.length, 1); assert.equal(fresh.passes[0].inputs[0].midi, 60);
+    assert.deepEqual(source, compilation.score);
+    const unassistedRun = freshProof.audio.runs.filter(run => run.started).at(-1);
+    assert.equal(unassistedRun.node.actualAudioWorkletNode, true); assert.equal(unassistedRun.plan.notes.length, 0);
+    for (const field of ['sourceFingerprint', 'compiledFingerprint', 'sourceOccurrences', 'durationFrames']) assert.equal(unassistedRun.plan[field], assistedRun.plan[field], field);
+    assert.equal(unassistedRun.plan.assistanceFingerprint, undefined);
+
+    const reloadStart = requests.length;
+    await page.reload({waitUntil: 'domcontentloaded'}); await waitForPlaybackClock(page); await installCanonicalPreviewAudio(page);
+    await page.locator('#home-single-player').click(); await page.locator('#settings-button').click(); await page.locator('#key-count').selectOption('88');
+    await page.locator('#settings-dialog [data-close-panel]').click();
+    await page.locator(`[data-library-key=${JSON.stringify(libraryKey)}]`).click();
+    await page.waitForFunction(() => !document.querySelector('#start-performance').disabled && /assistance is off/.test(document.querySelector('#song-mod-preview-summary').textContent));
+    const restoredOff = await recipes(); await checkpoint('off-reloaded', {restoredOff});
+    assert.deepEqual(restoredOff, savedOff); assert.equal(restoredOff[0].recipe.format, 'wmc-practice-assistance-off');
+    assert.equal(requests.slice(reloadStart).some(row => row.path.startsWith('/api/practice-assistance/')), false, 'Reload must use ordinary full-part admission without rebuilding Automatic');
+    assert.equal(injected, 1);
+  } finally { await page.unroute('**/api/practice-assistance/original'); }
+});

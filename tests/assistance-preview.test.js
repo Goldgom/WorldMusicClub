@@ -31,12 +31,12 @@ function fixture(t) {
   return {directory, write, verify: () => verifyUiPreviewAssistance(directory)};
 }
 
-test('assistance preview requires all five exact non-skipped passes from its separate TAP file', t => {
+test('assistance preview requires all six exact non-skipped passes from its separate TAP file', t => {
   const f = fixture(t);
   for (const row of ASSISTANCE_PREVIEW_CASES) for (const replacement of [row.name + ' extra', row.name + ' # SKIP filtered', row.name + ' # TODO pending', 'different case']) {
     f.write('assistance.tap', passing.replace(row.name, replacement)); assert.throws(f.verify, /passing assistance case/);
   }
-  for (const text of [passing.replace(/^ok /, 'not ok '), passing + '\nok 6 - ' + ASSISTANCE_PREVIEW_CASES[0].name,
+  for (const text of [passing.replace(/^ok /, 'not ok '), passing + '\nok 7 - ' + ASSISTANCE_PREVIEW_CASES[0].name,
     passing.split('\n').slice(1).join('\n'), passing + '\nBail out! interrupted']) {
     f.write('assistance.tap', text); assert.throws(f.verify);
   }
@@ -44,11 +44,12 @@ test('assistance preview requires all five exact non-skipped passes from its sep
 });
 
 test('assistance preview hashes the separate TAP and every deterministic final JSON and PNG pair', t => {
-  const f = fixture(t), files = f.verify(); assert.equal(files.length, 11);
+  const f = fixture(t), files = f.verify(); assert.equal(files.length, 13);
   assert.deepEqual(files.map(row => row.name), ['assistance.tap', ...ASSISTANCE_PREVIEW_CASES.flatMap(row => [row.report, row.screenshot])]);
   for (const file of files) { const bytes = readFileSync(join(f.directory, file.name)); assert.equal(file.bytes, bytes.length); assert.equal(file.sha256, sha(bytes)); }
   assert.ok(files.filter(file => file.name.endsWith('.png')).every(file => file.width === 2 && file.height === 2));
-  assert.match(ASSISTANCE_PREVIEW_CASES.at(-1).scope, /fixture replay.*not desktop native acceptance/);
+  assert.match(ASSISTANCE_PREVIEW_CASES[4].scope, /fixture replay.*not desktop native acceptance/);
+  assert.match(ASSISTANCE_PREVIEW_CASES[5].scope, /endpoint fault injection.*not large\/private-song GUI acceptance/);
 });
 
 test('assistance preview rejects wrong checkpoint identity, version, phase, scope and application errors', t => {
@@ -86,7 +87,7 @@ test('assistance preview refuses symlinked evidence files and directories', {ski
   assert.throws(() => verifyUiPreviewAssistance(link), /ordinary assistance evidence directory/);
 });
 
-test('assistance browser producer and mandatory preview verifier share all five final identities', () => {
+test('assistance browser producer and mandatory preview verifier share all six final identities', () => {
   const browser = readFileSync(new URL('./assistance-app-browser.test.js', import.meta.url), 'utf8');
   for (const row of ASSISTANCE_PREVIEW_CASES) assert.ok(browser.includes(`test('${row.name}'`), row.name);
   assert.ok(browser.includes("await checkpoint('final')")); assert.ok(browser.includes('case: caseName, label, scope'));
