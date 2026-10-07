@@ -245,5 +245,8 @@
   "tests/direct-midi-proof.test.js",
   "tests/native-direct-midi-evidence.test.js",
   "tests/hosted-direct-midi-isolation.test.js",
-  "tests/browser-consumed-body-observer.test.js"
+  "tests/browser-consumed-body-observer.test.js",
+  "tests/source-instrument-details-view.test.js",
+  "tests/source-instrument-loader.test.js",
+  "tests/source-instrument-policy-invariants.test.js"
 ]
