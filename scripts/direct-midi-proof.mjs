@@ -2,6 +2,38 @@
 import assert from 'node:assert/strict';
 import {DIRECT_MIDI_POLICY,directMidiDigest} from './prepare-direct-midi-fixtures.mjs';
 
+/** Evidence-only oracle for the original media-free direct-MIDI fixtures.
+ * This is deliberately not a generic package serializer. The converter emits
+ * every field below (including license:null); unknown/missing fields and media
+ * are outside this finite fixture contract. Property insertion order follows
+ * clean_package.rs Metadata/FileDescriptor/SourceEvidence/Rights declarations,
+ * so whitespace and input property order never become package identity. */
+export function directMidiFixtureMetadata(scoreJson,fixture){
+ assert.equal(typeof scoreJson,'string');const scoreBytes=Buffer.byteLength(scoreJson);
+ assert.ok(scoreBytes>0&&scoreBytes<=256*1024,'Original fixture score must fit the evidence bound');
+ assert.match(fixture.filename,/^original-direct-midi-(boundary|layered|tracks|range|canonical)\.mid$/);
+ assert.ok(Buffer.isBuffer(fixture.bytes)&&fixture.bytes.length>0&&fixture.bytes.length<=4096);
+ assert.equal(fixture.manifest.bytes,fixture.bytes.length);assert.equal(fixture.manifest.sha256,directMidiDigest(fixture.bytes));
+ return{
+  format:'worldmusichub-song',version:2,id:`midi-basic-${fixture.manifest.sha256}`,title:fixture.filename,
+  score:{path:'score.json',bytes:scoreBytes,sha256:directMidiDigest(scoreJson)},
+  sources:[{format:'midi',bytes:fixture.bytes.length,sha256:fixture.manifest.sha256}],
+  rights:{status:'user_supplied_unverified',attribution:'User-supplied MIDI; source rights are unverified',license:null},
+  media:[],
+ };
+}
+export function validateDirectMidiPackageIdentity(clean,fixture){
+ assert.equal(typeof clean.metadata_json,'string');assert.ok(Buffer.byteLength(clean.metadata_json)>0&&Buffer.byteLength(clean.metadata_json)<=16*1024,'Original fixture metadata must fit the evidence bound');
+ const metadata=JSON.parse(clean.metadata_json),typed=directMidiFixtureMetadata(clean.score_json,fixture);
+ // Generated fixture fields use plain ASCII strings and integer lengths. Keep
+ // whitespace/key-order freedom, but reject duplicate keys and escaped/number
+ // aliases that JSON.parse would otherwise silently normalize.
+ const compact=clean.metadata_json.replace(/("(?:\\.|[^"\\])*")|[ \t\r\n]+/g,(match,string)=>string??'');
+ assert.equal(compact,JSON.stringify(metadata),'Generated metadata has duplicate keys or unsupported JSON aliases');
+ assert.deepEqual(metadata,typed,'Original direct-MIDI metadata differs from the complete generated fixture schema');
+ const identity=directMidiDigest(JSON.stringify(typed));assert.equal(clean.content_sha256,identity,'Package identity must hash typed metadata, not its raw JSON or a caller-provided key');return identity;
+}
+
 export function validateDirectMidiImport(report,fixture,{mode='commit',status='saved'}={}){
  assert.equal(report.format,'worldmusichub-import-report');assert.equal(report.version,1);assert.equal(report.mode,mode);assert.equal(report.source.filename,fixture.filename);assert.equal(report.source.bytes,fixture.bytes.length);assert.equal(report.source.sha256,fixture.manifest.sha256);assert.equal(report.source.retained,mode==='commit');assert.equal(report.items.length,1);
  const item=report.items[0];assert.equal(item.status,status);assert.equal(item.clean_package.profile,'wmh-basic-keys-midi1-v1');assert.equal(item.clean_package.coverage.key_attacks,4);assert.ok(report.warnings.some(warning=>/FIFO|fifo/.test(warning)),'Named interpretation must be disclosed');
@@ -9,7 +41,7 @@ export function validateDirectMidiImport(report,fixture,{mode='commit',status='s
  return item;
 }
 export function validateDirectMidiOpened(opened,fixture){
- const clean=opened.clean_package;assert.equal(clean.profile,'wmh-basic-keys-midi1-v1');assert.equal(opened.entry.key,`song-${clean.content_sha256}`);
+ const clean=opened.clean_package;assert.equal(clean.profile,'wmh-basic-keys-midi1-v1');const identity=validateDirectMidiPackageIdentity(clean,fixture);assert.equal(opened.entry.key,`song-${identity}`);
  const score=JSON.parse(clean.score_json),metadata=JSON.parse(clean.metadata_json),runtime=clean.runtime;
  assert.deepEqual(score.source,{format:'midi',bytes:fixture.bytes.length,sha256:fixture.manifest.sha256});assert.equal(metadata.score.bytes,Buffer.byteLength(clean.score_json));assert.equal(metadata.score.sha256,directMidiDigest(clean.score_json));assert.deepEqual(metadata.sources,[score.source]);
  assert.equal(score.performance.source_format,fixture.manifest.format);assert.equal(score.performance.ppq,384);assert.deepEqual(score.performance.tracks.map(track=>track.events),fixture.tracks,'Every ordered raw channel/meta event and metadata-only/empty track must survive');assert.deepEqual(score.performance.tracks.map(track=>track.source_index),fixture.tracks.map((_,index)=>index));

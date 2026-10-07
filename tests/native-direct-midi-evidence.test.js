@@ -3,16 +3,18 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFile, access} from 'node:fs/promises';
 import {directMidiFixtures,directMidiDigest as hash,DIRECT_MIDI_POLICY} from '../scripts/prepare-direct-midi-fixtures.mjs';
+import {directMidiFixtureMetadata} from '../scripts/direct-midi-proof.mjs';
 import {DIRECT_MIDI_NATIVE_PHASES,DIRECT_MIDI_NATIVE_CLAIMS,DIRECT_MIDI_NATIVE_SOURCE_FILES,validateDirectMidiNativeActions,validateDirectMidiNativeRequests,validateDirectMidiNativeRenderer} from '../scripts/verify-native-direct-midi-evidence.mjs';
 
 // Explicitly constructed validator unit inputs. They establish rejection
 // contracts only, never Windows, real picker, process, playback or audio success.
-const fixture=directMidiFixtures().boundary,identity='a'.repeat(64),key=`song-${identity}`,archiveKey=`pack-${fixture.manifest.sha256}`;
+const fixture=directMidiFixtures().boundary,archiveKey=`pack-${fixture.manifest.sha256}`;
 function opened(){
  const source={format:'midi',bytes:fixture.bytes.length,sha256:fixture.manifest.sha256},coverage={source_tracks:1,source_events:fixture.manifest.source_events,represented_events:fixture.manifest.source_events,key_attacks:4,key_releases:4};
- const score={source,performance:{source_format:0,ppq:384,tracks:fixture.tracks.map((events,source_index)=>({events:structuredClone(events),source_index}))},coverage},score_json=JSON.stringify(score),metadata_json=JSON.stringify({score:{bytes:Buffer.byteLength(score_json),sha256:hash(score_json)},sources:[source]});
+ const score={source,performance:{source_format:0,ppq:384,tracks:fixture.tracks.map((events,source_index)=>({events:structuredClone(events),source_index}))},coverage},score_json=JSON.stringify(score),metadata=directMidiFixtureMetadata(score_json,fixture),metadata_json=JSON.stringify(metadata),identity=hash(JSON.stringify(metadata)),key=`song-${identity}`;
  return{entry:{key},clean_package:{profile:'wmh-basic-keys-midi1-v1',content_sha256:identity,score_json,metadata_json,coverage,runtime:{profile:'wmh-basic-key-practice-v2',source_sha256:source.sha256,rendition:{policy_id:DIRECT_MIDI_POLICY,coverage:{source_attacks:4},duration_ms:2000,notes:[[],[],[],[]]},compilation:{timeline:{notes:fixture.expectedNotes.map(n=>[n.id,'midi-t1-c1-r0',n.midi,n.velocity,n.start_ms,n.duration_ms])}}}}};
 }
+const identity=opened().clean_package.content_sha256,key=`song-${identity}`;
 function importReport(mode){return{format:'worldmusichub-import-report',version:1,mode,source:{filename:fixture.filename,bytes:fixture.bytes.length,sha256:fixture.manifest.sha256,retained:mode==='commit',...(mode==='commit'?{archive_key:archiveKey}:{})},items:[{status:mode==='commit'?'saved':'ready',...(mode==='commit'?{entry:{key}}:{}),clean_package:{profile:'wmh-basic-keys-midi1-v1',content_sha256:identity,coverage:{key_attacks:4}}}],warnings:['Explicit FIFO rendition retained']};}
 const observed=(path,response,{status=200,request=null,sequence=3}={})=>({path,status,request,response,observation:'consumed',canceled:false,started:{sequence},settled:{sequence}});
 function renderer(phase='direct-midi-seed'){
