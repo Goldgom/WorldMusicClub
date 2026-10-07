@@ -41,6 +41,8 @@ import {isDeepStrictEqual} from 'node:util';
 import {fixture} from './frontend-fixtures.js';
 import {densePianoforte} from './numbered-layout-fixtures.js';
 import {originalGuitarChordTransitions} from './guitar-live-fixtures.js';
+import {originalGuitarUnionStudy} from './guitar-union-fixture.js';
+import {GUITAR_UNION_BROWSER_CASE,GUITAR_UNION_REPORT,GUITAR_UNION_VIEWPORTS,guitarUnionScreenshot,assertGuitarUnionState,assertGuitarUnionReport} from './guitar-union-browser-proof.js';
 import {connectionDiagnostics} from './browser-connection-diagnostics.js';
 import {prepareAudioAdmissionDiagnostics, installAudioAdmissionDiagnostics, readAudioAdmissionDiagnostics, readPlaybackFailureState} from './browser-audio-admission-diagnostics.js';
 import {validatePerformanceRecord} from '../web/performance-library.js';
@@ -2255,6 +2257,73 @@ test('short-landscape following reveals later systems with non-color cues and pr
   const stageAfter=await page.evaluate(()=>{const box=document.querySelector('.transport').getBoundingClientRect();return{windowX:scrollX,windowY:scrollY,transport:{x:box.x,y:box.y,width:box.width,height:box.height}}});assert.deepEqual(stageAfter,stageBefore,'Owned pane reveal never scrolls or moves the stage and transport');
   await page.setViewportSize({width:1000,height:500});await page.waitForFunction(cueVisible);assert.deepEqual(await exportTakeData(),take,'Follow, manual scroll, re-enable and resize preserve every paused input and clock segment');assert.equal((await page.locator('#progress').evaluate(readPlaybackClock)).positionMs,position);assert.deepEqual(await exportScore(),score);
   await writeFile(join(artifactDirectory,'worldmusichub-live-verified-pane-reveal.json'),JSON.stringify({initialGeometry,target,expectedIds,position,current,stageBefore,stageAfter,paused_take_unchanged:true,reduced_motion:true,manual_scroll_suspended:true},null,2));
+});
+
+test(GUITAR_UNION_BROWSER_CASE,{timeout:60_000},async()=>{
+  await page.setViewportSize(GUITAR_UNION_VIEWPORTS[0]);await page.emulateMedia({reducedMotion:'reduce'});await hideNotation();
+  await ui('#instrument').selectOption('guitar');await setSessionMode('listen');await ui('#count-in').uncheck();
+  await ui('#guitar-frets').fill('5');await ui('#instrument-apply').click();await ui('#play-button:not([disabled])').waitFor();
+  const score=originalGuitarUnionStudy(),states=[],snapshots=[],exports=[];
+  const [compiledResponse]=await Promise.all([nextResponse('/api/compile'),ui('#score-file').setInputFiles({name:score.id+'.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(score))})]);
+  const compilation=await responseJson(compiledResponse);assert.deepEqual(compilation.score,score);await readyForTitle(score.title);await hideNotation();
+  const watch=(ids,locked=false)=>page.waitForResponse(response=>{
+    if(new URL(response.url()).pathname!=='/api/fingering/guitar'||response.request().method()!=='POST')return false;
+    const body=response.request().postDataJSON();return body.score?.id===score.id&&isDeepStrictEqual(body.selected_part_ids,ids)&&body.locks.length===(locked?1:0);
+  });
+  async function retainState(label,response,ids,{blocked=false}={}){
+    const plan=await responseJson(response);
+    await page.waitForFunction(({status,names})=>document.querySelector('#guitar-planning').dataset.status===status&&document.querySelector('#guitar-selected-parts').textContent.includes(names),{status:blocked?'infeasible_under_model':'ready',names:score.parts.filter(part=>ids.includes(part.id)).map(part=>part.name).join(', ')});
+    const humanPartIds=await humanModPartIds();
+    const state={label,path:new URL(response.url()).pathname,httpStatus:response.status(),request:response.request().postDataJSON(),plan,ui:await page.evaluate(()=>({
+      status:document.querySelector('#guitar-planning').dataset.status,scope:document.querySelector('#guitar-selected-parts').textContent,
+      lockSources:[...document.querySelector('#guitar-lock-source').options].map(option=>option.value),mode:document.querySelector('#session-mode').value,firstPart:document.querySelector('#practice-part').value,
+      diagnostics:document.querySelector('#guitar-plan-diagnostics').textContent,recommendedCount:document.querySelectorAll('#fretboard [data-recommended="true"]').length,
+      cards:[...document.querySelectorAll('.guitar-target')].map(card=>({id:card.dataset.targetId,sourceIds:JSON.parse(card.dataset.sourceIds),occurrenceIds:JSON.parse(card.dataset.occurrenceIds),route:JSON.parse(card.dataset.route)})),
+    }))};state.ui.humanPartIds=humanPartIds;assertGuitarUnionState(state,compilation,ids,{blocked});states.push(state);return state;
+  }
+  async function retainSnapshots(scope){
+    await closeShellPanels();assert.equal((await page.locator('#progress').evaluate(readPlaybackClock)).positionMs,0);
+    for(const viewport of GUITAR_UNION_VIEWPORTS){
+      await page.setViewportSize(viewport);
+      // The small planning panel may scroll. Reveal its scope through normal
+      // scrolling, then measure real clipping for it and both live-route rows.
+      await page.locator('#guitar-selected-parts').scrollIntoViewIfNeeded();
+      const routes=async selector=>{
+        const visibility=await actualMarkerVisibility(selector),identity=await page.locator(selector).evaluateAll(nodes=>nodes.map(node=>({assignments:JSON.parse(node.dataset.assignments),sources:JSON.parse(node.dataset.sourceIds),accessible:node.getAttribute('aria-label')})));
+        return visibility.map((marker,index)=>({...marker,...identity[index]}));
+      };
+      const current=await routes('.guitar-live-current .guitar-live-choice'),next=await routes('.guitar-live-next .guitar-live-choice');
+      const [scopeLabel]=await actualMarkerVisibility('#guitar-selected-parts'),[play]=await actualMarkerVisibility('#play-button');
+      play.hit=await page.locator('#play-button').evaluate(node=>{const r=node.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return node===hit||node.contains(hit);});
+      const frame={scope,viewport,current,next,scopeLabel,play,positionMs:(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs,controlsClosed:await page.locator('dialog[open],#guitar-plan-controls[open]').count()===0,document:await page.evaluate(()=>({width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight})),transition:await page.locator('#guitar-live-transition').textContent()};
+      const name=guitarUnionScreenshot(scope,viewport),bytes=await page.screenshot({path:join(artifactDirectory,name),fullPage:false,animations:'disabled'});
+      frame.screenshot={name,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),...viewport};snapshots.push(frame);
+    }
+    await page.setViewportSize(GUITAR_UNION_VIEWPORTS[0]);
+  }
+  async function retainExport(label){const exported=await exportScore();assert.deepEqual(exported,score);exports.push({label,score:exported});await closeShellPanels();}
+  const abResponse=watch(['A','B']);await configureStageMod({performers:['A','B'],layout:'solo'});
+  const ab=await retainState('ab',await abResponse,['A','B']);await retainExport('ab');await retainSnapshots('ab');
+  const held=ab.plan.assignments.find(choice=>choice.source_note_ids.includes('held-e')),later=ab.plan.assignments.find(choice=>choice.source_note_ids.includes('later-g'));
+  assert.equal(ab.plan.profile.tuning[held.string-1],59);assert.equal(held.fret,5,'The joint held-string route reserves high E for the later G');assert.equal(ab.plan.profile.tuning[later.string-1],64);assert.equal(later.fret,3);
+  await page.locator('#play-button').click();await waitForPlaybackClockAdvance(page);await page.locator('#stage-title').click();await page.keyboard.press('i');await page.waitForFunction(()=>document.querySelector('#hud-captured').textContent==='1');await page.locator('#play-button').click();await page.waitForFunction(()=>document.querySelector('.performance-status').dataset.phase!=='grace');
+  const takeBefore=await exportTakeData();await closeShellPanels();
+  await page.locator('#guitar-plan-controls>summary').click();await page.locator('#guitar-lock-source').selectOption('held-e');
+  const highE=ab.plan.profile.tuning.indexOf(64)+1;assert.equal(highE,1,'Use the UI profile tuning order, not the Rust low-to-high test profile');
+  await page.locator('#guitar-lock-string').selectOption(String(highE));await page.locator('#guitar-lock-fret').selectOption('0');await page.locator('#guitar-lock-finger').selectOption('0');
+  const conflictResponse=watch(['A','B'],true);await page.locator('#guitar-apply-lock').click();await retainState('blocked',await conflictResponse,['A','B'],{blocked:true});await retainExport('blocked');
+  const recoveryResponse=watch(['A','B']);await page.locator('#guitar-remove-lock').click();await retainState('recovered',await recoveryResponse,['A','B']);
+  await page.locator('#guitar-plan-controls>summary').click();const takeAfterLockRecovery=await exportTakeData();assert.deepEqual(takeAfterLockRecovery,takeBefore);await closeShellPanels();
+  await openSongMod(page,{origin:'stage'});await page.locator('[data-mod-performer="B"]').selectOption('machine');await page.locator('[data-mod-performer="C"]').selectOption('human');
+  const cancelWarning=await page.locator('#song-mod-warning').textContent();await page.locator('#song-mod-cancel').click();
+  const cancelHumanPartIds=await humanModPartIds(),takeAfterCancel=await exportTakeData();assert.deepEqual(takeAfterCancel,takeBefore);await closeShellPanels();
+  let applyWarning;const acResponse=watch(['A','C']);await configureStageMod({performers:['A','C'],layout:'solo',beforeApply:async()=>{applyWarning=await page.locator('#song-mod-warning').textContent();}});
+  await retainState('ac',await acResponse,['A','C']);
+  const reset={clock:await page.locator('#progress').evaluate(readPlaybackClock),captured:await page.locator('#hud-captured').textContent(),exportDisabled:await page.locator('#export-takes').isDisabled()};
+  await retainExport('ac');await retainSnapshots('ac');
+  const allResponse=watch(['A','B','C']);await configureStageMod({performers:'all',layout:'solo'});await retainState('all',await allResponse,['A','B','C']);await retainExport('all');await retainSnapshots('all');
+  const report={version:1,scenario:'guitar-human-union',original_fixtures_only:true,physical_midi_verified:false,physical_fingering_verified:false,global_optimum_claimed:false,compilation,states,snapshots,exports,takeBefore,takeAfterLockRecovery,takeAfterCancel,cancelWarning,cancelHumanPartIds,applyWarning,reset};
+  await writeFile(join(artifactDirectory,GUITAR_UNION_REPORT),JSON.stringify(report,null,2));assertGuitarUnionReport(report);
 });
 
 test('real whole-phrase guitar route honors editable locks, exposes conflicts and preserves a paused take', {timeout:60_000}, async()=>{

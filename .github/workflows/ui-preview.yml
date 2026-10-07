@@ -28,7 +28,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p ui-preview
-          node --test --test-reporter=tap --test-name-pattern='^(real free piano fills desktop|original grand staff and Jianpu follow|game menu and audible song preview|normal and free piano share|original falling bars visibly cross|real D768 lobby and compact performance fit|short-landscape following reveals|real guitar current and next six-note|real initial compact guide stays|real compact 88-key and custom extreme guides|real piano hands preserve merged ties|real short-landscape guitar keeps a complete labelled row and transport beside notation|real home menu keeps its hitbox stable at the hover boundary|real unmuted live worklet verifies finite silence through (settings|authoring) after (keyup|navigation)$|real skin UI import preserves paused input and finite live worklet silence$|real skin selection survives closing and reopening the same browser profile$|real home cards stay reachable without footer overlap at native, compact and long-label sizes$|real human Mod timbres preserve shared ownership, PCM, legacy storage and interrupted controls$)' tests/full-app-browser.test.js | tee ui-preview/tests.tap
+          node --test --test-reporter=tap --test-name-pattern='^(real free piano fills desktop|original grand staff and Jianpu follow|game menu and audible song preview|normal and free piano share|original falling bars visibly cross|real D768 lobby and compact performance fit|short-landscape following reveals|real guitar current and next six-note|real initial compact guide stays|real compact 88-key and custom extreme guides|real piano hands preserve merged ties|real short-landscape guitar keeps a complete labelled row and transport beside notation|real home menu keeps its hitbox stable at the hover boundary|real unmuted live worklet verifies finite silence through (settings|authoring) after (keyup|navigation)$|real skin UI import preserves paused input and finite live worklet silence$|real skin selection survives closing and reopening the same browser profile$|real home cards stay reachable without footer overlap at native, compact and long-label sizes$|real human Mod timbres preserve shared ownership, PCM, legacy storage and interrupted controls$|real guitar human union replans held strings across Mod subsets and explicit All$)' tests/full-app-browser.test.js | tee ui-preview/tests.tap
       - name: Verify preview provenance, required screenshots and finite live-audio evidence
         run: node scripts/verify-ui-preview.mjs ui-preview
       - name: Retain compact failure pixels and geometry before the full preview
@@ -45,6 +45,8 @@ jobs:
             ui-preview/worldmusichub-live-compact-*-budget.json
             ui-preview/worldmusichub-human-mod-*.json
             ui-preview/worldmusichub-human-mod-*.png
+            ui-preview/worldmusichub-guitar-human-union*.json
+            ui-preview/worldmusichub-guitar-human-union*.png
             ui-preview/worldmusichub-live-silence-*.json
             ui-preview/worldmusichub-skin-*.json
             ui-preview/worldmusichub-skin-*.png
