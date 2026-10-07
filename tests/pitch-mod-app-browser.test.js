@@ -178,8 +178,18 @@ async function roleFrames() {
     globalThis.__pitchModRoles = rows; globalThis.__stopPitchModRoles = () => { read(); observer.disconnect(); return rows; };
   });
 }
-async function showJianpu() {
+async function openNotationControls() {
   if (await page.locator('#notation-toggle').getAttribute('aria-expanded') !== 'true') await page.locator('#notation-toggle').click();
+  const tools = page.locator('#notation-tools');
+  assert.equal(await tools.isVisible(), true, 'Use the visible score-options disclosure');
+  if (!await tools.evaluate(node => node.open)) await tools.locator('summary').first().click();
+}
+async function closeNotationControls() {
+  const tools = page.locator('#notation-tools');
+  if (await tools.evaluate(node => node.open)) await tools.locator('summary').first().click();
+}
+async function showJianpu() {
+  await openNotationControls();
   await page.locator('#jianpu-button').click(); await page.locator('#jianpu-reference').selectOption('fixed'); await page.locator('#notation-part').selectOption('');
   while (!await page.locator('#notation-prev').isDisabled()) await page.locator('#notation-prev').click(); await frames();
   const rows = [];
@@ -189,6 +199,7 @@ async function showJianpu() {
     await page.locator('#notation-next').click(); await frames();
   }
   while (!await page.locator('#notation-prev').isDisabled()) await page.locator('#notation-prev').click(); await frames();
+  await closeNotationControls();
   return rows;
 }
 
@@ -211,8 +222,9 @@ test(PITCH_MOD_CASES[0], {timeout: 90_000}, async () => {
   report.take = await exportJson('export-takes', 'results'); report.exportedSource = await exportJson('export-button', 'score-tools');
   report.audio = await readCanonicalPreviewAudio(page);
   report.gestures = await page.evaluate(() => globalThis.__pitchModGestures);
-  if (await page.locator('#notation-toggle').getAttribute('aria-expanded') !== 'true') await page.locator('#notation-toggle').click();
+  await openNotationControls();
   await page.locator('#engraved-button').click();
+  await closeNotationControls();
   await page.waitForFunction(() => document.querySelectorAll('#engraved-staff svg').length > 0 && document.querySelectorAll('#engraved-staff [data-source-note-id]').length > 0);
   report.engraving = {request: requests.findLast(row => row.path === '/api/export/musicxml'),
     sourceIds: await page.locator('#engraved-staff [data-source-note-id]').evaluateAll(nodes => [...new Set(nodes.map(node => node.dataset.sourceNoteId))].sort()),
