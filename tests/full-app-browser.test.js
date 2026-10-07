@@ -50,6 +50,7 @@ import {validatePerformanceRecord} from '../web/performance-library.js';
 import {assertAddedLibraryCopies} from './library-copy-assertions.js';
 import {settlePianoViewportBudget} from './browser-piano-budget.js';
 import {browserMarkerVisibility} from './browser-marker-visibility.js';
+import {captureJsonResponse} from './browser-response-capture.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const binary = resolve(root, process.env.WMH_SERVER_BINARY || join('target', 'debug', `practice-server${process.platform === 'win32' ? '.exe' : ''}`));
@@ -587,12 +588,59 @@ test('real Settings build diagnostics lazily bind the Rust process and keep copi
   assert.ok(executableStat.isFile() && executableStat.size > 0 && executableStat.size <= 256 * 1024 * 1024);
   const executableHash = createHash('sha256').update(await readFile(binary)).digest('hex');
   assert.equal(diagnosticRequests().length, 0, 'Opening and leaving Settings visible must not fetch diagnostics');
-  const [response] = await Promise.all([nextResponse(diagnosticsPath), page.locator('#build-diagnostics-read').click()]);
+  // The pinned Playwright adds navigation advice to any body protocol error;
+  // that advice alone does not establish that this page actually navigated.
+  // Capture this request's body before waiting for the click to finish, and keep
+  // bounded, read-only observations if Chromium still cannot supply the body.
+  const readStarted = performance.now(), readEvents = [], requestIds = new WeakMap(), owner = page.mainFrame();
+  let requestId = 0, captureFailure = null, response, identity;
+  const observe = (event, detail = {}) => {
+    if (readEvents.length < 24) readEvents.push({event, elapsed_ms: Math.round(performance.now() - readStarted), ...detail});
+  };
+  const describeRequest = request => {
+    if (!requestIds.has(request)) requestIds.set(request, ++requestId);
+    let mainFrame = false;try { mainFrame = request.frame() === owner; } catch { /* Worker-owned requests have no frame. */ }
+    return {request_id: requestIds.get(request), method: request.method(), resource_type: request.resourceType(),
+      main_frame: mainFrame, navigation: request.isNavigationRequest(), redirected: Boolean(request.redirectedFrom()), has_body: request.postData() !== null};
+  };
+  const isDiagnosticRequest = request => new URL(request.url()).pathname === diagnosticsPath;
+  const listeners = {
+    request: request => { if (isDiagnosticRequest(request)) observe('request', describeRequest(request)); },
+    response: received => { if (isDiagnosticRequest(received.request())) observe('response', {...describeRequest(received.request()),
+      same_origin: new URL(received.url()).origin === origin, status: received.status(), from_service_worker: received.fromServiceWorker(),
+      cache_control: received.headers()['cache-control'] ?? null, content_length: received.headers()['content-length'] ?? null}); },
+    requestfinished: request => { if (isDiagnosticRequest(request)) observe('request-finished', describeRequest(request)); },
+    requestfailed: request => { if (isDiagnosticRequest(request)) observe('request-failed', {...describeRequest(request), error: request.failure()?.errorText}); },
+    framenavigated: frame => observe('frame-navigated', {main_frame: frame === owner}),
+    close: () => observe('page-closed'), crash: () => observe('page-crashed'),
+  };
+  for (const [event, listener] of Object.entries(listeners)) page.on(event, listener);
+  try {
+    [{response, json: identity}] = await Promise.all([
+      captureJsonResponse(nextResponse(diagnosticsPath), observe),
+      page.locator('#build-diagnostics-read').click().then(() => observe('click-complete')),
+    ]);
+  } catch (error) {
+    captureFailure = {name: error.name, message: error.message, stack: error.stack};throw error;
+  } finally {
+    for (const [event, listener] of Object.entries(listeners)) page.off(event, listener);
+    const observed = await page.evaluate(() => ({state: document.querySelector('#build-diagnostics')?.dataset.state,
+      settings_open: document.querySelector('#settings-dialog')?.open, include_path: document.querySelector('#build-diagnostics-include-path')?.checked,
+      source_sha: document.querySelector('#build-diagnostics-value-sourceSha')?.textContent,
+      source_tree: document.querySelector('#build-diagnostics-value-sourceTree')?.textContent,
+      executable_sha256: document.querySelector('#build-diagnostics-value-hash')?.textContent})).catch(error => ({observation_error: error.message}));
+    const evidence = {test: currentTestName, failure: captureFailure, events: readEvents, observed};
+    if (captureFailure) console.error(`Build diagnostics response capture: ${JSON.stringify(evidence)}`);
+    await writeFile(join(artifactDirectory, 'worldmusichub-live-build-diagnostics-response.json'), JSON.stringify(evidence, null, 2))
+      .catch(error => console.error(`Cannot save build response observations: ${error.message}`));
+  }
   assert.equal(response.url(), `${origin}${diagnosticsPath}`);
   assert.equal(response.request().method(), 'GET');assert.equal(response.request().postData(), null);
   assert.equal(response.request().redirectedFrom(), null);
+  assert.equal(response.frame(), owner);assert.equal(response.fromServiceWorker(), false);
+  assert.equal(response.request().resourceType(), 'fetch');assert.equal(response.request().isNavigationRequest(), false);
   assert.equal(response.headers()['x-content-type-options'], 'nosniff');
-  const identity = await responseJson(response), {compiled, native} = identity;
+  const {compiled, native} = identity;
   assert.equal(identity.schema_version, 1);
   assert.equal(compiled.source_sha, sourceSha);assert.equal(compiled.source_tree, sourceTree);
   assert.equal(compiled.source_commit_count, sourceCount);
