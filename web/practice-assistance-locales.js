@@ -23,7 +23,7 @@ const en={
  unsaved:'This tab only. Saving failed; the previous saved preference has been preserved.',
  unavailable:'Saved preferences could not be read. Choose an explicit assignment; persistence is unavailable.',
  error:'Draft unchecked. Assignment could not be admitted. The current song and applied ownership are unchanged.',
- summary:'{human} human targets · {machine} machine notes',machineWithin:'Machine help in this human part uses its saved machine sound. Human live sound stays separate.',
+ summary:'{human} human targets · {machine} machine notes',machineWithin:'Machine help in this human part uses its saved machine sound.',
 };
 const zh={
  sessionDefault:'无法读取已保存的音符辅助偏好。当前标签页可使用原始完整声部练习；此选择尚未保存。',
@@ -49,6 +49,6 @@ const zh={
  unsaved:'仅当前标签页有效。保存失败，之前保存的偏好仍被保留。',
  unavailable:'无法读取已保存偏好。请明确选择分配；当前无法持久保存。',
  error:'草稿尚未检查。无法接受此分配。当前歌曲和已应用的演奏归属保持不变。',
- summary:'{human} 个真人目标 · {machine} 个机器音符',machineWithin:'该真人声部中的机器辅助使用已保存的机器音色，真人现场音色独立保留。',
+ summary:'{human} 个真人目标 · {machine} 个机器音符',machineWithin:'该真人声部中的机器辅助使用已保存的机器音色。',
 };
 export function assistanceText(locale,key,params={}){return (locale==='en'?en:zh)[key]?.replace(/\{(\w+)\}/g,(_,name)=>String(params[name]??''))||key;}

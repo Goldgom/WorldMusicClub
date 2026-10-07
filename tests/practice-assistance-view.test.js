@@ -35,7 +35,7 @@ test('one Start, numeric assistance in Mod, bilingual noncolor legend, actual co
  assert.match(f.$('song-mod-assistance-legend').textContent,/● Human.*◆ Machine/);assert.match(f.$('song-mod-assistance').textContent,/semitones/);
  f.$('song-mod-assistance-check').click();await settle(()=>f.controller.state().phase==='prepared');
  assert.match(f.$('song-mod-assistance-status').textContent,/2 human targets · 2 machine occurrences/);assert.match(f.$('song-mod-assistance-units').textContent,/2 human source units \+ 2 machine source units = 4/);
- const machine=f.document.querySelector('[data-mod-instrument="piano"]'),live=f.document.querySelector('[data-mod-live-instrument="piano"]');assert.equal(machine.disabled,false);assert.equal(live.disabled,false);assert.equal(machine.value,'reed');assert.match(f.$(machine.getAttribute('aria-describedby')).textContent,/saved machine sound/);
+ const machine=f.document.querySelector('[data-mod-instrument="piano"]'),live=f.document.querySelector('[data-mod-live-instrument="piano"]');assert.equal(machine.disabled,false);assert.equal(live,null);assert.equal(machine.value,'reed');assert.match(f.$(machine.getAttribute('aria-describedby')).textContent,/saved machine sound/);
  f.i18n.setLocale('zh-CN');assert.match(f.$('song-mod-assistance-legend').textContent,/● 真人.*◆ 机器/);assert.match(f.$('song-mod-assistance-status').textContent,/2 个真人目标/);f.i18n.setLocale('en');
  assert.equal(f.starts,0);assert.equal(f.applies,0);assert.equal(f.storage.values.size,0);f.$('song-mod-apply').click();await settle(()=>!f.$('song-mod-dialog').open);assert.equal(f.applies,1);assert.equal(f.starts,0);assert.equal(f.storage.values.size,1);assert.equal(f.context.mod.config.parts[0].instrument,'reed');assert.equal(f.context.mod.config.parts[0].liveInstrument,'follow');
 });
@@ -76,9 +76,9 @@ test('a display-only edit keeps the checked assignment and take-reset checkbox o
 test('default Original part-union and sound edits keep the ordinary Mod path without assistance API or preference writes',async()=>{
  const f=fixture({api:()=>{throw Error('Unrequested strict Original would reject this cross-scope source');}});
  const human=f.document.querySelector('[data-mod-performer="bass"]');human.value='human';f.emit(human,'change');
- const live=f.document.querySelector('[data-mod-live-instrument="piano"]');live.value='piano';f.emit(live,'change');
+ assert.equal(f.document.querySelector('[data-mod-live-instrument="piano"]'),null);
  f.$('song-mod-apply').click();await settle(()=>!f.$('song-mod-dialog').open);
- assert.equal(f.calls.length,0);assert.equal(f.storage.values.size,0);assert.equal(f.controller.current(),null);assert.equal(f.applyOptions[0].assistanceChanged,false);assert.equal(f.applyOptions[0].assistanceExplicitOptIn,false);assert.equal(f.applyOptions[0].assistance,null);assert.equal(f.context.mod.config.parts[1].performer,'human');assert.equal(f.context.mod.config.parts[0].liveInstrument,'piano');
+ assert.equal(f.calls.length,0);assert.equal(f.storage.values.size,0);assert.equal(f.controller.current(),null);assert.equal(f.applyOptions[0].assistanceChanged,false);assert.equal(f.applyOptions[0].assistanceExplicitOptIn,false);assert.equal(f.applyOptions[0].assistance,null);assert.equal(f.context.mod.config.parts[1].performer,'human');assert.equal(f.context.mod.config.parts[0].liveInstrument,'follow');
  await f.controller.restore();assert.equal(f.controller.state().phase,'default');assert.equal(f.calls.length,0);
 });
 test('explicit Original check opts into checked receipt admission and persists only after Apply',async()=>{
@@ -99,7 +99,7 @@ test('an invalid saved preference cannot use a plain Original union edit as a fa
 });
 
 test('idle stage Original union and sound changes preserve the ordinary path without a reset confirmation',async()=>{
- const f=fixture({stage:true,hasTakes:false});const human=f.document.querySelector('[data-mod-performer="bass"]');human.value='human';f.emit(human,'change');const live=f.document.querySelector('[data-mod-live-instrument="piano"]');live.value='piano';f.emit(live,'change');
+ const f=fixture({stage:true,hasTakes:false});const human=f.document.querySelector('[data-mod-performer="bass"]');human.value='human';f.emit(human,'change');assert.equal(f.document.querySelector('[data-mod-live-instrument="piano"]'),null);
  assert.equal(f.$('song-mod-assistance-reset-label').hidden,true);assert.equal(f.$('song-mod-assistance-reset').checked,false);assert.equal(f.$('song-mod-apply').disabled,false);f.$('song-mod-apply').click();await settle(()=>!f.$('song-mod-dialog').open);
  assert.equal(f.calls.length,0);assert.equal(f.storage.values.size,0);assert.equal(f.applyOptions[0].assistanceChanged,false);assert.equal(f.applyOptions[0].resetConfirmed,true);assert.equal(f.starts,0);
 });
@@ -121,7 +121,7 @@ test('an idle saved recipe awaiting restore still requires reset confirmation fo
 
 test('changing sound with an active checked recipe still requires the assistance reset acknowledgement',async()=>{
  const f=fixture({stage:true,hasTakes:true});f.change('song-mod-assistance-mode','automatic');f.change('song-mod-assistance-reset',true);f.$('song-mod-apply').click();await settle(()=>!f.$('song-mod-dialog').open);const active=f.controller.current();
- f.view.open('stage');const live=f.document.querySelector('[data-mod-live-instrument="piano"]');live.value='guitar';f.emit(live,'change');assert.equal(f.$('song-mod-assistance-reset-label').hidden,false);assert.equal(f.$('song-mod-apply').disabled,true);f.$('song-mod-cancel').click();assert.equal(f.controller.current(),active);
+ f.view.open('stage');const machine=f.document.querySelector('[data-mod-instrument="piano"]');machine.value='triangle';f.emit(machine,'change');assert.equal(f.$('song-mod-assistance-reset-label').hidden,false);assert.equal(f.$('song-mod-apply').disabled,true);f.$('song-mod-cancel').click();assert.equal(f.controller.current(),active);
 });
 
 test('explicit Off is a bilingual reversible choice, requires stage acknowledgement and never calls checked Original',async()=>{

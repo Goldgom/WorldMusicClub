@@ -65,3 +65,10 @@
 @media(max-width:500px) {.song-mod-assistance-limits {grid-template-columns:1fr}.song-mod-assistance {padding:.75rem}.song-mod-assistance>label {flex-wrap:wrap}}
 
 #song-mod-assistance-off {max-width:100%;white-space:normal;text-align:center}
+
+.song-mod-source-details {grid-column:1/-1;min-width:0;font-size:.85rem}
+.song-mod-source-details summary {cursor:pointer;overflow-wrap:anywhere}
+.song-mod-source-details dl {display:grid;grid-template-columns:minmax(9rem,1fr) minmax(0,3fr);gap:.35rem .8rem;margin:.65rem 0}
+.song-mod-source-details dt {opacity:.8}
+.song-mod-source-details dd {margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
+@media (max-width:700px) {.song-mod-source-details dl {grid-template-columns:1fr}.song-mod-source-details dd {margin-bottom:.35rem}}
