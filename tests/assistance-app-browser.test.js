@@ -24,7 +24,8 @@ import {installPlaybackClockReader, waitForPlaybackClock, waitForPlaybackClockAd
 import {canonicalPreviewAudioBootstrap, installCanonicalPreviewAudio, readCanonicalPreviewAudio} from './browser-canonical-preview-audio.js';
 import {assistanceBrowserFixtures, originalCrossScopeAssistanceScore, replayNativeAssistanceAudio} from './assistance-browser-fixtures.js';
 import {ASSISTANCE_STORAGE_PREFIX} from '../web/practice-assistance.js';
-import {ASSISTANCE_PREVIEW_CASES} from '../scripts/ui-preview-assistance.mjs';
+import {ASSISTANCE_PREVIEW_CASES, assistanceCanonicalPresetFixture, validateAssistancePresetPreview, validateAssistanceModLayout} from '../scripts/ui-preview-assistance.mjs';
+import {assistancePresetSettings} from '../web/practice-assistance-receipt.js';
 
 const fixtures = assistanceBrowserFixtures(), canonical = fixtures.canonical;
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -87,6 +88,13 @@ beforeEach(async t => {
   });
   await installPlaybackClockReader(page);
   await page.addInitScript({content: canonicalPreviewAudioBootstrap});
+  await page.addInitScript(() => {
+    globalThis.__assistanceGestures = [];
+    for (const type of ['input', 'change', 'keydown']) document.addEventListener(type, event => {
+      if (event.target.id?.startsWith('song-mod-assistance-') && globalThis.__assistanceGestures.length < 256)
+        globalThis.__assistanceGestures.push({type, id: event.target.id, value: event.target.value, key: event.key || null, trusted: event.isTrusted});
+    }, true);
+  });
   await page.goto(origin, {waitUntil: 'domcontentloaded'});
   await waitForPlaybackClock(page); await selectLegacyEnglish(page);
   await page.locator('#home-single-player').click();
@@ -121,7 +129,7 @@ async function checkpoint(label, details = {}) {
   const base = join(artifacts, `worldmusichub-live-assistance-${caseName}-${label}`);
   const scope = ASSISTANCE_PREVIEW_CASES.find(row => row.caseId === caseName)?.scope;
   await writeFile(`${base}.json`, JSON.stringify({version: 1, case: caseName, label, scope, ui, audio, ...observed, requests, pageErrors, serverLog}, null, 2));
-  await page.screenshot({path: `${base}.png`, fullPage: true});
+  await page.screenshot({path: `${base}.png`, fullPage: !label.startsWith('preset-layout-')});
   return {ui, audio};
 }
 
@@ -161,9 +169,65 @@ async function checkAutomatic() {
   const response = page.waitForResponse('**/api/practice-assistance/generate');
   await page.locator('#song-mod-assistance-check').click();
   const replied = await response; assert.equal(replied.status(), 200);
-  const body = await replied.json();
+  const body = await replied.json(); observed.lastCheckedRequest = replied.request().postDataJSON();
   await page.waitForFunction(() => document.querySelector('#song-mod-assistance-status')?.dataset.phase === 'prepared');
   return body;
+}
+async function presetView() {
+  return page.evaluate(() => {
+    const node = id => document.getElementById('song-mod-assistance-' + id);
+    return {preset: node('preset').value, settings: Object.fromEntries([...node('limits').querySelectorAll('input')].map(input => [input.id.slice('song-mod-assistance-'.length), Number(input.value)])),
+      state: node('preview').dataset.state, status: node('status').textContent, units: node('units').textContent, unitsHidden: node('units').hidden};
+  });
+}
+async function selectPreset(id) {
+  const select = page.getByRole('combobox', {name: 'Keyboard configuration', exact: true});
+  // Genuine keyboard events select the native option; Custom is derived by edits.
+  if (await select.inputValue() === 'single') await select.press('ArrowDown');
+  await select.press('Home');
+  for (let n = 0; n < ['single', 'balanced', 'dense'].indexOf(id); n++) await select.press('ArrowDown');
+  assert.equal(await select.inputValue(), id);
+  const gesture = await page.evaluate(() => globalThis.__assistanceGestures.filter(event => event.id === 'song-mod-assistance-preset' && event.type === 'change').at(-1));
+  assert.equal(gesture?.trusted, true); assert.equal(gesture?.value, id);
+  const view = await presetView();
+  validateAssistancePresetPreview(view, {id, settings: assistancePresetSettings(id)});
+  return {id, gesture, unchecked: view};
+}
+async function checkedPreset(row) {
+  const response = await checkAutomatic(), request = structuredClone(observed.lastCheckedRequest), view = await presetView();
+  assert.deepEqual(response, assistanceCanonicalPresetFixture().presets[row.id].response, 'A preset result is the actual retained Rust output');
+  assert.deepEqual(request.settings, assistancePresetSettings(row.id));
+  assert.deepEqual(request.score, canonical.compilation.score);
+  validateAssistancePresetPreview(view, {id: row.id, settings: request.settings, checked: response.checked});
+  return {...row, request, response, view};
+}
+async function measureModLayout() {
+  const measurements = [];
+  for (const viewport of [{width: 1280, height: 720}, {width: 390, height: 844}]) {
+    await page.setViewportSize(viewport); await frames();
+    const select = page.getByRole('combobox', {name: 'Keyboard configuration', exact: true});
+    await select.press('Home'); assert.equal(await select.inputValue(), 'single');
+    const keyboard = await page.evaluate(() => ({focused: document.activeElement?.id, event: globalThis.__assistanceGestures.filter(event => event.id === 'song-mod-assistance-preset' && event.type === 'keydown').at(-1)}));
+    const controls = [];
+    for (const id of ['song-mod-assistance-preset', ...Object.keys(assistancePresetSettings('single')).filter(key => key !== 'algorithm_id').map(key => 'song-mod-assistance-' + key), 'song-mod-assistance-check', 'song-mod-apply', 'song-mod-cancel']) {
+      await page.locator('#' + id).scrollIntoViewIfNeeded(); await frames();
+      controls.push(await page.locator('#' + id).evaluate(node => {
+        const rect = node.getBoundingClientRect(), hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+        return {id: node.id, rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height}, hit: hit === node || node.contains(hit)};
+      }));
+    }
+    const layout = await page.evaluate(() => {
+      const dialog = document.getElementById('song-mod-dialog'), content = dialog.querySelector('.shell-dialog-content'), select = document.getElementById('song-mod-assistance-preset');
+      return {viewport: {width: innerWidth, height: innerHeight}, documentWidth: document.documentElement.scrollWidth,
+        content: {width: content.clientWidth, scrollWidth: content.scrollWidth}, label: document.getElementById(select.getAttribute('aria-labelledby'))?.textContent,
+        description: document.getElementById(select.getAttribute('aria-describedby'))?.textContent,
+        options: [...select.options].map(option => ({value: option.value, text: option.textContent, disabled: option.disabled}))};
+    });
+    layout.controls = controls; layout.keyboard = keyboard; measurements.push(layout); validateAssistanceModLayout(layout);
+    await page.locator('#song-mod-assistance-preset').scrollIntoViewIfNeeded();
+    await checkpoint('preset-layout-' + viewport.width, {presetLayouts: measurements});
+  }
+  await page.setViewportSize({width: 1440, height: 1000}); await frames(); return measurements;
 }
 async function applyMod() { await page.locator('#song-mod-apply').click(); await page.locator('#song-mod-dialog').waitFor({state: 'hidden'}); }
 async function automaticPreview() {
@@ -207,8 +271,26 @@ test('real Rust Mod keeps Original unchanged and applies same-part human scoring
   assert.equal(assistanceRequests().length, 0, 'Ordinary Original Mod must not acquire an assistance dependency');
   assert.deepEqual(await recipes(), []);
 
-  await openSongMod(page); await page.locator('#song-mod-layout').selectOption('complete');
-  await page.locator('#song-mod-show-others').check(); await editAutomatic(); const response = await checkAutomatic();
+  await openSongMod(page); await page.locator('#song-mod-assistance-mode').selectOption('automatic');
+  const presetChecks = [await checkedPreset(await selectPreset('single'))];
+  const presetLayouts = await measureModLayout();
+  assert.deepEqual(await recipes(), [], 'Checking named presets does not save a recipe');
+  await applyMod(); const namedSaved = await recipes();
+  assert.deepEqual(namedSaved[0].recipe.settings, assistancePresetSettings('single'));
+  await openSongMod(page); const namedReopened = await presetView();
+  validateAssistancePresetPreview(namedReopened, {id: 'single', settings: assistancePresetSettings('single'), checked: presetChecks[0].response.checked});
+  for (const id of ['balanced', 'dense']) presetChecks.push(await checkedPreset(await selectPreset(id)));
+  await page.locator('#song-mod-cancel').click();
+  assert.deepEqual(await recipes(), namedSaved, 'Cancel preserves the exact applied numeric recipe bytes');
+  await openSongMod(page); assert.equal((await presetView()).preset, 'single');
+  await page.locator('#song-mod-layout').selectOption('complete');
+  await page.locator('#song-mod-show-others').check(); await editAutomatic();
+  const customUnchecked = await presetView();
+  validateAssistancePresetPreview(customUnchecked, {id: 'custom', settings: canonical.automatic.checked.plan.settings});
+  const response = await checkAutomatic();
+  const customChecked = await presetView();
+  validateAssistancePresetPreview(customChecked, {id: 'custom', settings: response.checked.plan.settings, checked: response.checked});
+  await checkpoint('preset-gestures', {presetChecks, presetLayouts, namedReopened, customUnchecked, customChecked});
   await checkpoint('checked', {checked: response});
   assert.deepEqual(response, canonical.automatic, 'The displayed result is the actual Rust API fixture contract');
   assert.match(await page.locator('#song-mod-assistance-legend').innerText(), /● Human.*◆ Machine/s);
@@ -263,7 +345,17 @@ test('real Rust Mod keeps Original unchanged and applies same-part human scoring
   assert.equal(run.plan.durationFrames, Math.ceil(compilation.timeline.duration_ms * run.plan.sampleRate / 1000));
   assert.ok(assistanceRequests().filter(row => row.path.endsWith('/generate')).length >= 2, 'Start rebuilds against the admitted stage source');
 
-  await openSongMod(page, {origin: 'stage'}); await page.locator('#song-mod-assistance-mode').selectOption('original');
+  await openSongMod(page, {origin: 'stage'});
+  const customReopened = await presetView();
+  assert.equal(customReopened.preset, 'custom'); assert.deepEqual(customReopened.settings, customChecked.settings);
+  const canceledPreset = await selectPreset('dense');
+  assert.equal(await page.locator('#song-mod-apply').isDisabled(), true, 'A preset change still needs explicit stage reset');
+  await page.locator('#song-mod-cancel').click();
+  assert.deepEqual(await exportJson('export-takes', 'results'), take, 'Preset Cancel preserves the complete scored take and input evidence');
+  const canceledClock = await page.evaluate(() => globalThis.__wmhReadPlaybackClock()); assert.equal(canceledClock.running, false);
+  await openSongMod(page, {origin: 'stage'}); assert.equal((await presetView()).preset, 'custom');
+  await checkpoint('preset-cancel-take', {customReopened, canceledPreset, canceledClock});
+  await page.locator('#song-mod-assistance-mode').selectOption('original');
   await checkpoint('reset-required');
   assert.equal(await page.locator('#song-mod-apply').isDisabled(), true);
   await page.locator('#song-mod-cancel').click();

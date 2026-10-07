@@ -1,0 +1,253 @@
+{
+  "presets": {
+    "single": {
+      "response": {
+        "checked": {
+          "all_selected_human": false,
+          "coverage": {
+            "human_occurrence_count": 2,
+            "human_source_unit_count": 2,
+            "human_target_count": 2,
+            "machine_occurrence_count": 4,
+            "machine_selected_target_count": 4,
+            "machine_source_unit_count": 4,
+            "occurrence_count": 6,
+            "selected_source_unit_count": 6,
+            "selected_target_count": 6,
+            "source_unit_count": 6
+          },
+          "diagnostics": [
+            {
+              "code": "basic_key_rendition_interpretation",
+              "message": "Complete basic-key rendition uses the named FIFO virtual-route/tempo policy and the same all-attack practice timeline. Percussion is a named selector pulse; channel stops close gates and other effects remain uninterpreted. Inferred ends and 20ms zero gates are receiver choices, never original durations or hold-scoring targets.",
+              "note_id": null,
+              "severity": "warning"
+            },
+            {
+              "code": "assistance_scope_limits",
+              "message": "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.",
+              "note_id": null,
+              "severity": "warning"
+            }
+          ],
+          "exclusion_reasons": [
+            {
+              "code": "onset_density",
+              "source_ids": [
+                "midi-t1-e11"
+              ]
+            },
+            {
+              "code": "percussion_selector",
+              "source_ids": [
+                "midi-t1-e13"
+              ]
+            },
+            {
+              "code": "onset_density",
+              "source_ids": [
+                "midi-t1-e4"
+              ]
+            },
+            {
+              "code": "onset_target_limit",
+              "source_ids": [
+                "midi-t1-e8"
+              ]
+            }
+          ],
+          "human_targets": {
+            "diagnostics": [],
+            "groups": [
+              {
+                "part_ids": [
+                  "midi-t1-c1-r0"
+                ],
+                "source_note_ids": [
+                  "midi-t1-e3"
+                ],
+                "source_occurrence_ids": [
+                  "midi-t1-e3"
+                ],
+                "target_id": "midi-t1-e3"
+              },
+              {
+                "part_ids": [
+                  "midi-t1-c1-r0"
+                ],
+                "source_note_ids": [
+                  "midi-t1-e7"
+                ],
+                "source_occurrence_ids": [
+                  "midi-t1-e7"
+                ],
+                "target_id": "midi-t1-e7"
+              }
+            ],
+            "playable": true,
+            "source_note_count": 2,
+            "target_count": 2,
+            "timeline": {
+              "duration_ms": 1000.0,
+              "notes": [
+                {
+                  "duration_ms": 250.0,
+                  "id": "midi-t1-e3",
+                  "midi": 60,
+                  "part_id": "midi-t1-c1-r0",
+                  "source_note_id": "midi-t1-e3",
+                  "source_note_ids": [
+                    "midi-t1-e3"
+                  ],
+                  "staff": 1,
+                  "start_ms": 0.0,
+                  "velocity": 90,
+                  "voice": "1"
+                },
+                {
+                  "duration_ms": 250.0,
+                  "id": "midi-t1-e7",
+                  "midi": 64,
+                  "part_id": "midi-t1-c1-r0",
+                  "source_note_id": "midi-t1-e7",
+                  "source_note_ids": [
+                    "midi-t1-e7"
+                  ],
+                  "staff": 1,
+                  "start_ms": 500.0,
+                  "velocity": 90,
+                  "voice": "1"
+                }
+              ]
+            }
+          },
+          "machine_occurrence_ids": [
+            "midi-t1-e11",
+            "midi-t1-e13",
+            "midi-t1-e4",
+            "midi-t1-e8"
+          ],
+          "plan": {
+            "format": "wmc-practice-assistance",
+            "human_source_ids": [
+              "midi-t1-e3",
+              "midi-t1-e7"
+            ],
+            "mode": "automatic",
+            "planner_revision": 1,
+            "receipt": {
+              "choice": null,
+              "runtime_digest": "2386197578512be033cf4ffcd47f6931f46cfd3b88641a3d69cd9e9512e244e8",
+              "runtime_policy": "wmh-basic-key-rendition-fifo-v1",
+              "saved_package_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+              "source_binding": {
+                "digest": "5b4be4ca9962ae2870c5da32a4aa86a6ef9696114a18a5675b8ec80a8bba9136",
+                "domain": "wmc-basic-complete-serde-json",
+                "serialization_revision": 1
+              },
+              "source_profile": "wmh-basic-keys-midi1-v1"
+            },
+            "revision": 1,
+            "schema_version": 1,
+            "selection": {
+              "profile": {
+                "key_count": 88,
+                "kind": "piano",
+                "lowest_midi": 21
+              },
+              "selected_part_ids": [
+                "midi-t1-c1-r0",
+                "midi-t1-c10-r0"
+              ]
+            },
+            "selection_digest": "05a9a236d24fe6e9edf202a7f94d7acbfe254e0a95fa1e16c36b3d98e169c0e5",
+            "settings": {
+              "algorithm_id": "wmc-keyboard-assistance-v1",
+              "max_held_span_semitones": 0,
+              "max_simultaneous_keys": 1,
+              "max_targets_per_onset": 1,
+              "min_onset_interval_ms": 500
+            }
+          },
+          "receipt": {
+            "choice": null,
+            "runtime_digest": "2386197578512be033cf4ffcd47f6931f46cfd3b88641a3d69cd9e9512e244e8",
+            "runtime_policy": "wmh-basic-key-rendition-fifo-v1",
+            "saved_package_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+            "source_binding": {
+              "digest": "5b4be4ca9962ae2870c5da32a4aa86a6ef9696114a18a5675b8ec80a8bba9136",
+              "domain": "wmc-basic-complete-serde-json",
+              "serialization_revision": 1
+            },
+            "source_profile": "wmh-basic-keys-midi1-v1"
+          },
+          "scored_mode_allowed": true,
+          "source_ownership": [
+            {
+              "in_selected_scope": true,
+              "owner": "machine",
+              "part_id": "midi-t1-c1-r0",
+              "source_id": "midi-t1-e11"
+            },
+            {
+              "in_selected_scope": true,
+              "owner": "machine",
+              "part_id": "midi-t1-c10-r0",
+              "source_id": "midi-t1-e13"
+            },
+            {
+              "in_selected_scope": true,
+              "owner": "human",
+              "part_id": "midi-t1-c1-r0",
+              "source_id": "midi-t1-e3"
+            },
+            {
+              "in_selected_scope": true,
+              "owner": "machine",
+              "part_id": "midi-t1-c1-r0",
+              "source_id": "midi-t1-e4"
+            },
+            {
+              "in_selected_scope": true,
+              "owner": "human",
+              "part_id": "midi-t1-c1-r0",
+              "source_id": "midi-t1-e7"
+            },
+            {
+              "in_selected_scope": true,
+              "owner": "machine",
+              "part_id": "midi-t1-c1-r0",
+              "source_id": "midi-t1-e8"
+            }
+          ]
+        },
+        "source": {
+          "choice": null,
+          "content_sha256": "1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+          "key": "song-1f58801b3c8d677b17c2d412faf2d81f7e27375cd16c24d17547d2c7eae426d6",
+          "profile": "wmh-basic-keys-midi1-v1",
+          "runtime_policy": "wmh-basic-key-rendition-fifo-v1"
+        }
+      },
+      "settings": {
+        "algorithm_id": "wmc-keyboard-assistance-v1",
+        "max_held_span_semitones": 0,
+        "max_simultaneous_keys": 1,
+        "max_targets_per_onset": 1,
+        "min_onset_interval_ms": 500
+      }
+    }
+  },
+  "selection": {
+    "profile": {
+      "key_count": 88,
+      "kind": "piano",
+      "lowest_midi": 21
+    },
+    "selected_part_ids": [
+      "midi-t1-c1-r0",
+      "midi-t1-c10-r0"
+    ]
+  },
+  "source_fixture": "assistance-native-basic.json"
+}

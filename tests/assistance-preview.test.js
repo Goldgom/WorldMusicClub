@@ -5,28 +5,54 @@ import {mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSyn
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {deflateSync} from 'node:zlib';
-import {ASSISTANCE_PREVIEW_CASES, verifyUiPreviewAssistance} from '../scripts/ui-preview-assistance.mjs';
+import {ASSISTANCE_PREVIEW_CASES, ASSISTANCE_PRESET_LAYOUT_CHECKPOINTS, assistanceCanonicalPresetFixture, validateAssistancePresetEvidence, validateAssistanceModLayout, verifyUiPreviewAssistance} from '../scripts/ui-preview-assistance.mjs';
+import {assistancePresetSettings} from '../web/practice-assistance-receipt.js';
+import {assistanceText} from '../web/practice-assistance-locales.js';
 
 // Synthetic verifier inputs only: no audio, screenshot capture or browser pass
 // is fabricated, claimed or published by these pure contract tests.
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const passing = ASSISTANCE_PREVIEW_CASES.map((row, index) => `ok ${index + 1} - ${row.name}`).join('\n');
-function contractPng() {
+function contractPng(width = 2, height = 2) {
   const chunk = (type, data) => {
     const bytes = Buffer.alloc(data.length + 12); bytes.writeUInt32BE(data.length); bytes.write(type, 4); data.copy(bytes, 8);
     let crc = 0xffffffff; for (const value of bytes.subarray(4, -4)) { crc ^= value; for (let bit = 0; bit < 8; bit++) crc = crc >>> 1 ^ ((crc & 1) ? 0xedb88320 : 0); }
     bytes.writeUInt32BE((crc ^ 0xffffffff) >>> 0, bytes.length - 4); return bytes;
   };
-  const header = Buffer.alloc(13); header.writeUInt32BE(2); header.writeUInt32BE(2, 4); header[8] = 8; header[9] = 2;
-  return Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR', header), chunk('IDAT', deflateSync(Buffer.alloc(14))), chunk('IEND', Buffer.alloc(0))]);
+  const header = Buffer.alloc(13); header.writeUInt32BE(width); header.writeUInt32BE(height, 4); header[8] = 8; header[9] = 2;
+  return Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR', header), chunk('IDAT', deflateSync(Buffer.alloc((width * 3 + 1) * height))), chunk('IEND', Buffer.alloc(0))]);
+}
+function presetUi(id, settings, checked = null) {
+  const {algorithm_id, ...limits} = settings, coverage = checked?.coverage;
+  return {preset: id, settings: limits, state: checked ? 'checked' : 'unchecked', unitsHidden: !checked,
+    status: checked ? assistanceText('en', 'counts', {human: coverage.human_target_count, machine: coverage.machine_occurrence_count}) + (checked.scored_mode_allowed ? '' : ' · ' + assistanceText('en', 'noScore')) : assistanceText('en', 'unchecked'),
+    units: checked ? assistanceText('en', 'units', {human: coverage.human_source_unit_count, machine: coverage.machine_source_unit_count, total: coverage.source_unit_count}) : ''};
+}
+function presetEvidence() {
+  const canonical = JSON.parse(readFileSync(new URL('./fixtures/assistance-canonical.json', import.meta.url))), oracle = assistanceCanonicalPresetFixture();
+  const presetChecks = ['single', 'balanced', 'dense'].map(id => {
+    const settings = assistancePresetSettings(id), response = oracle.presets[id].response;
+    return {id, gesture: {type: 'change', id: 'song-mod-assistance-preset', value: id, trusted: true}, unchecked: presetUi(id, settings), request: {score: canonical.compilation.score, selection: oracle.selection, settings}, response, view: presetUi(id, settings, response.checked)};
+  });
+  // Only finite synthetic geometry exercises the verifier; it never proves layout.
+  const presetLayouts = [{width: 1280, height: 720}, {width: 390, height: 844}].map(viewport => ({viewport, keyboard: {focused: 'song-mod-assistance-preset', event: {id: 'song-mod-assistance-preset', type: 'keydown', key: 'Home', trusted: true}}, documentWidth: viewport.width, content: {width: viewport.width - 32, scrollWidth: viewport.width - 32}, label: 'Keyboard configuration', description: assistanceText('en', 'model'),
+    options: ['single', 'balanced', 'dense', 'custom'].map(value => ({value, disabled: value === 'custom', text: value === 'custom' ? assistanceText('en', 'custom') : assistanceText('en', 'presetOption', {name: assistanceText('en', 'preset_' + value), ...assistancePresetSettings(value)})})),
+    controls: ['song-mod-assistance-preset', ...Object.keys(assistancePresetSettings('single')).filter(key => key !== 'algorithm_id').map(key => 'song-mod-assistance-' + key), 'song-mod-assistance-check', 'song-mod-apply', 'song-mod-cancel'].map(id => ({id, rect: {x: 16, y: 16, width: viewport.width - 64, height: 32}, hit: true}))}));
+  const settings = canonical.automatic.checked.plan.settings, customChecked = presetUi('custom', settings, canonical.automatic.checked);
+  return {importedCompilation: canonical.compilation, checked: canonical.automatic, presetChecks, presetLayouts, namedReopened: presetChecks[0].view, customUnchecked: presetUi('custom', settings), customChecked, customReopened: customChecked, canceledPreset: presetChecks[2], canceledClock: {running: false}};
 }
 function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), 'wmh-assistance-verifier-')); t.after(() => rmSync(directory, {recursive: true, force: true}));
   const write = (name, bytes) => writeFileSync(join(directory, name), bytes);
   write('assistance.tap', passing);
   for (const row of ASSISTANCE_PREVIEW_CASES) {
-    write(row.report, JSON.stringify({version: 1, case: row.caseId, label: 'final', scope: row.scope, pageErrors: []}));
+    write(row.report, JSON.stringify({version: 1, case: row.caseId, label: 'final', scope: row.scope, pageErrors: [], ...(row === ASSISTANCE_PREVIEW_CASES[0] ? presetEvidence() : {})}));
     write(row.screenshot, contractPng());
+  }
+  for (const row of ASSISTANCE_PRESET_LAYOUT_CHECKPOINTS) {
+    const presetLayouts = presetEvidence().presetLayouts.filter(layout => layout.viewport.width === row.width);
+    write(row.report, JSON.stringify({version: 1, case: row.caseId, label: row.label, scope: row.scope, pageErrors: [], presetLayouts}));
+    write(row.screenshot, contractPng(row.width, row.height));
   }
   return {directory, write, verify: () => verifyUiPreviewAssistance(directory)};
 }
@@ -44,10 +70,11 @@ test('assistance preview requires all six exact non-skipped passes from its sepa
 });
 
 test('assistance preview hashes the separate TAP and every deterministic final JSON and PNG pair', t => {
-  const f = fixture(t), files = f.verify(); assert.equal(files.length, 13);
-  assert.deepEqual(files.map(row => row.name), ['assistance.tap', ...ASSISTANCE_PREVIEW_CASES.flatMap(row => [row.report, row.screenshot])]);
+  const f = fixture(t), files = f.verify(); assert.equal(files.length, 17);
+  assert.deepEqual(files.map(row => row.name), ['assistance.tap', ...[...ASSISTANCE_PREVIEW_CASES, ...ASSISTANCE_PRESET_LAYOUT_CHECKPOINTS].flatMap(row => [row.report, row.screenshot])]);
   for (const file of files) { const bytes = readFileSync(join(f.directory, file.name)); assert.equal(file.bytes, bytes.length); assert.equal(file.sha256, sha(bytes)); }
-  assert.ok(files.filter(file => file.name.endsWith('.png')).every(file => file.width === 2 && file.height === 2));
+  assert.ok(files.filter(file => file.name.endsWith('-final.png')).every(file => file.width === 2 && file.height === 2));
+  for (const row of ASSISTANCE_PRESET_LAYOUT_CHECKPOINTS) { const png = files.find(file => file.name === row.screenshot); assert.equal(png.width, row.width); assert.equal(png.height, row.height); }
   assert.match(ASSISTANCE_PREVIEW_CASES[4].scope, /fixture replay.*not desktop native acceptance/);
   assert.match(ASSISTANCE_PREVIEW_CASES[5].scope, /endpoint fault injection.*not large\/private-song GUI acceptance/);
 });
@@ -94,4 +121,37 @@ test('assistance browser producer and mandatory preview verifier share all six f
   const verifier = readFileSync(new URL('../scripts/verify-ui-preview.mjs', import.meta.url), 'utf8');
   assert.ok(verifier.includes('files.push(...verifyUiPreviewAssistance(directory))'));
   assert.ok(verifier.includes('names.push(...ASSISTANCE_PREVIEW_CASES.map(row=>row.name))'));
+});
+
+
+test('named preview evidence retains actual Rust outputs without assuming nested ownership', () => {
+  const value = presetEvidence(); validateAssistancePresetEvidence(value);
+  for (const mutate of [v => v.presetChecks.pop(), v => v.presetChecks[0].gesture.trusted = false,
+    v => v.presetChecks[1].request.settings.min_onset_interval_ms++, v => v.presetChecks[2].response.checked.machine_occurrence_ids = [],
+    v => v.presetChecks[0].view.status = '99 human targets · 0 machine occurrences', v => v.presetChecks[1].unchecked.units = 'stale counts',
+    v => v.customUnchecked.state = 'checked', v => v.customChecked.unitsHidden = true, v => v.namedReopened.preset = 'custom',
+    v => v.customReopened.settings.min_onset_interval_ms++, v => v.canceledClock.running = true]) {
+    const mutated = structuredClone(presetEvidence()); mutate(mutated); assert.throws(() => validateAssistancePresetEvidence(mutated));
+  }
+});
+test('Mod layout oracle rejects clipped controls, overflow, missing labels and shortened native options', () => {
+  for (const layout of presetEvidence().presetLayouts) {
+    validateAssistanceModLayout(layout);
+    for (const mutate of [v => v.documentWidth += 2, v => v.content.scrollWidth += 2, v => v.label = '', v => v.description = '', v => v.keyboard.event.trusted = false, v => v.keyboard.focused = 'other',
+      v => v.options[0].text = 'Single', v => v.options[3].disabled = false, v => v.controls.pop(),
+      v => v.controls[0].hit = false, v => v.controls[1].rect.x = -2, v => v.controls[2].rect.y = v.viewport.height]) {
+      const mutated = structuredClone(layout); mutate(mutated);
+      assert.throws(() => validateAssistanceModLayout(mutated));
+    }
+  }
+});
+
+test('measured Mod checkpoints require both exact viewport screenshots and matching retained geometry', t => {
+  const f = fixture(t);
+  for (const row of ASSISTANCE_PRESET_LAYOUT_CHECKPOINTS) {
+    const json = readFileSync(join(f.directory, row.report)), png = readFileSync(join(f.directory, row.screenshot));
+    f.write(row.screenshot, contractPng()); assert.throws(f.verify, /exact viewport/); f.write(row.screenshot, png);
+    const value = JSON.parse(json); value.presetLayouts[0].controls[0].hit = false; f.write(row.report, JSON.stringify(value)); assert.throws(f.verify, /pointer hit/); f.write(row.report, json);
+    unlinkSync(join(f.directory, row.report)); assert.throws(f.verify, /ENOENT/); f.write(row.report, json);
+  }
 });
