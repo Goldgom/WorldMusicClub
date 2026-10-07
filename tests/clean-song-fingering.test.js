@@ -1,4 +1,6 @@
 import test from 'node:test';
+import {fingeringAssistance} from './fingering-assistance-fixtures.js';
+import {fingeringUnavailableReason,fingeringSource} from '../web/fingering-source.js';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {prepareCleanSong,prepareVsqPractice} from '../web/clean-song-package.js';
@@ -166,4 +168,109 @@ test('native VSQ All sends the full selected union and rejects the previous one-
  assert.deepEqual(calls[0].body.source,source(ctx.cleanSong));assert.equal('score' in calls[0].body.settings,false);assert.equal('timeline' in calls[0].body.settings,false);
  assert.equal(guide.state().plan.assignments.length,ctx.timeline.notes.length);assert.equal(guide.state().plan.assignments[0].start_ms,0);
  const invalid=setupGuitarFingering({getContext:()=>ctx,api:async()=>{const answer=response('guitar',ctx);answer.plan.selected_part_ids=[ctx.score.parts[0].id];return answer}});await invalid.prepare();assert.equal(invalid.state().phase,'error');
+});
+
+
+for(const kind of ['piano','guitar']){
+  test(`${kind} clears ready guidance for partial or pending assistance and replans restored Original without profile edits`,async()=>{
+    const ctx=context(fractionalSong(),kind),original=fingeringAssistance(),partial=fingeringAssistance({partial:true}),calls=[];
+    ctx.assistance=original;ctx.assistanceUnavailable=false;
+    const before=structuredClone({score:ctx.score,timeline:ctx.timeline,profile:ctx.profile});
+    const guide=controller(kind,{getContext:()=>ctx,api:async(path,body)=>{calls.push({path,body});return response(kind,ctx,body.settings);}});
+    await guide.prepare();const first=guide.state().plan,id=ctx.timeline.notes[0].id;
+    assert.ok(guide.assignment(id));
+    for(const [receipt,unavailable,code] of [[partial,true,'assistance_partial'],[null,true,'assistance_pending']]){
+      ctx.assistance=receipt;ctx.assistanceUnavailable=unavailable;
+      assert.equal(guide.assignment(id),null);assert.equal(guide.state().plan,null);assert.equal(guide.state().phase,'unavailable');
+      assert.equal(guide.state().messageCode,`${kind}_${code}`);assert.equal(ctx.dirty,false);
+      assert.equal(await guide.prepare({retry:true}),null);assert.equal(calls.length,1);
+    }
+    ctx.assistance=original;ctx.assistanceUnavailable=false;
+    assert.equal(guide.state().phase,'idle');assert.equal(guide.state().plan,null);
+    await guide.prepare();assert.equal(calls.length,2);assert.equal(guide.state().phase,'ready');assert.ok(guide.assignment(id));assert.notEqual(guide.state().plan,first);
+    assert.deepEqual(calls[0].body,calls[1].body,'Restored Original uses the same complete native request, without filtered score/timeline or ownership payloads');
+    assert.deepEqual({score:ctx.score,timeline:ctx.timeline,profile:ctx.profile},before);
+  });
+
+  test(`${kind} rejects queued and late requests for changed assistance even without an intervening state read`,async()=>{
+    for(const timing of ['queued','late'])for(const change of ['partial','pending','receipt']){
+      const ctx=context(fractionalSong(),kind),original=fingeringAssistance(),calls=[];
+      ctx.assistance=original;ctx.assistanceUnavailable=false;
+      const guide=controller(kind,{getContext:()=>ctx,api:(path,body,signal)=>new Promise(resolve=>calls.push({path,body,signal,resolve}))});
+      const pending=guide.prepare();if(timing==='late')await Promise.resolve();
+      const stale=response(kind,ctx);
+      if(change==='pending')ctx.assistanceUnavailable=true;
+      else ctx.assistance=fingeringAssistance({partial:change==='partial'});
+      if(timing==='late')calls[0].resolve(stale);
+      assert.equal(await pending,null);assert.equal(calls.length,timing==='late'?1:0);assert.equal(guide.state().plan,null);assert.equal(guide.assignment(ctx.timeline.notes[0].id),null);
+      assert.equal(guide.state().phase,change==='receipt'?'idle':'unavailable');
+    }
+  });
+
+  test(`${kind} fences an older response across partial assistance and a newer restored Original request`,async()=>{
+    const ctx=context(fractionalSong(),kind),original=fingeringAssistance(),calls=[];
+    ctx.assistance=original;
+    const guide=controller(kind,{getContext:()=>ctx,api:(_path,body,signal)=>new Promise(resolve=>calls.push({body,signal,resolve}))});
+    const old=guide.prepare();await Promise.resolve();
+    ctx.assistance=fingeringAssistance({partial:true});guide.state();assert.equal(calls[0].signal.aborted,true);
+    ctx.assistance=original;ctx.assistanceUnavailable=false;const latest=guide.prepare();await Promise.resolve();
+    const newest=response(kind,ctx);calls[1].resolve(newest);await latest;
+    calls[0].resolve(response(kind,ctx));assert.equal(await old,null);assert.equal(guide.state().plan,newest.plan);assert.equal(guide.state().phase,'ready');
+  });
+
+  test(`${kind} normalizes legacy Original flags and rejects unadmitted ownership without a request`,async()=>{
+    const ctx=context(fractionalSong(),kind),calls=[];
+    const guide=controller(kind,{getContext:()=>ctx,api:async(path,body)=>{calls.push({path,body});return response(kind,ctx,body.settings);}});
+    await guide.prepare();const cached=guide.state().plan;
+    ctx.assistance=null;ctx.assistanceUnavailable=false;await guide.prepare();assert.equal(guide.state().plan,cached);assert.equal(calls.length,1);
+    ctx.assistance={all_selected_human:true,plan:{selection_digest:'a'.repeat(64)}};
+    assert.equal(guide.state().plan,null);assert.equal(guide.state().messageCode,`${kind}_assistance_pending`);await guide.prepare();assert.equal(calls.length,1);
+    ctx.assistance=fingeringAssistance({partial:true});ctx.assistanceUnavailable=false;
+    assert.equal(guide.state().messageCode,`${kind}_assistance_partial`);await guide.prepare();assert.equal(calls.length,1,'A partial admitted receipt fails closed even if the caller omitted the unavailable flag');
+    delete ctx.assistance;delete ctx.assistanceUnavailable;await guide.prepare();assert.equal(calls.length,2);assert.equal(guide.state().phase,'ready');
+  });
+}
+
+test('shared fingering source gate rejects partial and unvalidated assistance before native requests',()=>{
+  for(const [ctx,code] of [[{assistance:fingeringAssistance({partial:true})},'assistance_partial'],[{assistanceUnavailable:true},'assistance_pending'],[{assistance:{all_selected_human:true}},'assistance_pending']]){
+    assert.equal(fingeringUnavailableReason(ctx).code,code);
+    assert.throws(()=>fingeringSource(ctx),error=>error.code===`${code}_fingering_unavailable`);
+  }
+  assert.equal(fingeringSource({}),null);assert.equal(fingeringSource({assistance:null,assistanceUnavailable:false}),null);
+  assert.equal(fingeringSource({assistance:fingeringAssistance(),assistanceUnavailable:false}),null);
+});
+
+test('guitar assistance invalidation cancels either phrase phase and clears native inventory',async()=>{
+  for(const phase of ['inventory','plan']){
+    const ctx=context(fractionalSong(),'guitar'),calls=[],guide=setupGuitarFingering({getContext:()=>ctx,api:(_path,body,signal)=>new Promise(resolve=>calls.push({body,signal,resolve}))});
+    guide.setPlanningScope(phrase);const pending=guide.prepare();await tick();
+    if(phase==='plan'){calls[0].resolve(response('guitar',ctx,calls[0].body.settings,{included:[ctx.timeline.notes[0].id]}));await tick();assert.equal(calls.length,2);assert.ok(guide.state().scopeInventory);}
+    ctx.assistanceUnavailable=true;const index=calls.length-1;
+    assert.equal(guide.state().scopeInventory,null);assert.equal(calls[index].signal.aborted,true);
+    calls[index].resolve(response('guitar',ctx,calls[index].body.settings,{included:[ctx.timeline.notes[0].id]}));
+    assert.equal(await pending,null);assert.equal(guide.state().plan,null);assert.equal(calls.length,phase==='inventory'?1:2);assert.equal(guide.state().messageCode,'guitar_assistance_pending');
+  }
+});
+
+
+for(const kind of ['piano','guitar'])test(`${kind} ordinary canonical Original retains the complete-score endpoint across assistance changes`,async()=>{
+  const ctx=context(fractionalSong(),kind),calls=[];delete ctx.cleanSong;
+  const guide=controller(kind,{getContext:()=>ctx,api:async(path,body)=>{calls.push({path,body});return kind==='piano'?pianoResult(ctx,body):guitarResult(ctx,body);}});
+  await guide.prepare();assert.equal(guide.state().phase,'ready');assert.equal(calls[0].path,`/api/fingering/${kind}`);
+  ctx.assistance=fingeringAssistance({partial:true});assert.equal(guide.state().plan,null);await guide.prepare();assert.equal(calls.length,1);
+  ctx.assistance=fingeringAssistance();ctx.assistanceUnavailable=false;await guide.prepare();assert.equal(guide.state().phase,'ready');assert.equal(calls.length,2);
+  assert.deepEqual(calls[0],calls[1]);assert.deepEqual(calls[1].body.score,ctx.score);assert.equal('timeline' in calls[1].body,false);assert.equal('assistance' in calls[1].body,false);
+});
+
+test('Basic key projections keep their own fingering reason before every assistance state',async()=>{
+  const opened=read('basic-keys-native-open.json'),descriptor=opened.clean_package;
+  const song=prepareCleanSong(`native:song-${descriptor.content_sha256}`,descriptor,JSON.parse(descriptor.score_json).notation);
+  for(const kind of ['piano','guitar']){
+    const ctx=context(song,kind);let calls=0;const guide=controller(kind,{getContext:()=>ctx,api:async()=>{calls++;}});
+    for(const [assistance,assistanceUnavailable] of [[null,false],[fingeringAssistance({partial:true}),true],[null,true],[fingeringAssistance(),false]]){
+      Object.assign(ctx,{assistance,assistanceUnavailable});assert.throws(()=>fingeringSource(ctx),{code:'basic_keys_fingering_unavailable'});
+      await guide.prepare({retry:true});assert.equal(guide.state().messageCode,`${kind}_basic_keys`);assert.equal(guide.state().plan,null);
+    }
+    assert.equal(calls,0);
+  }
 });

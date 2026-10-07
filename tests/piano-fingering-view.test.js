@@ -3,6 +3,7 @@ const en=createI18n({locale:'en'});
 const pianoGuidanceView=context=>localizedPianoGuidanceView({...context,i18n:en});
 const setupPianoFingeringView=context=>localizedSetupPianoFingeringView({...context,i18n:en});
 import test from 'node:test';
+import {fingeringAssistance} from './fingering-assistance-fixtures.js';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
@@ -74,4 +75,36 @@ test('unavailable advisory response retains useful bounded-search distinction an
 });
 test('isolated CSS keeps keyboard hints pointer-free and has a compact landscape bound',async()=>{
   const css=await readFile(new URL('../web/piano-fingering.css',import.meta.url),'utf8');assert.match(css,/\.piano-finger-label\{[^}]*pointer-events:none/);assert.match(css,/@media\(max-height:600px\).*max-height:72px/);assert.doesNotMatch(css,/\.pressed|\.playing/);
+});
+
+
+test('assistance clears every piano card, key badge and accessible recommendation while keeping the keyboard profile clean',async()=>{
+  const {document,window}=fixtureDom(),context=pianoContext(),i18n=createI18n({locale:'en'}),calls=[];
+  const ui=localizedSetupPianoFingeringView({document,i18n,getContext:()=>context,api:async(_path,body)=>{calls.push(body);return pianoResult(context,body);}});
+  const playback={position:200,running:true,hasStarted:true},key=document.querySelector('[data-midi="60"]');
+  ui.render(playback);await tick();assert.ok(document.querySelector('.piano-finger-target'));assert.ok(key.querySelector('.piano-finger-label'));
+  context.assistance=fingeringAssistance({partial:true});context.assistanceUnavailable=true;
+  ui.render(playback);
+  assert.equal(ui.state().plan,null);assert.equal(ui.controller.assignment('c4@1'),null);assert.equal(context.dirty,false);assert.equal(ui.state().draftDirty,false);
+  assert.equal(document.querySelector('.piano-finger-target,.piano-finger-label,[data-finger-guidance]'),null);assert.equal(key.getAttribute('aria-description'),null);
+  assert.equal(key.getAttribute('aria-pressed'),'true');assert.equal(key.classList.contains('pressed'),true);
+  for(const id of ['piano-fingering-replan','piano-source-hand','piano-source-finger','piano-lock-remove'])assert.equal(document.getElementById(id).disabled,true);
+  assert.match(document.getElementById('piano-fingering-status').textContent,/whole selected parts.*human-owned notes/);
+  assert.match(document.getElementById('piano-guidance-state').textContent,/assisted selection/);
+  document.getElementById('piano-source-search').value='c4';dispatch(window,document.getElementById('piano-source-search'),'input');assert.equal(document.getElementById('piano-source-hand').disabled,true);
+  i18n.setLocale('zh-CN');assert.match(document.getElementById('piano-fingering-status').textContent,/完整的所选声部/);assert.match(document.getElementById('piano-guidance-state').textContent,/尚不能只为需要你演奏的音符/);
+  assert.equal(document.querySelector('.piano-finger-target,.piano-finger-label'),null);assert.equal(calls.length,1);
+  context.assistance=null;ui.render(playback);assert.match(document.getElementById('piano-guidance-state').textContent,/尚未通过核验/);
+  context.assistance=fingeringAssistance();context.assistanceUnavailable=false;ui.render(playback);await tick();
+  assert.equal(calls.length,2);assert.ok(document.querySelector('.piano-finger-target'));assert.equal(key.querySelector('.piano-finger-label').textContent,'右1');
+  assert.equal(document.getElementById('piano-source-hand').disabled,false);assert.deepEqual(i18n.getReports(),[]);ui.destroy();
+});
+
+test('assistance unavailable reason takes precedence over a retained piano hand draft',async()=>{
+  const {document}=fixtureDom(),context=pianoContext();let calls=0;
+  const ui=setupPianoFingeringView({document,getContext:()=>context,api:async()=>{calls++;return pianoResult(context);}});
+  await ui.prepare();ui.controller.setDraftDirty();context.assistanceUnavailable=true;ui.render();
+  assert.equal(ui.state().draftDirty,true);assert.equal(context.dirty,false);assert.match(document.getElementById('piano-guidance-state').textContent,/ownership is checked/);
+  context.assistanceUnavailable=false;ui.render();assert.equal(ui.state().plan,null);assert.equal(calls,1);
+  assert.match(document.getElementById('piano-guidance-state').textContent,/Settings edited/);ui.destroy();
 });

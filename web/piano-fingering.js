@@ -1,6 +1,6 @@
 import {equivalentJson} from './adaptation-view.js';
 import {keyboardGeometry} from './music.js';
-import {fingeringUnavailable,BASIC_KEY_FINGERING_REASON,fingeringSource,currentFingeringSource,fingeringRequest,fingeringResponse} from './fingering-source.js';
+import {fingeringUnavailableReason,fingeringSource,currentFingeringSource,fingeringRequest,fingeringResponse} from './fingering-source.js';
 
 const codedError=(code,message)=>Object.assign(new Error(message),{code});
 const STATUSES=new Set(['ready','no_targets','infeasible_under_model','no_plan_found','search_limit','unavailable']);
@@ -107,23 +107,24 @@ export function pianoPlanMessage(plan){
 
 /** Advisory state only: it does not write scores, take evidence, playback or hardware state. */
 export function setupPianoFingering({api,getContext,onChange=()=>{}}){
-  let score=null,timeline=null,cleanSong=null,part=null,key='',revision=0,generation=0,controller=null,pending=null,plan=null,phase='idle',message='Prepare a piano hand/finger recommendation.',draftDirty=false;
+  let score=null,timeline=null,cleanSong=null,assistance=null,part=null,key='',revision=0,generation=0,controller=null,pending=null,plan=null,phase='idle',message='Prepare a piano hand/finger recommendation.',draftDirty=false;
   let messageCode='piano_initial',errorDetails=null;
   let settings=defaultPianoSettings(),assignments=new Map(),occurrences=new Map();
   function value(){return{phase,message,messageCode,errorDetails,plan,settings:structuredClone(settings),draftDirty,annotationVersion:PIANO_ANNOTATION_VERSION};}
   function publish(next,text,code='piano_'+next,details=null){phase=next;message=text;messageCode=code;errorDetails=details;onChange(value());}
-  function invalidate(text='Piano guidance needs a fresh Rust plan.',code='piano_fresh'){
-    generation++;controller?.abort();controller=null;pending=null;plan=null;assignments=new Map();occurrences=new Map();publish('idle',text,code);
+  function invalidate(text='Piano guidance needs a fresh Rust plan.',code='piano_fresh',nextPhase='idle'){
+    generation++;controller?.abort();controller=null;pending=null;plan=null;assignments=new Map();occurrences=new Map();publish(nextPhase,text,code);
   }
   function synchronize(){
-    const context=getContext(),currentScore=context?.score??null,currentTimeline=context?.timeline??null,currentSong=context?.cleanSong??null,currentPart=context?.part_id??null;
-    const changed=currentScore!==score||currentTimeline!==timeline||currentSong!==cleanSong;
+    const context=getContext(),currentScore=context?.score??null,currentTimeline=context?.timeline??null,currentSong=context?.cleanSong??null,currentAssistance=context?.assistance??null,currentPart=context?.part_id??null;
+    const changed=currentScore!==score||currentTimeline!==timeline||currentSong!==cleanSong||currentAssistance!==assistance;
     const scopeChanged=currentScore!==score||currentPart!==part||currentSong!==cleanSong;
     const cleared=scopeChanged&&settings.locks.length>0;
     if(scopeChanged){settings={...settings,locks:[]};revision++;draftDirty=false;}
-    score=currentScore;timeline=currentTimeline;cleanSong=currentSong;part=currentPart;
-    const next=JSON.stringify([part,context?.profile||null,context?.score?.tempo||null,context?.revision??null,Boolean(context?.dirty),revision,draftDirty,currentSong?.runtime?.choice??null]);
-    if(changed||next!==key){key=next;invalidate(cleared?'Source-note locks were cleared for the changed score or selected part. Request a fresh plan.':undefined,cleared?'piano_locks_cleared':'piano_fresh');}
+    score=currentScore;timeline=currentTimeline;cleanSong=currentSong;assistance=currentAssistance;part=currentPart;
+    const unavailable=fingeringUnavailableReason(context);
+    const next=JSON.stringify([part,context?.profile||null,context?.score?.tempo||null,context?.revision??null,Boolean(context?.dirty),revision,draftDirty,currentSong?.runtime?.choice??null,Boolean(context?.assistanceUnavailable),unavailable?.code??null]);
+    if(changed||next!==key){key=next;invalidate(unavailable?.message??(cleared?'Source-note locks were cleared for the changed score or selected part. Request a fresh plan.':undefined),unavailable?`piano_${unavailable.code}`:cleared?'piano_locks_cleared':'piano_fresh',unavailable?'unavailable':'idle');}
     return context;
   }
   function setSettings(next){
@@ -132,7 +133,8 @@ export function setupPianoFingering({api,getContext,onChange=()=>{}}){
   }
   function prepare({retry=false}={}){
     const context=synchronize();
-    if(fingeringUnavailable(context)){if(phase!=='unavailable')publish('unavailable',BASIC_KEY_FINGERING_REASON,'piano_basic_keys');return Promise.resolve(null);}
+    const unavailable=fingeringUnavailableReason(context);
+    if(unavailable){if(phase!=='unavailable'||messageCode!==`piano_${unavailable.code}`)publish('unavailable',unavailable.message,`piano_${unavailable.code}`);return Promise.resolve(null);}
     if(!context?.score||!context.timeline||context.profile?.kind!=='piano'||context.dirty||draftDirty){
       if(phase!=='inactive')publish('inactive',draftDirty?'Apply or discard edited piano hand settings before planning.':context?.dirty?'Apply edited keyboard settings before planning.':'Choose Piano and a score to prepare hand/finger guidance.',draftDirty?'piano_draft':context?.dirty?'piano_dirty':'piano_inactive');
       return Promise.resolve(null);
@@ -143,9 +145,9 @@ export function setupPianoFingering({api,getContext,onChange=()=>{}}){
     if(retry&&plan)invalidate();
     let source;try{source=fingeringSource(context);}catch(error){publish('error',`Piano guidance unavailable: ${error.message}`,'piano_error',{code:error.code,message:error.message});return Promise.resolve(null);}
     const snapshot={score:structuredClone(context.score),timeline:structuredClone(context.timeline),part_id:context.part_id,profile:structuredClone(context.profile)};
-    const requested=structuredClone(settings),target=context.score,targetTimeline=context.timeline,targetSong=context.cleanSong??null,targetKey=key,current=++generation;
+    const requested=structuredClone(settings),target=context.score,targetTimeline=context.timeline,targetSong=context.cleanSong??null,targetAssistance=context.assistance??null,targetKey=key,current=++generation;
     controller=new AbortController();const signal=controller.signal;
-    const isCurrent=()=>{const value=getContext();return current===generation&&!signal.aborted&&!draftDirty&&value?.score===target&&value.timeline===targetTimeline&&!value.dirty&&value.part_id===snapshot.part_id&&currentFingeringSource(value,targetSong,source)&&equivalentJson(value.profile,snapshot.profile)&&equivalentJson(value.score,snapshot.score)&&equivalentJson(value.timeline,snapshot.timeline);};
+    const isCurrent=()=>{const value=getContext();return current===generation&&!signal.aborted&&!draftDirty&&value?.score===target&&value.timeline===targetTimeline&&!value.dirty&&value.part_id===snapshot.part_id&&currentFingeringSource(value,targetSong,source,targetAssistance)&&equivalentJson(value.profile,snapshot.profile)&&equivalentJson(value.score,snapshot.score)&&equivalentJson(value.timeline,snapshot.timeline);};
     pending=Promise.resolve().then(async()=>{
       if(!isCurrent())return null;
       try{
@@ -163,7 +165,7 @@ export function setupPianoFingering({api,getContext,onChange=()=>{}}){
   }
   return{prepare,setSettings,
     setDraftDirty(dirty=true){synchronize();if(draftDirty!==Boolean(dirty)){draftDirty=Boolean(dirty);revision++;synchronize();}},
-    reset(){score=null;timeline=null;cleanSong=null;part=null;key='';settings=defaultPianoSettings();draftDirty=false;revision++;invalidate();},
+    reset(){score=null;timeline=null;cleanSong=null;assistance=null;part=null;key='';settings=defaultPianoSettings();draftDirty=false;revision++;invalidate();},
     state(){synchronize();return value();},
     assignment(id){synchronize();return phase==='ready'?assignments.get(id)||occurrences.get(id)||null:null;},
   };

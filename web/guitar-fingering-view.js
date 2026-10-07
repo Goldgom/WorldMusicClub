@@ -21,6 +21,7 @@ export function guitarPickingLabel(choice,i18n=getAppI18n()){
   return ['downstroke_suggestion','upstroke_suggestion','simultaneous_pluck_review'].includes(choice.picking_hint)?i18n.t('guitar.runtime.picking.'+choice.picking_hint):'';
 }
 export function guitarPlanSummary(state,i18n=getAppI18n()){
+  if(state.phase==='unavailable'&&!state.plan&&state.messageCode)return i18n.t('guitar.runtime.message.'+state.messageCode);
   if(state.scopeDraft)return i18n.t('guitar.phrase.draft');
   if(state.plan?.status==='no_targets'&&state.plan.planning_scope)return i18n.t('guitar.phrase.noTargets');
   if(state.plan?.status==='ready'&&state.plan.planning_scope)return i18n.t('guitar.phrase.ready',{count:state.plan.assignments.length});
@@ -116,12 +117,12 @@ export function setupGuitarFingeringView({document,controller,getContext,onRefre
   });
   for(const[id,key]of [['guitar-show-alternatives','showAlternatives'],['guitar-show-picking','showPicking']])$(id).addEventListener('change',()=>{options[key]=$(id).checked;onRefresh();});
   function render({localeOnly=false}={}){
-    const state=controller.state(),context=getContext(),profile=context?.profile;
+    const state=controller.state(),context=getContext(),profile=context?.profile,unavailable=fingeringUnavailable(context);
     const nextProfile=JSON.stringify(profile),changedScore=sourceScore!==context?.score,nextSelection=guitarSelectionKey(context);
     let selected=[],selectedIds=[];
     try{selected=guitarSelectedNotes(context);selectedIds=guitarSelectedPartIds(context)??(context?.score?.parts||[]).filter(part=>context.part_id===null||part.id===context.part_id).map(part=>part.id);}catch{/* Invalid selection has no lock sources or advertised coverage. */}
     const names=selectedIds.map(id=>context.score.parts.find(part=>part.id===id)?.name||id);
-    selectionStatus.textContent=t('selection',{parts:names.join(', ')||i18n.t('guitar.phrase.noTargets'),count:selected.length});
+    selectionStatus.textContent=unavailable?'':t('selection',{parts:names.join(', ')||i18n.t('guitar.phrase.noTargets'),count:selected.length});
     for(const[node,key]of phraseText)node.textContent=i18n.t(key);
     const appliedKey=JSON.stringify(state.planningScope??null);
     if(changedScore){phraseAppliedKey='';phraseError='';}
@@ -134,7 +135,7 @@ export function setupGuitarFingeringView({document,controller,getContext,onRefre
     phraseFrom.disabled=phraseTo.disabled=phraseMode.value!=='explicit'||repeated;
     const inventory=state.scopeInventory||state.plan?.planning_scope;
     const scopeText=state.planningScope?{from:beatText(state.planningScope.from),to:beatText(state.planningScope.to)}:null;
-    phraseStatus.textContent=phraseError?i18n.t(phraseError):state.scopeDraft?i18n.t('guitar.phrase.draft'):inventory?i18n.t('guitar.phrase.inventory',{
+    phraseStatus.textContent=unavailable?'':phraseError?i18n.t(phraseError):state.scopeDraft?i18n.t('guitar.phrase.draft'):inventory?i18n.t('guitar.phrase.inventory',{
       ...scopeText,selected:inventory.selected_occurrence_count,total:inventory.full_occurrence_count,holds:inventory.entry_hold_occurrence_ids.length,
       start:i18n.formatDuration(inventory.start_ms,{fractionDigits:3}),end:i18n.formatDuration(inventory.end_ms,{fractionDigits:3})
     }):scopeText?i18n.t('guitar.phrase.pending',scopeText):i18n.t(repeated?'guitar.phrase.repeats':'guitar.phrase.wholeHelp');
@@ -187,7 +188,7 @@ export function setupGuitarFingeringView({document,controller,getContext,onRefre
         li.textContent=raw(diagnostic)+identity;return li;
       }));
     }
-    const enabled=!fingeringUnavailable(context)&&Boolean(context?.score&&context?.timeline&&profile?.kind==='guitar'&&!context.dirty);
+    const enabled=!unavailable&&Boolean(context?.score&&context?.timeline&&profile?.kind==='guitar'&&!context.dirty);
     phraseFields.disabled=!enabled;$('guitar-phrase-revert').disabled=!state.scopeDraft;$('guitar-phrase-apply').disabled=!enabled;
     $('guitar-replan').disabled=!enabled||state.phase==='loading'||state.scopeDraft;
     $('guitar-lock-fields').disabled=!enabled||!sources.length;

@@ -1,4 +1,4 @@
-import {fingeringUnavailable} from './fingering-source.js';
+import {fingeringUnavailable,fingeringUnavailableReason} from './fingering-source.js';
 import {getAppI18n} from './app-locale.js';
 import {midiName,pitchMidi} from './music.js';
 import {pianoKeyboardRange,pianoSourceNotes,setupPianoFingering} from './piano-fingering.js';
@@ -63,7 +63,7 @@ export function setupPianoFingeringView({document,api,getContext,onChange=()=>{}
   function renderSources(context,force=false,localeOnly=false){
     if(context?.score!==scopeScore||context?.part_id!==scopePart){scopeScore=context?.score;scopePart=context?.part_id;sourceOptions=pianoSourceNotes(context);sourceLimit=100;sourceSignature='';$('piano-source-search').value='';force=true;}
     const query=$('piano-source-search').value.toLocaleLowerCase();
-    const signature=JSON.stringify([query,sourceLimit,scopePart,sourceOptions.length]);if(!force&&!localeOnly&&signature===sourceSignature)return;sourceSignature=signature;
+    const unavailable=fingeringUnavailable(context),signature=JSON.stringify([query,sourceLimit,scopePart,sourceOptions.length,unavailable]);if(!force&&!localeOnly&&signature===sourceSignature)return;sourceSignature=signature;
     const matching=sourceOptions.filter(source=>`${source.id} ${source.partName} ${midiName(pitchMidi(source.note.pitch))}`.toLocaleLowerCase().includes(query));
     if(!localeOnly){
     const previous=$('piano-source-note').value;
@@ -72,23 +72,24 @@ export function setupPianoFingeringView({document,api,getContext,onChange=()=>{}
     }
     $('piano-source-count').textContent=t('sourceCount',{shown:Math.min(sourceLimit,matching.length),total:matching.length,sources:sourceOptions.length});
     $('piano-source-more').hidden=sourceLimit>=matching.length;
-    for(const id of ['piano-source-note','piano-source-hand','piano-source-finger','piano-lock-remove'])$(id).disabled=!matching.length;
+    for(const id of ['piano-source-note','piano-source-hand','piano-source-finger','piano-lock-remove'])$(id).disabled=unavailable||!matching.length;
     if(!localeOnly)loadLock();
   }
   function renderState({localeOnly=false}={}){
     if(!guide||rendering)return;rendering=true;
     try{
-      const context=getContext(),state=guide.state(),active=context?.profile?.kind==='piano';settingsRoot.hidden=!active;stageRoot.hidden=!active;
+      const context=getContext(),state=guide.state(),unavailable=fingeringUnavailableReason(context),active=context?.profile?.kind==='piano';settingsRoot.hidden=!active;stageRoot.hidden=!active;
       const scopeChanged=context?.score!==scopeScore||context?.part_id!==scopePart;if(scopeChanged){statusError=null;writeFields(state.settings);}
       for(const node of document.querySelectorAll('[data-piano-text]'))node.textContent=t(node.getAttribute('data-piano-text'));
       stageRoot.setAttribute('aria-label',t('stageLabel'));$('piano-guidance-items').setAttribute('aria-label',t('stageItems'));
       renderSources(context,false,localeOnly);
+      if(unavailable)statusError=null;
       const signature=JSON.stringify([state.phase,state.messageCode,state.errorDetails,state.plan,state.settings,state.draftDirty,context?.profile,Boolean(context?.score),Boolean(context?.dirty),statusError&&{code:statusError.code,message:statusError.message},i18n.revision]);
       if(signature!==stateSignature){
         stateSignature=signature;$('piano-fingering-status').textContent=statusError?errorText(statusError):state.plan?planText(state.plan):t('message.'+(state.messageCode||'piano_fresh'));$('piano-fingering-status').dataset.phase=state.phase;
         const profile=context?.profile,range=profile?.kind==='piano'?pianoKeyboardRange(profile):null;$('piano-fingering-keyboard').textContent=range?t('keyboard',{count:profile.key_count,low:midiName(range.low),high:midiName(range.high)}):t('choosePiano');
-        $('piano-fingering-replan').disabled=fingeringUnavailable(context)||!context?.score||Boolean(context?.dirty)||state.phase==='loading';$('piano-fingering-discard').disabled=!state.draftDirty;
-        $('piano-lock-clear').disabled=!state.settings.locks.length;
+        $('piano-fingering-replan').disabled=Boolean(unavailable)||!context?.score||Boolean(context?.dirty)||state.phase==='loading';$('piano-fingering-discard').disabled=!state.draftDirty;
+        $('piano-lock-clear').disabled=Boolean(unavailable)||!state.settings.locks.length;
         $('piano-source-locks').replaceChildren(...state.settings.locks.map(lock=>{const li=document.createElement('li');li.textContent=t('lock',{source:lock.source_note_id,hand:lock.hand?handName(lock.hand,i18n):t('automaticHand'),finger:lock.finger?i18n.t('instrument.finger',{finger:lock.finger}):t('automaticFinger')});return li;}));
         const plan=state.plan;$('piano-fingering-search').textContent=plan?t('search',{version:plan.version,algorithm:plan.algorithm,sources:plan.source_occurrence_count,targets:plan.physical_target_count===null?i18n.t('instrument.unknown'):i18n.formatNumber(plan.physical_target_count),beam:plan.beam_width,choices:plan.explored_choices,maximum:plan.max_expansions,pruning:t(plan.beam_pruned?'pruned':'notPruned'),cost:plan.objective_cost===null?i18n.t('instrument.unresolved'):i18n.formatNumber(plan.objective_cost),complete:t(plan.complete?'completeModel':'noPartial')}):t('fresh');
         $('piano-fingering-issues').replaceChildren(...(plan?.issues||[]).map(issue=>{const li=document.createElement('li');li.textContent=raw(issue)+' '+t('issue',{sources:issue.source_note_ids.join(', ')||t('wholeSelection'),occurrences:issue.source_occurrence_ids.join(', ')||t('notGrouped'),targets:issue.target_ids.join(', ')||t('notGrouped')});return li;}));
@@ -122,7 +123,7 @@ export function setupPianoFingeringView({document,api,getContext,onChange=()=>{}
   $('piano-guidance-settings').addEventListener('click',()=>{openSettings();$('instrument-settings').open=true;$('piano-fingering-replan').focus();});
   function renderGuidance(playback){
     if(!guide)return;const state=guide.state(),active=getContext()?.profile?.kind==='piano',view=pianoGuidanceView({...playback,i18n,plan:active&&state.phase==='ready'?state.plan:null});
-    stageRoot.dataset.phase=state.phase;$('piano-guidance-state').textContent=state.phase==='ready'?view.state:state.phase==='loading'?t('planning'):state.draftDirty?t('draftStage'):state.phase==='unavailable'?t('unavailableStage',{status:state.plan?t('status.'+state.plan.status):i18n.t('instrument.unknown')}):t(state.phase==='error'?'retryStage':'freshStage');
+    stageRoot.dataset.phase=state.phase;$('piano-guidance-state').textContent=state.phase==='ready'?view.state:state.phase==='loading'?t('planning'):state.phase==='unavailable'&&!state.plan?t('message.'+state.messageCode):state.draftDirty?t('draftStage'):state.phase==='unavailable'?t('unavailableStage',{status:t('status.'+state.plan.status)}):t(state.phase==='error'?'retryStage':'freshStage');
     const nextCards=new Map();
     for(const item of view.items){
       let card=cards.get(item.target_id);if(!card){card=document.createElement('li');card.className='piano-finger-target';for(const name of ['pitch','finger','time']){const span=document.createElement(name==='finger'?'strong':'span');span.className=`piano-finger-${name}`;card.append(span);}}

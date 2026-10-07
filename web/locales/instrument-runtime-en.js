@@ -1,4 +1,8 @@
 export default Object.freeze({
+  "piano.runtime.message.piano_assistance_partial": "Hand/finger guidance is unavailable for this assisted selection: the current planners cover whole selected parts and cannot plan only the human-owned notes. Restore Original to request guidance.",
+  "piano.runtime.message.piano_assistance_pending": "Hand/finger guidance is unavailable until assistance ownership is checked for the current selection. Restore or validate Original to request guidance.",
+  "guitar.runtime.message.guitar_assistance_partial": "Hand/finger guidance is unavailable for this assisted selection: the current planners cover whole selected parts and cannot plan only the human-owned notes. Restore Original to request guidance.",
+  "guitar.runtime.message.guitar_assistance_pending": "Hand/finger guidance is unavailable until assistance ownership is checked for the current selection. Restore or validate Original to request guidance.",
   "piano.runtime.message.piano_basic_keys": "Hand/finger guidance is unavailable for nominal MIDI key projections. Key practice and complete source export remain available.",
   "guitar.runtime.message.guitar_basic_keys": "Hand/finger guidance is unavailable for nominal MIDI key projections. Key practice and complete source export remain available.",
   "instrument.originalLabel": "Original technical details",

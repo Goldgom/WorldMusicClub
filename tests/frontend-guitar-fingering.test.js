@@ -3,6 +3,7 @@ const en=createI18n({locale:'en'});
 const guitarRowLabel=(profile,row)=>localizedGuitarRowLabel(profile,row,en);
 const guitarPlanSummary=state=>localizedGuitarPlanSummary(state,en);
 import test from 'node:test';
+import {fingeringAssistance} from './fingering-assistance-fixtures.js';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {parseHTML} from 'linkedom';
@@ -155,4 +156,30 @@ test('joint conflict diagnostic context lists holds from both human parts but ex
  const state={phase:'unavailable',settings:{max_fret_span:3,locks:[]},plan:{...result(ctx,{max_fret_span:3,locks:[]}),status:'infeasible_under_model',complete:false,assignments:[],objective_cost:null,diagnostics:[{code:'guitar_fingering_incomplete',severity:'warning',message:'Both parts need this held string.',note_id:'e4@pass1'}]}};
  setupGuitarFingeringView({document,getContext:()=>ctx,controller:{state:()=>state},i18n:en}).render();
  const text=document.getElementById('guitar-plan-diagnostics').textContent;assert.match(text,/c4, e4/);assert.doesNotMatch(text,/machine-source/);
+});
+
+
+test('partial and pending assistance remove guitar route assignments, hidden picking text and board ARIA before Original is replanned',async()=>{
+ const h=await harness(),ctx=h.getContext(),i18n=getAppI18n(h.document),render=setupGuitarGuidance(h.document);
+ for(const[string,fret,midi]of [[0,0,64],[1,1,60]]){const button=h.document.createElement('button');button.className='fret-button';Object.assign(button.dataset,{string:String(string),fret:String(fret),midi:String(midi)});h.$('fretboard').append(button);}
+ const draw=()=>{const plan=h.controller.state().plan,view=render({timeline:ctx.timeline,parts:ctx.score.parts,profile:ctx.profile,plan,position:100,showPicking:true});highlightGuitarRoute(h.document,{notes:view.currentNotes,nextNotes:view.nextNotes,nextOnsetMs:view.nextOnsetMs,position:100,plan});return view;};
+ await h.controller.prepare();draw();assert.ok(h.document.querySelector('.guitar-live-choice'));assert.ok(h.document.querySelector('.fret-button[data-recommended="true"]'));
+ ctx.assistance=fingeringAssistance({partial:true});ctx.assistanceUnavailable=true;
+ h.view.render();const view=draw();
+ assert.equal(h.controller.assignment('c4@pass1'),null);assert.equal(h.controller.state().plan,null);assert.equal(ctx.dirty,false);
+ assert.deepEqual(view.currentChoices,[]);assert.deepEqual(view.nextChoices,[]);assert.equal(h.document.querySelector('.guitar-live-choice'),null);
+ for(const card of h.document.querySelectorAll('.guitar-target')){assert.equal(card.dataset.route,'[]');assert.equal(card.querySelector('.guitar-target-picking').textContent,'');assert.doesNotMatch(card.getAttribute('aria-description')||'',/Row 2.*finger 1/);}
+ for(const button of h.document.querySelectorAll('.fret-button')){assert.equal(button.dataset.recommended,'false');assert.equal(button.dataset.nextRecommended,'false');assert.equal(button.dataset.fingers,'');assert.equal(button.dataset.nextFingers,'');assert.equal(button.dataset.routeLabel,'');assert.equal(button.getAttribute('aria-description'),null);}
+ assert.match(h.$('guitar-plan-status').textContent,/whole selected parts.*human-owned notes/);assert.equal(h.$('guitar-selected-parts').textContent,'');assert.equal(h.$('guitar-replan').disabled,true);assert.equal(h.$('guitar-lock-fields').disabled,true);
+ i18n.setLocale('zh-CN');assert.match(h.$('guitar-plan-status').textContent,/完整的所选声部/);assert.equal(h.document.querySelector('.guitar-live-choice'),null);assert.equal(h.calls.length,1);
+ ctx.assistance=null;h.view.render();draw();assert.match(h.$('guitar-plan-status').textContent,/尚未通过核验/);
+ ctx.assistance=fingeringAssistance();ctx.assistanceUnavailable=false;await h.controller.prepare();h.view.render();draw();
+ assert.equal(h.calls.length,2);assert.ok(h.document.querySelector('.guitar-live-choice'));assert.equal(h.$('guitar-replan').disabled,false);assert.equal(h.$('guitar-lock-fields').disabled,false);assert.deepEqual(i18n.getReports(),[]);h.view.destroy();
+});
+
+test('guitar assistance reason takes precedence over a retained phrase draft',async()=>{
+ const h=await harness();await h.controller.prepare();h.controller.editPlanningScope();
+ h.getContext().assistanceUnavailable=true;h.view.render();h.controller.editPlanningScope();
+ assert.equal(h.controller.state().scopeDraft,true);assert.equal(h.getContext().dirty,false);assert.match(h.$('guitar-plan-status').textContent,/ownership is checked/);assert.equal(h.$('guitar-phrase-status').textContent,'');
+ h.getContext().assistanceUnavailable=false;h.view.render();assert.match(h.$('guitar-plan-status').textContent,/Apply or revert/);await h.controller.prepare();assert.equal(h.calls.length,1);h.view.destroy();
 });

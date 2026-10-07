@@ -1,4 +1,8 @@
 export default Object.freeze({
+  "piano.runtime.message.piano_assistance_partial": "当前辅助选区暂不提供手型／指法建议：现有规划器只能规划完整的所选声部，尚不能只为需要你演奏的音符规划指法。请恢复“原始”后重新请求建议。",
+  "piano.runtime.message.piano_assistance_pending": "当前选区的辅助演奏分工尚未通过核验，暂不提供手型／指法建议。请恢复或核验“原始”后重新请求建议。",
+  "guitar.runtime.message.guitar_assistance_partial": "当前辅助选区暂不提供手型／指法建议：现有规划器只能规划完整的所选声部，尚不能只为需要你演奏的音符规划指法。请恢复“原始”后重新请求建议。",
+  "guitar.runtime.message.guitar_assistance_pending": "当前选区的辅助演奏分工尚未通过核验，暂不提供手型／指法建议。请恢复或核验“原始”后重新请求建议。",
   "piano.runtime.message.piano_basic_keys": "MIDI 按键投影暂不支持手指指法建议；仍可练习已确定的按键并导出完整来源歌曲包。",
   "guitar.runtime.message.guitar_basic_keys": "MIDI 按键投影暂不支持手指指法建议；仍可练习已确定的按键并导出完整来源歌曲包。",
   "instrument.originalLabel": "原始技术详情",
