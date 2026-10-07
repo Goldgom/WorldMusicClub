@@ -3,6 +3,8 @@ export const ASSISTANCE_FORMAT='wmc-practice-assistance';
 export const ASSISTANCE_SCHEMA_VERSION=1;
 export const ASSISTANCE_PLANNER_REVISION=1;
 export const ASSISTANCE_ALGORITHM='wmc-keyboard-assistance-v1';
+/** Catalog revision only; never part of a plan or saved numeric recipe. */
+export const ASSISTANCE_PRESET_REVISION=1;
 const admitted=new WeakMap();
 const fail=message=>{throw Object.assign(new TypeError(message),{code:'practice_assistance_invalid'});};
 export const assistanceEqual=(a,b)=>{
@@ -42,6 +44,21 @@ export function defaultAssistanceSettings(){return{algorithm_id:ASSISTANCE_ALGOR
 export function validateAssistanceSettings(settings){
   if(!fields(settings,['algorithm_id','max_targets_per_onset','min_onset_interval_ms','max_simultaneous_keys','max_held_span_semitones'])||settings.algorithm_id!==ASSISTANCE_ALGORITHM||!int(settings.max_targets_per_onset,1,32)||!int(settings.min_onset_interval_ms,0,60000)||!int(settings.max_simultaneous_keys,1,32)||!int(settings.max_held_span_semitones,0,127))fail('Use supported numeric density and span settings.');
   return settings;
+}
+// Explicit keyboard configurations, not musical grades or nested target sets.
+const presets=freeze([
+  {id:'single',settings:{algorithm_id:ASSISTANCE_ALGORITHM,max_targets_per_onset:1,min_onset_interval_ms:500,max_simultaneous_keys:1,max_held_span_semitones:0}},
+  {id:'balanced',settings:defaultAssistanceSettings()},
+  {id:'dense',settings:{algorithm_id:ASSISTANCE_ALGORITHM,max_targets_per_onset:4,min_onset_interval_ms:125,max_simultaneous_keys:6,max_held_span_semitones:12}},
+]);
+/** Fresh copies for explicit draft editing; nothing is applied or persisted. */
+export function assistancePresets(){return presets.map(({id,settings})=>({id,settings:{...settings}}));}
+/** Descriptive exact matching only, including Custom while an edit is invalid. */
+export function assistancePresetId(settings){return presets.find(preset=>assistanceEqual(preset.settings,settings))?.id??'custom';}
+export function assistancePresetSettings(presetId){
+  const preset=presets.find(preset=>preset.id===presetId);
+  if(!preset)fail('Choose a supported keyboard assistance preset.');
+  return{...preset.settings};
 }
 export function validateAssistanceBinding(binding){
   validateAssistanceSource(binding?.source);validateAssistanceSelection(binding.selection);

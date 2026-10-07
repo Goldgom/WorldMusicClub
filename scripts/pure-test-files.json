@@ -221,5 +221,6 @@
   "tests/assistance-preview.test.js",
   "tests/native-assistance-evidence.test.js",
   "tests/pure-test-launcher.test.js",
-  "tests/canonical-first-take-clock.test.js"
+  "tests/canonical-first-take-clock.test.js",
+  "tests/practice-assistance-presets.test.js"
 ]
