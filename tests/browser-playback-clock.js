@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import {readPlaybackClock} from '../web/playback-clock-view.js';
 
 export {readPlaybackClock};
@@ -31,6 +32,28 @@ export async function waitForPlaybackClockAdvance(page, previousPositionMs = 0) 
     return clock.available && clock.running && clock.phase === 'playing' && clock.positionMs > previous;
   }, previousPositionMs);
   await advanced.dispose();
+}
+
+// Paused text/phase describe the optimistic transport stop. Canonical audio
+// commits its final frame when the pause ACK arrives, then enables Play again.
+// Capture that readiness and clock together; never wait for equal samples or
+// allow a tolerance that could hide a clock continuing to move after the ACK.
+export async function assertPausedPlaybackClock(page) {
+  const ready = await page.waitForFunction(() => {
+    const clock = globalThis.__wmhReadPlaybackClock();
+    const play = document.getElementById('play-button');
+    return clock.available && clock.phase === 'paused' && play && !play.disabled ? clock : false;
+  });
+  let paused;
+  try { paused = await ready.jsonValue(); }
+  finally { await ready.dispose(); }
+  await page.waitForTimeout(150);
+  const later = await page.evaluate(readPlaybackClock);
+  const detail = `Paused clock changed after Play became ready: ${JSON.stringify({paused,later})}`;
+  assert.equal(later.phase, 'paused', detail);
+  assert.equal(later.positionMs, paused.positionMs, detail);
+  assert.equal(later.transportPositionMs, paused.transportPositionMs, detail);
+  return paused;
 }
 
 // Sample the real wall timestamp alongside the published in-range clock in

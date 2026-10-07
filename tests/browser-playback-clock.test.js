@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createContext, runInContext} from 'node:vm';
-import {installPlaybackClockReader, readPlaybackClock, waitForPlaybackClock, waitForPlaybackClockAdvance, capturePlaybackEventTime} from './browser-playback-clock.js';
+import {installPlaybackClockReader, readPlaybackClock, waitForPlaybackClock, waitForPlaybackClockAdvance, capturePlaybackEventTime, assertPausedPlaybackClock} from './browser-playback-clock.js';
 import {createPlaybackClock} from '../web/playback-clock-view.js';
 import {compileBrowserFixture} from './frontend-browser-compilation-fixture.js';
 import {syntheticCanonicalProfile} from './canonical-dom-audio-fixture.js';
 import {fixture as scoreFixture} from './frontend-fixtures.js';
 import {buildCanonicalAudioPlan, CANONICAL_AUDIO_POLICY} from '../web/canonical-audio-plan.js';
 import {installLoopClockFixture} from './frontend-clock-fixture.js';
+import {canonicalPracticeApp} from './canonical-practice-fixtures.js';
 
 const durationMs = 4083.3371666666667;
 function realmWithClock(positionMs) {
@@ -151,6 +152,117 @@ test('browser input readiness preserves timeout and malformed-clock failures',as
   await assert.rejects(waitForPlaybackClockAdvance({async waitForFunction(predicate){
     return runInContext(`(${predicate.toString()})(0)`,realm.context);
   }}),/playback clock is missing or invalid/);
+});
+
+function pauseClockPage({states,afterHold=()=>{}}) {
+  const realm=realmWithClock(866*1000/44100),play={disabled:true};
+  const observed={polls:0,holds:0,disposals:0};
+  const timeout=Object.assign(new Error('Existing browser pause readiness timeout'),{name:'TimeoutError'});
+  realm.context.__wmhReadPlaybackClock=()=>readPlaybackClock(realm.progress);
+  realm.context.document.getElementById=id=>id==='progress'?realm.progress:id==='play-button'?play:null;
+  const page={
+    async waitForFunction(predicate,...options){
+      assert.deepEqual(options,[],'Use the existing bounded waiter, without retrying playback');
+      for(const state of states){
+        observed.polls++;play.disabled=state.disabled;
+        if(state.clock)realm.progress.dataset.playbackClock=JSON.stringify(state.clock);
+        const result=runInContext(`(${predicate.toString()})()`,realm.context);
+        if(result)return{async jsonValue(){return structuredClone(result);},async dispose(){observed.disposals++;}};
+      }
+      throw timeout;
+    },
+    async waitForTimeout(ms){assert.equal(ms,150);observed.holds++;afterHold(realm.progress);},
+    async evaluate(reader){return runInContext(`(${reader.toString()})()`,realm.context);},
+  };
+  return{page,progress:realm.progress,observed,timeout};
+}
+
+test('pause assertion captures the acknowledged frame only after Play is ready',async()=>{
+  const optimistic=createPlaybackClock({positionMs:866*1000/44100,durationMs,hasStarted:true});
+  const acknowledged=createPlaybackClock({positionMs:867*1000/44100,durationMs,hasStarted:true});
+  const fixture=pauseClockPage({states:[
+    {disabled:false,clock:createPlaybackClock({positionMs:0,durationMs})},
+    {disabled:false,clock:createPlaybackClock({positionMs:optimistic.positionMs,durationMs,running:true})},
+    {disabled:true,clock:optimistic},
+    {disabled:false,clock:acknowledged},
+  ]});
+  const paused=await assertPausedPlaybackClock(fixture.page);
+  assert.deepEqual(paused,acknowledged);
+  assert.deepEqual(fixture.observed,{polls:4,holds:1,disposals:1});
+});
+
+test('pause assertion times out on an unacknowledged pause and rejects malformed clocks',async()=>{
+  const fixture=pauseClockPage({states:[{disabled:true},{disabled:true}]});
+  await assert.rejects(assertPausedPlaybackClock(fixture.page),error=>error===fixture.timeout);
+  assert.deepEqual(fixture.observed,{polls:2,holds:0,disposals:0});
+  const malformed=pauseClockPage({states:[{disabled:false}]});malformed.progress.dataset.playbackClock='{broken';
+  await assert.rejects(assertPausedPlaybackClock(malformed.page),/playback clock is missing or invalid/);
+  assert.deepEqual(malformed.observed,{polls:1,holds:0,disposals:0});
+});
+
+test('pause assertion still fails on one frame or smaller drift after readiness',async()=>{
+  for(const driftMs of [1000/44100,1e-10]){
+    const fixture=pauseClockPage({states:[{disabled:false}],afterHold(progress){
+      const clock=readPlaybackClock(progress);
+      progress.dataset.playbackClock=JSON.stringify({...clock,positionMs:clock.positionMs+driftMs,transportPositionMs:clock.transportPositionMs+driftMs});
+    }});
+    await assert.rejects(assertPausedPlaybackClock(fixture.page),error=>error.code==='ERR_ASSERTION'&&/Paused clock changed after Play became ready/.test(error.message));
+    assert.deepEqual(fixture.observed,{polls:1,holds:1,disposals:1},'Do not wait for drifting samples to become equal');
+  }
+});
+
+test('pause assertion rejects resumed playback even when its first position is unchanged',async()=>{
+  const fixture=pauseClockPage({states:[{disabled:false}],afterHold(progress){
+    progress.dataset.playbackClock=JSON.stringify({...readPlaybackClock(progress),phase:'playing',running:true});
+  }});
+  await assert.rejects(assertPausedPlaybackClock(fixture.page),{code:'ERR_ASSERTION'});
+});
+
+test('production canonical pause corrects the optimistic 44.1 kHz frame once before enabling Play',async()=>{
+  // Node DOM/port harness with production app, session, receiver and DSP core.
+  // Delaying the real pause ACK is not browser/device acceptance evidence.
+  const sampleRate=44100,f=await canonicalPracticeApp({audioSampleRate:sampleRate}),{app}=f;
+  const sourceBefore=JSON.stringify(f.evidence);
+  try{
+    app.$('count-in').checked=false;await app.click('start-listen');
+    await app.until(()=>app.$('canonical-audio-policy').dataset.rendererState==='playing');
+    const node=f.receiver(),harness=app.audioHarnesses.find(h=>h.nodes.includes(node)),zero=app.sourceStartWall();
+    const pauseWall=zero+866.75*1000/sampleRate;
+    f.time(pauseWall);
+    const pauseFrame=node.core.anchorFrame+867;
+    while(harness.frame<pauseFrame)harness.renderBlock(Math.min(128,pauseFrame-harness.frame));
+    app.frame();
+    assert.equal(readPlaybackClock(app.document).positionMs,866*1000/sampleRate);
+
+    const receive=node.port.onmessage;let acknowledgement;
+    node.port.onmessage=event=>{if(event.data.type==='paused')acknowledgement=event;else receive(event);};
+    app.$('play-button').click();await app.tick();
+    const optimistic=readPlaybackClock(app.document);
+    assert.equal(optimistic.phase,'paused');assert.equal(optimistic.positionMs,19.63718820861678);
+    assert.equal(app.$('play-button').disabled,true);
+    assert.equal(node.core.state,'paused');assert.equal(acknowledgement.data.sourcePositionFrame,867);
+    assert.equal(acknowledgement.data.frame,pauseFrame);
+
+    const realm=createContext({document:app.document,__wmhReadPlaybackClock:()=>readPlaybackClock(app.document)});
+    let polls=0,disposals=0;
+    const page={
+      async waitForFunction(predicate,...options){
+        assert.deepEqual(options,[]);
+        polls++;assert.equal(runInContext(`(${predicate.toString()})()`,realm),false,'Paused display must not admit an unacknowledged receiver');
+        receive(acknowledgement);await app.tick();
+        polls++;const value=runInContext(`(${predicate.toString()})()`,realm);
+        assert.ok(value,'The ACK commit enables Play and publishes its exact frame');
+        return{async jsonValue(){return structuredClone(value);},async dispose(){disposals++;}};
+      },
+      async waitForTimeout(ms){assert.equal(ms,150);f.time(pauseWall+ms);app.frame();},
+      async evaluate(reader){return reader(app.document);},
+    };
+    const paused=await assertPausedPlaybackClock(page);
+    assert.equal(paused.positionMs,19.65986394557823);assert.equal(paused.positionMs,867*1000/sampleRate);
+    assert.equal(polls,2);assert.equal(disposals,1);assert.equal(app.$('play-button').disabled,false);
+    f.time(pauseWall+300);app.frame();assert.equal(readPlaybackClock(app.document).positionMs,paused.positionMs);
+    assert.equal(node.core.pauseCount,1);assert.equal(JSON.stringify(f.evidence),sourceBefore);
+  }finally{await app.close();}
 });
 
 test('event capture samples one real timestamp inside the admitted window, excluding preparation and post-end grace',async()=>{

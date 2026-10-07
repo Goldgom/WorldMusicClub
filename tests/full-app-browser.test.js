@@ -2,7 +2,7 @@ import {registerHumanModTimbreBrowserRegression} from './human-mod-timbre-browse
 import {browserSongModControls} from './browser-song-mod-controls.js';
 import {originalPaneRevealStudy,choosePaneRevealTarget,paneRevealSourceIdsAt} from './pane-reveal-fixture.js';
 import {configureSongMod, openSongMod} from '../scripts/hosted-song-mod-controls.mjs';
-import {readPlaybackClock, installPlaybackClockReader, waitForPlaybackClock, waitForPlaybackClockAdvance} from './browser-playback-clock.js';
+import {readPlaybackClock, installPlaybackClockReader, waitForPlaybackClock, waitForPlaybackClockAdvance, assertPausedPlaybackClock} from './browser-playback-clock.js';
 import {registerGameLobbyBrowserRegressions} from './game-lobby-browser-regression.js';
 import {registerHomeLayoutBrowserRegressions} from './home-layout-browser-regression.js';
 import {assertLocaleRoundTrip,registerLocaleBrowserRegressions} from './locale-browser-regression.js';
@@ -744,9 +744,7 @@ test('embedded browser UI selects all exercises and plays, pauses, resumes and r
   assert.match(await ui('#play-button').textContent(), /Pause/);
   await page.keyboard.press('Space');
   assert.match(await ui('#transport-status').textContent(), /Paused/);
-  const pausedAt = (await ui('#progress').evaluate(readPlaybackClock)).positionMs;
-  await page.waitForTimeout(150);
-  assert.equal((await ui('#progress').evaluate(readPlaybackClock)).positionMs, pausedAt);
+  const pausedAt = (await assertPausedPlaybackClock(page)).positionMs;
   await page.keyboard.press('Space');
   await page.waitForFunction(position => globalThis.__wmhReadPlaybackClock().positionMs > position, pausedAt);
   await ui('#reset-button').click();
