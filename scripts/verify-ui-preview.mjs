@@ -10,6 +10,7 @@ import {SKIN_BROWSER_CASES,verifyUiPreviewSkin} from './ui-preview-skin.mjs';
 import {HOME_LAYOUT_PREVIEW_CASE,verifyUiPreviewHome} from './ui-preview-home.mjs';
 import {HUMAN_MOD_TIMBRE_PREVIEW_CASE,verifyUiPreviewHumanModTimbre} from './ui-preview-human-mod-timbre.mjs';
 import {GUITAR_UNION_BROWSER_CASE,verifyUiPreviewGuitarUnion} from './ui-preview-guitar-union.mjs';
+import {ASSISTANCE_PREVIEW_CASES,verifyUiPreviewAssistance} from './ui-preview-assistance.mjs';
 
 const directory=resolve(process.argv[2]||'ui-preview'),tap=readFileSync(join(directory,'tests.tap'),'utf8');
 const names=['real free piano fills desktop','original grand staff and Jianpu follow','game menu and audible song preview','normal and free piano share','original falling bars visibly cross',...['1280 by 720','1920 by 1080','844 by 390','390 by 844'].map(size=>`real D768 lobby and compact performance fit ${size}`),'short-landscape following reveals','real guitar current and next six-note','real initial compact guide stays','real compact 88-key and custom extreme guides','real piano hands preserve merged ties','real short-landscape guitar keeps a complete labelled row and transport beside notation','real home menu keeps its hitbox stable at the hover boundary',...LIVE_SILENCE_PREVIEW_CASES.map(row=>row.name),...SKIN_BROWSER_CASES.map(row=>row.name)];
@@ -20,6 +21,7 @@ const files=[...verifyUiPreviewLiveSilence(directory,tap),...verifyUiPreviewSkin
 files.push(...verifyUiPreviewHome(directory,tap));names.push(HOME_LAYOUT_PREVIEW_CASE);
 files.push(...verifyUiPreviewHumanModTimbre(directory,tap));names.push(HUMAN_MOD_TIMBRE_PREVIEW_CASE.name);
 files.push(...verifyUiPreviewGuitarUnion(directory,tap));names.push(GUITAR_UNION_BROWSER_CASE);
+files.push(...verifyUiPreviewAssistance(directory));names.push(...ASSISTANCE_PREVIEW_CASES.map(row=>row.name));
 function record(name,{size,png=false}={}){
   const bytes=readFileSync(join(directory,name)),entry={name,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
   if(png){assert.ok(bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])),`${name}: not PNG`);entry.width=bytes.readUInt32BE(16);entry.height=bytes.readUInt32BE(20);assert.ok(entry.width>0&&entry.height>0);if(size){const [width,height]=size.split('x').map(Number);assert.equal(entry.width,width,`${name}: wrong viewport width`);assert.ok(entry.height>=height,`${name}: incomplete image`);}}

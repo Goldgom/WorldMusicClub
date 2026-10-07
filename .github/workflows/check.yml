@@ -125,6 +125,9 @@ jobs:
         if: ${{ !cancelled() && steps.rust_toolchain.outcome == 'success' }}
         run: cargo build -p practice-server --locked
       # Independent prepared suites still run after an earlier suite fails.
+      - name: Check real Rust-backed note-level assistance
+        if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' && steps.rust_server.outcome == 'success' }}
+        run: npm run test:assistance-browser
       - name: Check real Rust-backed application
         if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' && steps.rust_server.outcome == 'success' }}
         run: npm run test:full-app

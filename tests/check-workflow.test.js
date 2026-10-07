@@ -92,7 +92,7 @@ function validateParallelGate(document) {
   }
   const expected = {
     'frontend-checks': ['npm test', 'npm run test:browser'],
-    'frontend-real': ['npm run test:full-app', 'npm run test:engraving-browser', 'npm run test:score-storage-hosted', 'node scripts/hosted-rhythm-check.mjs'],
+    'frontend-real': ['npm run test:assistance-browser', 'npm run test:full-app', 'npm run test:engraving-browser', 'npm run test:score-storage-hosted', 'node scripts/hosted-rhythm-check.mjs'],
   };
   const all = Object.values(document.jobs).flatMap(job => job.steps);
   for (const [id, commands] of Object.entries(expected)) {
@@ -107,11 +107,12 @@ function validateParallelGate(document) {
   const build = real.find(row => row.id === 'rust_server');
   assert.equal(build.run, 'cargo build -p practice-server --locked');
   assert.equal(build.if, "${{ !cancelled() && steps.rust_toolchain.outcome == 'success' }}");
-  for (const command of expected['frontend-real'].slice(0, 3)) {
+  for (const command of expected['frontend-real'].slice(0, 4)) {
     const row = step(document, 'frontend-real', command);
     assert.equal(row.if, realGuard);
     assert.ok(real.indexOf(row) > real.indexOf(build));
   }
+  assert.ok(real.indexOf(step(document, 'frontend-real', 'npm run test:assistance-browser')) < real.indexOf(step(document, 'frontend-real', 'npm run test:full-app')), 'Assistance must run before the broad real-app suite');
   const storage = step(document, 'frontend-real', 'npm run test:score-storage-hosted');
   assert.equal(storage['timeout-minutes'], 5);
   assert.equal(storage.env.WMH_SOURCE_SHA, source);
@@ -140,6 +141,8 @@ test('Verify rejects serialized work, lost tests, weaker failure checks and mism
     doc => { doc.jobs['frontend-checks']['continue-on-error'] = true; },
     doc => { doc.jobs['frontend-real']['timeout-minutes'] = 60; },
     doc => { doc.jobs['frontend-real'].steps = doc.jobs['frontend-real'].steps.filter(row => row.run !== 'npm run test:engraving-browser'); },
+    doc => { doc.jobs['frontend-real'].steps = doc.jobs['frontend-real'].steps.filter(row => row.run !== 'npm run test:assistance-browser'); },
+    doc => { step(doc, 'frontend-real', 'npm run test:assistance-browser').if = 'success()'; },
     doc => { step(doc, 'frontend-real', 'npm run test:score-storage-hosted').if = 'success()'; },
     doc => { step(doc, 'frontend-real', 'node scripts/hosted-rhythm-check.mjs').env.WMH_SOURCE_SHA = '${{ github.event.pull_request.head.sha }}'; },
     doc => { doc.jobs['frontend-real'].steps[0].with.ref = 'main'; },
@@ -249,10 +252,11 @@ test('Verify cannot silently overwrite conflicting browser evidence or include u
 
 const priorPreviewCases=['real free piano fills desktop','original grand staff and Jianpu follow','game menu and audible song preview','normal and free piano share','original falling bars visibly cross',...['1280 by 720','1920 by 1080','844 by 390','390 by 844'].map(size=>`real D768 lobby and compact performance fit ${size}`),'short-landscape following reveals','real guitar current and next six-note','real initial compact guide stays','real compact 88-key and custom extreme guides'];
 const noticePreviewCase='real piano hands preserve merged ties';
+const previewPreparedGuard="${{ !cancelled() && steps.rust_server.outcome == 'success' }}";
 
 function validateNoticePreview(document){
   const steps=document.jobs['ui-preview'].steps,run=steps.find(row=>row.run?.includes('tests/full-app-browser.test.js'));
-  assert.ok(run);assert.equal(run.if,undefined);assert.equal(run['continue-on-error'],undefined);
+  assert.ok(run);assert.equal(run.if,previewPreparedGuard);assert.equal(run['continue-on-error'],undefined);
   assert.match(run.run,/set -o pipefail/);assert.match(run.run,/\| tee ui-preview\/tests\.tap/);
   const pattern=run.run.match(/--test-name-pattern='([^']+)'/)?.[1];assert.ok(pattern);
   const selected=new RegExp(pattern);for(const name of [...priorPreviewCases,noticePreviewCase])assert.ok(selected.test(name),`Missing preview case: ${name}`);
@@ -261,6 +265,38 @@ function validateNoticePreview(document){
   assert.ok(failure.with.path.split('\n').includes('ui-preview/worldmusichub-live-piano-notice-layout.json'),'Retain paired notice geometry in the small failure artifact');
   assert.ok(failure.with.path.split('\n').includes('ui-preview/worldmusichub-live-compact-*-budget.json'),'Retain compact viewport budget settlement in the small failure artifact');
 }
+
+function validateAssistancePreview(document){
+  validateNoticePreview(document);
+  const job=document.jobs['ui-preview'],steps=job.steps,build=steps.find(row=>row.id==='rust_server');
+  const assistance=steps.find(row=>row.run?.includes('tests/assistance-app-browser.test.js')),broad=steps.find(row=>row.run?.includes('tests/full-app-browser.test.js'));
+  assert.equal(job['continue-on-error'],undefined);assert.ok(build);assert.equal(build.run,'cargo build -p practice-server --locked');
+  for(const row of steps)assert.equal(row['continue-on-error'],undefined);
+  assert.ok(assistance);assert.equal(assistance.if,previewPreparedGuard);assert.equal(assistance['continue-on-error'],undefined);
+  assert.equal(assistance.env.WMH_ARTIFACT_DIR,'ui-preview');
+  assert.deepEqual(assistance.run.trim().split('\n'),['set -o pipefail','mkdir -p ui-preview','node --test --test-reporter=tap tests/assistance-app-browser.test.js | tee ui-preview/assistance.tap']);
+  assert.ok(steps.indexOf(build)<steps.indexOf(assistance)&&steps.indexOf(assistance)<steps.indexOf(broad));
+  const failure=steps.find(row=>row.with?.name==='game-ui-failures-${{ github.sha }}');
+  for(const suffix of ['json','png'])assert.ok(failure.with.path.split('\n').includes(`ui-preview/worldmusichub-live-assistance-*.${suffix}`));
+  const full=steps.find(row=>row.with?.name==='game-ui-preview-${{ github.sha }}');assert.equal(full.if,'always()');assert.ok(full.with.path.split('\n').includes('ui-preview/assistance.tap'));
+}
+
+test('UI preview runs every assistance case early and keeps both prepared suites mandatory after peer failure',()=>{
+  const parsed=spawnSync(python,['scripts/check-authoring-workflow.py','.github/workflows/ui-preview.yml','--json'],{cwd:root,encoding:'utf8'});
+  assert.equal(parsed.status,0,parsed.stderr);const preview=JSON.parse(parsed.stdout);validateAssistancePreview(preview);
+  for(const mutate of [
+    doc=>{doc.jobs['ui-preview']['continue-on-error']=true;},
+    doc=>{doc.jobs['ui-preview'].steps.find(row=>row.id==='rust_server')['continue-on-error']=true;},
+    doc=>{doc.jobs['ui-preview'].steps=doc.jobs['ui-preview'].steps.filter(row=>!row.run?.includes('tests/assistance-app-browser.test.js'));},
+    ...['tests/assistance-app-browser.test.js','tests/full-app-browser.test.js'].flatMap(file=>[
+      doc=>{doc.jobs['ui-preview'].steps.find(row=>row.run?.includes(file)).if='success()';},
+      doc=>{delete doc.jobs['ui-preview'].steps.find(row=>row.run?.includes(file)).if;},
+      doc=>{doc.jobs['ui-preview'].steps.find(row=>row.run?.includes(file))['continue-on-error']=true;},
+    ]),
+    doc=>{const steps=doc.jobs['ui-preview'].steps;steps.push(...steps.splice(steps.findIndex(row=>row.run?.includes('tests/assistance-app-browser.test.js')),1));},
+    doc=>{const row=doc.jobs['ui-preview'].steps.find(row=>row.run?.includes('tests/assistance-app-browser.test.js'));row.run=row.run.replace('node --test','node --test --test-name-pattern=one');},
+  ]){const changed=structuredClone(preview);mutate(changed);assert.throws(()=>validateAssistancePreview(changed));}
+});
 
 test('UI preview adds real notice dismissal without dropping the 13 existing cases or failure geometry',()=>{
   const parsed=spawnSync(python,['scripts/check-authoring-workflow.py','.github/workflows/ui-preview.yml','--json'],{cwd:root,encoding:'utf8'});

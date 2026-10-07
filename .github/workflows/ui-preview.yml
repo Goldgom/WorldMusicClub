@@ -21,8 +21,18 @@ jobs:
       - run: npm ci --ignore-scripts --omit=optional
       - run: npm run prepare:engraving
       - run: npx playwright install --with-deps chromium
-      - run: cargo build -p practice-server --locked
+      - id: rust_server
+        run: cargo build -p practice-server --locked
+      - name: Exercise checked difficulty through real Rust and browser audio
+        if: ${{ !cancelled() && steps.rust_server.outcome == 'success' }}
+        env:
+          WMH_ARTIFACT_DIR: ui-preview
+        run: |
+          set -o pipefail
+          mkdir -p ui-preview
+          node --test --test-reporter=tap tests/assistance-app-browser.test.js | tee ui-preview/assistance.tap
       - name: Exercise shared piano geometry, skin persistence, human timbres and finite live-audio silence
+        if: ${{ !cancelled() && steps.rust_server.outcome == 'success' }}
         env:
           WMH_ARTIFACT_DIR: ui-preview
         run: |
@@ -38,6 +48,10 @@ jobs:
           name: game-ui-failures-${{ github.sha }}
           path: |
             ui-preview/worldmusichub-live-failure-*.png
+            ui-preview/worldmusichub-live-assistance-*.json
+            ui-preview/worldmusichub-live-assistance-*.png
+            ui-preview/worldmusichub-live-complete-guitar-chords.json
+            ui-preview/worldmusichub-live-guitar-complete-chords-*.png
             ui-preview/worldmusichub-live-failure-*.json
             ui-preview/worldmusichub-live-bootstrap*.json
             ui-preview/worldmusichub-compact-*-precheck.json
@@ -67,4 +81,5 @@ jobs:
             ui-preview/*.png
             ui-preview/*.json
             ui-preview/tests.tap
+            ui-preview/assistance.tap
           if-no-files-found: warn
