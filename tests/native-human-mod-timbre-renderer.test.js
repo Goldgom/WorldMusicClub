@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Script,runInNewContext} from 'node:vm';
 import {parseHTML} from 'linkedom';
+import {SongModStore,defaultSongMod,songModConfigFingerprint} from '../web/song-mod.js';
 import {humanModTimbreFixture} from '../scripts/prepare-human-mod-timbre-fixtures.mjs';
 import {humanModTimbreBootstrap,HUMAN_MOD_TIMBRE_BROWSER_CASE} from './human-mod-timbre-browser-regression.js';
 const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8'),renderer=read('crates/desktop-shell/human-mod-timbre-acceptance.js'),shared=read('crates/desktop-shell/live-tone-navigation-acceptance.js').split('(() => {')[0];
@@ -50,4 +51,23 @@ test('ID-less selector ownership exists only during its actual dispatch and clea
   const dispatch=h.dispatch.native('click',h.node,undefined,catalogSelector);if(fail)await assert.rejects(dispatch,/host refused/);else await dispatch;
   assert.equal(active.node,h.node);assert.equal(active.selector,catalogSelector);assert.equal(h.dispatch.ownedControl(),null);assert.equal(h.dispatch.ownedSelector(),null);
  }
+});
+
+
+test('externally seeded original legacy conflicts need a fresh store, not catalog reselection',()=>{
+ const {score}=humanModTimbreFixture(),context={score,mode:'practice',practiceSelection:{kind:'all'}},values=new Map(),storage={getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value)};
+ const active=new SongModStore({storage}),initial=defaultSongMod(context);
+ active.save(context,initial);
+ const conflict=structuredClone(initial);conflict.config.parts.forEach((part,index)=>part.liveInstrument=index?'guitar':'piano');conflict.configFingerprint=songModConfigFingerprint(conflict.config);
+ storage.setItem(active.key(active.identity(context)),JSON.stringify(conflict));
+ assert.deepEqual(active.read({...context}).mod.config.parts.map(part=>part.liveInstrument),['follow','follow'],'Same app retains its cached explicit preference');
+ assert.deepEqual(new SongModStore({storage}).read(context).mod.config.parts.map(part=>part.liveInstrument),['piano','guitar'],'A fresh app store consumes the actual seeded legacy conflict');
+});
+
+test('hosted conflict seeding closes observers and reloads the actual app before reading drafts',()=>{
+ const source=read('tests/human-mod-timbre-browser-regression.js'),seed=source.slice(source.indexOf('  const seedConflict='),source.indexOf('  const install='));
+ assert.match(seed,/await cleanup\(\);await reopen\(\);await prepareOptions\(\);/);
+ assert.match(seed,/after>before/);
+ assert.match(source,/const reopen=async\(\)=>\{await page\.reload/);
+ assert.doesNotMatch(seed,/\.entries\.clear|commitSaved|dispatchEvent|__.*songMod/);
 });

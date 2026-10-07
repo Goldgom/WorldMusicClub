@@ -49,7 +49,7 @@ export async function readHumanModExport(page,readExport){
 
 export function registerHumanModTimbreBrowserRegression({test,getPage,ui,readyForTitle,closeShellPanels,exportTakeData,exportScore,artifactDirectory}){
  test(HUMAN_MOD_TIMBRE_BROWSER_CASE,{timeout:180000},async()=>{
-  const page=getPage(),fixture=humanModTimbreFixture(),parts=HUMAN_MOD_TIMBRE_PARTS,report={version:1,scenario:'human-mod-timbre',fixture:fixture.manifest,physicalAudio:false,ok:false,samples:[],states:[],cleanup:[]};let installed=false,legacy;
+  const page=getPage(),fixture=humanModTimbreFixture(),parts=HUMAN_MOD_TIMBRE_PARTS,report={version:1,scenario:'human-mod-timbre',fixture:fixture.manifest,physicalAudio:false,ok:false,samples:[],states:[],cleanup:[],conflictReloads:[]};let installed=false,legacy;
   const readTake=()=>readHumanModExport(page,exportTakeData),readSource=()=>readHumanModExport(page,exportScore);
   const state=async label=>{const value=await page.evaluate(()=>({screen:document.body.dataset.screen,liveToneControls:document.querySelectorAll('[data-mod-live-instrument],#song-mod-unify-sound').length,repairVisible:!document.querySelector('#song-mod-unify-row').hidden,applyDisabled:document.querySelector('#song-mod-apply').disabled,startDisabled:document.querySelector('#start-performance').disabled,playDisabled:document.querySelector('#play-button').disabled,routing:document.querySelector('#song-mod-input-routing').textContent,summary:document.querySelector('#song-mod-preview-summary').textContent,unify:document.querySelector('#song-mod-unify-description').textContent,mode:document.querySelector('#session-mode').value,performanceInstrument:document.querySelector('#instrument').value,parts:[...document.querySelectorAll('.song-mod-part')].map(row=>({id:row.dataset.partId,performer:row.querySelector('[data-mod-performer]').value,liveInstrument:row.dataset.liveInstrument,instrument:row.querySelector('[data-mod-instrument]').value}))}));report.states.push({label,...value});return value;};
   const apply=async()=>{assert.equal(await page.locator('#song-mod-apply').isDisabled(),false);await page.locator('#song-mod-apply').click();await page.locator('#song-mod-dialog').waitFor({state:'hidden'});};
@@ -58,9 +58,14 @@ export function registerHumanModTimbreBrowserRegression({test,getPage,ui,readyFo
    // Only this bounded, self-authored source's saved compatibility sidecar is
    // seeded. Product UI never regains per-part live-tone editing controls.
    await page.evaluate(async({score,tones})=>{const m=await import('/song-mod.js'),identity=m.songModIdentity({score}),store=new m.SongModStore(),mod=m.defaultSongMod({score,mode:'practice',practiceSelection:{kind:'all'}});for(const [i,part]of mod.config.parts.entries()){part.instrument=i?'triangle':'reed';part.liveInstrument=tones[i];}mod.configFingerprint=m.songModConfigFingerprint(mod.config);m.validateSongMod(mod,{identity,parts:score.parts});localStorage.setItem(store.key(identity),JSON.stringify(mod));},{score:fixture.score,tones});
-   if(await page.locator('#song-mod-dialog').isVisible())await page.locator('#song-mod-cancel').click();
-   if(await page.locator('body').getAttribute('data-screen')==='stage')await page.locator('#back-to-library').click();
-   await savedRow().click();await page.waitForFunction(title=>document.querySelector('#preview-title').textContent===title&&!document.querySelector('#configure-song-mod').disabled,fixture.score.title);
+   // The app keeps explicit SongModStore entries in memory. Reselecting the
+   // same catalog source does not reread externally seeded saved preferences.
+   // End observation before navigation; the real reload creates a fresh app.
+   const before=await page.evaluate(()=>performance.timeOrigin);
+   await cleanup();await reopen();await prepareOptions();
+   const after=await page.evaluate(()=>performance.timeOrigin);
+   assert.ok(after>before,'Legacy seed must enter through a new app document');
+   report.conflictReloads.push({tones:[...tones],before,after});
   };
   const install=async()=>{await installCanonicalPreviewAudio(page);await page.evaluate(async()=>{globalThis.__wmhHumanLive=await __wmhObserveLiveNavigation(document,{keyCode:'KeyR',midi:60,readSource:()=>__wmhPreviewAudio.status()});});installed=true;};
   const cleanup=async()=>{if(!installed)return;const value=await page.evaluate(()=>({live:__wmhHumanLive.restore(),source:__wmhPreviewAudio.restore()}));report.cleanup.push(value);validateLiveToneCleanup(value.live);assert.equal(value.source.restored,true);installed=false;};
