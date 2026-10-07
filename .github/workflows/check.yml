@@ -145,7 +145,7 @@ jobs:
         with:
           name: progression-browser-regression
           path: ${{ runner.temp }}/worldmusicclub-progression/
-          if-no-files-found: warn
+          if-no-files-found: ignore
       - name: Check real Rust-backed application
         if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' && steps.rust_server.outcome == 'success' }}
         run: npm run test:full-app

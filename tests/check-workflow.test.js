@@ -113,6 +113,22 @@ function validateParallelGate(document) {
     assert.ok(real.indexOf(row) > real.indexOf(build));
   }
   assert.ok(real.indexOf(step(document, 'frontend-real', 'npm run test:assistance-browser')) < real.indexOf(step(document, 'frontend-real', 'npm run test:full-app')), 'Assistance must run before the broad real-app suite');
+  const progression = real.find(row => row.name === 'Check real progressive hierarchy, input isolation and durable Off');
+  assert.ok(progression, 'The complete progressive browser suite remains mandatory');
+  assert.equal(progression.if, realGuard);
+  assert.deepEqual(progression.env, {
+    WMH_ARTIFACT_DIR: '${{ runner.temp }}/worldmusicclub-progression',
+    WMH_SOURCE_SHA: source,
+    WMH_SERVER_BINARY: '${{ github.workspace }}/target/debug/practice-server',
+  });
+  assert.deepEqual(progression.run.trim().split('\n'), [
+    'set -o pipefail',
+    'mkdir -p "$WMH_ARTIFACT_DIR"',
+    'node --test --test-reporter=tap tests/progression-app-browser.test.js | tee "$WMH_ARTIFACT_DIR/tests.tap"',
+    'node scripts/verify-progression-preview.mjs "$WMH_ARTIFACT_DIR"',
+  ]);
+  assert.ok(real.indexOf(progression) > real.indexOf(build));
+  assert.ok(real.indexOf(progression) < real.indexOf(step(document, 'frontend-real', 'npm run test:full-app')));
   const storage = step(document, 'frontend-real', 'npm run test:score-storage-hosted');
   assert.equal(storage['timeout-minutes'], 5);
   assert.equal(storage.env.WMH_SOURCE_SHA, source);
@@ -143,6 +159,10 @@ test('Verify rejects serialized work, lost tests, weaker failure checks and mism
     doc => { doc.jobs['frontend-real'].steps = doc.jobs['frontend-real'].steps.filter(row => row.run !== 'npm run test:engraving-browser'); },
     doc => { doc.jobs['frontend-real'].steps = doc.jobs['frontend-real'].steps.filter(row => row.run !== 'npm run test:assistance-browser'); },
     doc => { step(doc, 'frontend-real', 'npm run test:assistance-browser').if = 'success()'; },
+    doc => { doc.jobs['frontend-real'].steps = doc.jobs['frontend-real'].steps.filter(row => row.name !== 'Check real progressive hierarchy, input isolation and durable Off'); },
+    doc => { doc.jobs['frontend-real'].steps.find(row => row.name === 'Check real progressive hierarchy, input isolation and durable Off').env.WMH_SOURCE_SHA = 'main'; },
+    doc => { const row = doc.jobs['frontend-real'].steps.find(row => row.name === 'Check real progressive hierarchy, input isolation and durable Off'); row.run = row.run.replace('set -o pipefail', 'true'); },
+    doc => { const row = doc.jobs['frontend-real'].steps.find(row => row.name === 'Check real progressive hierarchy, input isolation and durable Off'); row.run = row.run.split('\n').filter(line => !line.includes('verify-progression-preview')).join('\n'); },
     doc => { step(doc, 'frontend-real', 'npm run test:score-storage-hosted').if = 'success()'; },
     doc => { step(doc, 'frontend-real', 'node scripts/hosted-rhythm-check.mjs').env.WMH_SOURCE_SHA = '${{ github.event.pull_request.head.sha }}'; },
     doc => { doc.jobs['frontend-real'].steps[0].with.ref = 'main'; },
@@ -163,6 +183,7 @@ test('Verify preserves complete screenshot, storage and six bounded artifact con
   const complete = artifact('browser-regression-screenshots');
   assert.deepEqual(complete.with.path.trim().split('\n'), [...browserPaths, '${{ runner.temp }}/worldmusichub-rhythm/']);
   assert.equal(artifact('score-storage-regression').with.path, '${{ runner.temp }}/worldmusichub-score-storage/');
+  assert.equal(artifact('progression-browser-regression').with.path, '${{ runner.temp }}/worldmusicclub-progression/');
   assert.equal(artifact('connection-lifetime-${{ matrix.os }}').with.path, '${{ runner.temp }}/wmh-connections.json');
   for (let index = 1; index <= 6; index++) {
     const part = String(index).padStart(2, '0');
