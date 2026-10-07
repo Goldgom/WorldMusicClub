@@ -1,4 +1,5 @@
 import {basicKeyEngravingBoundaries,basicKeyEngravingViewVersion} from './basic-key-notation.js';
+import {assertPracticeAssistanceDisplay} from './practice-assistance-display.js';
 /** Verify display identity only. Rust owns every performance interval. */
 import {ENGRAVING_SOURCE_LIMITS,proveEngravingProjectionModelNotes,engravingProjectionModelCoordinates} from './engraving-projection.js';
 const VERSION=1,MAX_BYTES=ENGRAVING_SOURCE_LIMITS.mapBytes,MAX_SEGMENTS=ENGRAVING_SOURCE_LIMITS.notes;
@@ -398,7 +399,7 @@ function prepareCueGeometry(document,step){
 
 /** Bind only verified current-render glyphs. No update below invokes OSMD.render(). */
 export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasure,toMeasure,partIds,color,cueColor,onChange=()=>{}}){
-  const matched=matchEngravingModel(renderer,validated),entries=[],diagnostics=[],snapshots=new Map(),allowedByMeasure=new Map();let disposed=false,invalidated=false,current=new Set(),currentRequest=null,inputDiagnostic=null,cueLayer=null,cueEpoch=0,stopCuePreparation=null,practiceHumans=null;
+  const matched=matchEngravingModel(renderer,validated),entries=[],diagnostics=[],snapshots=new Map(),allowedByMeasure=new Map();let disposed=false,invalidated=false,current=new Set(),currentRequest=null,inputDiagnostic=null,cueLayer=null,cueEpoch=0,stopCuePreparation=null,practiceHumans=null,practiceOwnership=null;
   for(const segment of validated.segments||[]){if(!allowedByMeasure.has(segment.source_measure_index))allowedByMeasure.set(segment.source_measure_index,new Set());allowedByMeasure.get(segment.source_measure_index).add(segment.source_note_id)}
   if(!matched.ok)diagnostics.push(...matched.diagnostics);
   else{const displayedIds=new Set(validated.segments.filter(segment=>partIds.includes(segment.xml_part_id)&&segment.source_measure_index>=fromMeasure-1&&segment.source_measure_index<=toMeasure-1).map(segment=>segment.xml_note_id));diagnostics.push(...matched.diagnostics.filter(item=>item.xmlNoteIds.some(id=>displayedIds.has(id))))}
@@ -427,16 +428,18 @@ export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasur
   // Separate presentation markers never change a musical glyph's shape, style,
   // bounding box or identity. Fit/resize can change SVG paint without rebinding
   // its model, so owned presentation markers have an explicit geometry refresh.
-  if(cueColor&&entries.some(entry=>entry.status==='bound')){
+  function prepareCues(){
+    if(cueLayer||!entries.some(entry=>entry.status==='bound'))return;
     const origin=mount.getBoundingClientRect();cueLayer=mount.ownerDocument.createElement('div');cueLayer.className='engraving-expected-cues';cueLayer.setAttribute('aria-hidden','true');cueLayer.style.cssText='position:absolute;inset:0;pointer-events:none;overflow:visible';
     for(const entry of entries)if(entry.status==='bound'){
       const box=entry.glyph.box,cue=mount.ownerDocument.createElement('span');cue.className='engraving-expected-cue';cue.hidden=true;
       cue.dataset.sourceNoteId=entry.segment.source_note_id;cue.dataset.xmlNoteId=entry.segment.xml_note_id;cue.dataset.sourceMeasureIndex=String(entry.segment.source_measure_index);
-      cue.style.cssText=`position:absolute;box-sizing:border-box;left:${box.x-origin.x-3}px;top:${box.y-origin.y-3}px;width:${box.width+6}px;height:${box.height+6}px;border:2px solid ${cueColor};border-radius:3px;pointer-events:none`;
+      cue.style.cssText=`position:absolute;box-sizing:border-box;left:${box.x-origin.x-3}px;top:${box.y-origin.y-3}px;width:${box.width+6}px;height:${box.height+6}px;border:2px solid ${cueColor||'#17251d'};border-radius:3px;pointer-events:none`;
       entry.cue=cue;entry.cueEpoch=cueEpoch;entry.cueUsable=true;cueLayer.append(cue);
     }
     mount.append(cueLayer);
   }
+  if(cueColor)prepareCues();
   const summary=()=>{
     const displayed=entries.filter(entry=>entry.status!=='not-displayed'),bound=displayed.filter(entry=>entry.status==='bound'),allDiagnostics=inputDiagnostic?[...diagnostics,inputDiagnostic]:diagnostics;
     return {status:disposed?'unavailable':!validated.ok?validated.status:inputDiagnostic||!matched.ok?'unavailable':bound.length===displayed.length?'ready':bound.length?'partial':'unavailable',version:VERSION,segmentCount:validated.segments?.length||0,displayedSegmentCount:displayed.length,verifiedGlyphCount:new Set(bound.map(entry=>entry.glyph.group)).size,bindings:entries.map(entry=>({xmlNoteId:entry.segment.xml_note_id,sourceNoteId:entry.segment.source_note_id,sourceMeasureIndex:entry.segment.source_measure_index,status:entry.status,...(entry.reason?{reason:entry.reason}:{})})),diagnostics:allDiagnostics.map(item=>({...item,sourceNoteIds:[...item.sourceNoteIds],xmlNoteIds:[...item.xmlNoteIds]}))};
@@ -452,10 +455,11 @@ export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasur
   function placeCue(entry,box,origin){
     if(!entry.cue)return;
     entry.cueEpoch=cueEpoch;entry.cueUsable=Boolean(box);
-    if(!box){if(!entry.cue.hidden)entry.cue.hidden=true;return;}
+    if(!box){if(!entry.cue.hidden)entry.cue.hidden=true;if(entry.roleCue)entry.roleCue.hidden=true;return;}
     const values={left:box.x-origin.x-3,top:box.y-origin.y-3,width:box.width+6,height:box.height+6};
     for(const [key,value]of Object.entries(values)){const text=`${value}px`;if(entry.cue.style[key]!==text)entry.cue.style[key]=text;}
     const hidden=!current.has(entry);if(entry.cue.hidden!==hidden)entry.cue.hidden=hidden;
+    if(entry.roleCue){for(const [key,value]of Object.entries(values))entry.roleCue.style[key]=`${value}px`;entry.roleCue.hidden=false;}
   }
   function cueOrigin(){
     const box=mount.getBoundingClientRect();
@@ -502,9 +506,31 @@ export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasur
   }
   function clear(announce=true){for(const entry of current){for(const path of entry.glyph.paths)restore(path);if(entry.cue)entry.cue.hidden=true}current.clear();currentRequest=null;const changed=Boolean(inputDiagnostic);inputDiagnostic=null;if(changed&&!disposed&&announce)notify()}
   function reject(){const alreadyRejected=Boolean(inputDiagnostic);clear(false);inputDiagnostic=diagnostic('engraving_expected_notes_invalid','Current written-note identities do not match this score and measure. Highlighting is cleared; playback is unchanged.');if(!alreadyRejected)notify();return false}
+  function clearRoles(){for(const entry of entries)if(entry.status==='bound'){entry.roleCue?.remove();entry.roleCue=null;const group=entry.glyph.group;group.removeAttribute('data-practice-role');group.removeAttribute('data-practice-part-id');group.removeAttribute('data-practice-machine-retained');}}
+  function setPracticeAssistance(value){
+    clear();clearRoles();practiceOwnership=null;practiceHumans=value?.assistance?new Set():null;
+    if(!value?.assistance)return;
+    const ownership=assertPracticeAssistanceDisplay(value.assistance,value.ownershipIndex);
+    const displayed=entries.filter(entry=>entry.status==='bound');
+    const roles=displayed.map(entry=>entry.segment.pitch===null?'rest':ownership.sourceRole(entry.segment.source_note_id,entry.segment.part_id));
+    if(roles.some(role=>!role))throw Object.assign(new TypeError('A written glyph has no current source-unit ownership.'),{code:'practice_assistance_display_identity'});
+    prepareCues();practiceOwnership=ownership;practiceHumans=null;
+    for(const [index,entry]of displayed.entries()){
+      const role=roles[index],group=entry.glyph.group;group.setAttribute('data-practice-role',role);group.setAttribute('data-practice-part-id',entry.segment.part_id);
+      if(role!=='machine')continue;
+      // Only noteheads are individually proved here. Stems, flags, accidentals
+      // and beams can be shared with a human chord member. Keep the full source
+      // notation, with a visible role cue; the view discloses this restriction.
+      if(value.showMachine===false)group.setAttribute('data-practice-machine-retained','true');
+      if(entry.cue){
+        const cue=entry.cue.cloneNode(false);cue.className='engraving-machine-cue';cue.style.borderStyle='dashed';cue.style.borderColor='var(--skin-machine-fill, #8a91ac)';cue.hidden=false;cue.dataset.practiceRole='machine';entry.roleCue=cue;cueLayer.append(cue);
+      }
+    }
+  }
   return {
     mappingStatus:summary,
-    setPracticePartIds(ids){clear();const human=ids===null?null:new Set(ids);practiceHumans=human;for(const entry of entries)if(entry.status==='bound'){const group=entry.glyph.group;if(!mount.contains(group)||!group.isConnected)continue;if(human){group.setAttribute('data-practice-role',human.has(entry.segment.part_id)?'human':'machine');group.setAttribute('data-practice-part-id',entry.segment.part_id);}else{group.removeAttribute('data-practice-role');group.removeAttribute('data-practice-part-id');}}},
+    setPracticeAssistance,
+    setPracticePartIds(ids){clear();clearRoles();practiceOwnership=null;const human=ids===null?null:new Set(ids);practiceHumans=human;for(const entry of entries)if(entry.status==='bound'){const group=entry.glyph.group;if(!mount.contains(group)||!group.isConnected)continue;if(human){group.setAttribute('data-practice-role',human.has(entry.segment.part_id)?'human':'machine');group.setAttribute('data-practice-part-id',entry.segment.part_id);}}},
     refreshExpectedCueGeometry,
     expectedNoteBounds(){
       if(disposed||invalidated||!currentRequest)return {status:'unavailable',rects:[],unavailableSourceNoteIds:[]};
@@ -530,7 +556,7 @@ export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasur
       if(!validated.ok||!matched.ok){clear();return false}
       if(!Array.isArray(ids)||!integer(measure,0,validated.score.measures.length-1)||ids.some(id=>typeof id!=='string'||!validated.sources.has(id))||new Set(ids).size!==ids.length||ids.some(id=>!allowedByMeasure.get(measure)?.has(id)))return reject();
       if(inputDiagnostic){inputDiagnostic=null;notify()}
-      const wanted=new Set(ids),next=new Set(entries.filter(entry=>entry.status==='bound'&&(!practiceHumans||practiceHumans.has(entry.segment.part_id))&&entry.segment.source_measure_index===measure&&wanted.has(entry.segment.source_note_id)));
+      const wanted=new Set(ids),next=new Set(entries.filter(entry=>entry.status==='bound'&&(practiceOwnership?practiceOwnership.isHumanSource(entry.segment.source_note_id,entry.segment.part_id):!practiceHumans||practiceHumans.has(entry.segment.part_id))&&entry.segment.source_measure_index===measure&&wanted.has(entry.segment.source_note_id)));
       if([...next].some(entry=>!mount.contains(entry.glyph.group)||!entry.glyph.group.isConnected)){clear(false);invalidated=true;const old=entries.filter(entry=>entry.status==='bound');for(const entry of old){entry.status='unavailable';entry.reason='engraving_glyph_stale'}diagnostics.push(diagnostic('engraving_glyph_stale','The rendered noteheads changed. Highlighting is cleared until the display is rebuilt.',old.map(entry=>entry.segment)));notify();return false}
       const stale=[...next].filter(entry=>entry.cue&&entry.cueEpoch!==cueEpoch);let origin=null;
       // Optional presentation geometry must not throw into the playback update.
@@ -543,6 +569,6 @@ export function createEngravingNoteBindings(renderer,mount,validated,{fromMeasur
       for(const {entry,box}of measured)placeCue(entry,box,origin);
       return true;
     },
-    dispose(){if(disposed)return;for(const entry of entries)if(entry.status==='bound'){entry.glyph.group.removeAttribute('data-practice-role');entry.glyph.group.removeAttribute('data-practice-part-id');}stopCuePreparation?.();stopCuePreparation=null;clear();disposed=true;cueLayer?.remove();cueLayer=null;for(const entry of entries)if(entry.status==='bound'){entry.status='unavailable';entry.reason='engraving_view_disposed'}snapshots.clear()},
+    dispose(){if(disposed)return;clearRoles();stopCuePreparation?.();stopCuePreparation=null;clear();disposed=true;cueLayer?.remove();cueLayer=null;for(const entry of entries)if(entry.status==='bound'){entry.status='unavailable';entry.reason='engraving_view_disposed'}snapshots.clear()},
   };
 }

@@ -228,7 +228,9 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
   const reportMapping=mapping=>{if(isCurrent()&&typeof options.onMappingChange==='function'){try{options.onMappingChange(mapping)}catch{/* A presentation callback does not own this renderer. */}}};
   const rebind=()=>{
     bindings=createEngravingNoteBindings(renderer,mount,boundIdentity,{...checked.options,color:checked.options.dark?'#f7cf68':'#925b12',cueColor:checked.options.dark?'#f3f5ef':'#17251d',onChange:reportMapping});renderGeneration++;
-    if(typeof options.getHumanPartIds==='function')bindings.setPracticePartIds(options.getHumanPartIds()??null);
+    const assistanceDisplay=options.getPracticeAssistanceDisplay?.();
+    if(assistanceDisplay?.assistance)bindings.setPracticeAssistance(assistanceDisplay);
+    else if(typeof options.getHumanPartIds==='function')bindings.setPracticePartIds(options.getHumanPartIds()??null);
     if(expected)bindings.setExpectedWrittenNotes(expected);
     reportMapping(bindings.mappingStatus());
   };

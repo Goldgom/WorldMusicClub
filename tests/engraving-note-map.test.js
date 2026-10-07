@@ -5,6 +5,8 @@ import {fixture} from './frontend-fixtures.js';
 import {validateEngravingNoteMap,matchEngravingModel,createEngravingNoteBindings} from '../web/engraving-note-map.js';
 import {renderEngravedStaff} from '../web/engraving.js';
 import {createNotationRenderGroup} from '../web/notation-render-group.js';
+import {audioAssistanceFixture} from './practice-assistance-audio-fixtures.js';
+import {createPracticeAssistanceDisplayIndex} from '../web/practice-assistance-display.js';
 
 const clone=structuredClone,beat=n=>({numerator:n,denominator:1});
 function example(){
@@ -359,4 +361,48 @@ test('verified human-part roles preserve musical glyphs and prevent machine expe
   assert.equal(env.paths.get('N1_2_1').getAttribute('fill'),'#f7cf68');
   env.output.setPracticePartIds(null);assert.equal(env.svg.innerHTML,before);
   env.output.dispose();assert.equal(env.svg.innerHTML,before);
+});
+
+function assistanceFor(spec,humanIds=['long','split']){
+  const midi={C:60,D:62,E:64},timeline={duration_ms:8000,notes:spec.score.parts[0].notes.filter(note=>note.pitch).map(note=>({id:note.id,part_id:'part',source_note_id:note.id,source_note_ids:[note.id],midi:midi[note.pitch.step],start_ms:note.at.numerator*1000,duration_ms:note.duration.numerator*1000,velocity:90,voice:note.voice,staff:note.staff}))};
+  const f=audioAssistanceFixture({score:spec.score,timeline},{partIds:['part'],humanIds});
+  return{assistance:f.assistance,ownershipIndex:createPracticeAssistanceDisplayIndex({assistance:f.assistance,sourceNotes:timeline.notes})};
+}
+
+test('same-part assistance maps source units to exact written segments, with independent dashed machine cues and no expected feedback',()=>{
+  const spec=example(),env=bound(spec,{cueColor:'#17251d'}),display=assistanceFor(spec);
+  const sharedStem=env.document.createElementNS('http://www.w3.org/2000/svg','path');sharedStem.setAttribute('d','M20 20v-31');sharedStem.classList.add('vf-stem');env.paths.get('N1_1_1').parentElement.parentElement.append(sharedStem);const before=env.svg.innerHTML;
+  env.output.setPracticeAssistance(display);
+  assert.equal(env.paths.get('N1_1_1').parentElement.dataset.practiceRole,'machine');assert.equal(env.paths.get('N1_2_1').parentElement.dataset.practiceRole,'human');
+  assert.equal(env.mount.querySelectorAll('.engraving-machine-cue').length,1);
+  const cue=env.mount.querySelector('.engraving-machine-cue');assert.equal(cue.dataset.sourceNoteId,'short');assert.equal(cue.style.borderStyle,'dashed');assert.equal(cue.hidden,false);
+  env.output.setExpectedWrittenNotes({sourceNoteIds:['short','long'],sourceMeasureIndex:0});
+  assert.equal(env.paths.get('N1_1_1').hasAttribute('fill'),false);assert.equal(env.paths.get('N1_2_1').getAttribute('fill'),'#f7cf68');
+  assert.deepEqual(env.output.expectedNoteBounds().rects.map(rect=>rect.sourceNoteId),['long']);
+  env.output.clearExpectedWrittenNotes();assert.equal(cue.hidden,false,'The permanent role cue is not attack feedback');
+  env.output.setExpectedWrittenNotes({sourceNoteIds:['split'],sourceMeasureIndex:1});assert.deepEqual(env.output.expectedNoteBounds().rects.map(rect=>rect.xmlNoteId),['N1_4_2']);
+  env.output.setPracticeAssistance({...display,showMachine:false});assert.equal(env.paths.get('N1_1_1').parentElement.getAttribute('data-practice-machine-retained'),'true');assert.equal(env.mount.querySelector('.engraving-machine-cue').hidden,false);
+  assert.equal(sharedStem.getAttribute('d'),'M20 20v-31');assert.equal(sharedStem.closest('.practice-machine-hidden,[data-practice-machine-hidden]'),null,'A machine visibility preference cannot erase a shared human stem');
+  env.output.setPracticeAssistance({...display,showMachine:true});assert.equal(env.paths.get('N1_1_1').parentElement.hasAttribute('data-practice-machine-retained'),false);
+  env.output.dispose();assert.equal(env.svg.innerHTML,before,'Disposal restores original glyph and source identity attributes');
+});
+
+test('source-bound tied machine segments keep page ordinal and refresh their separate role enclosure after fitting',()=>{
+  const spec=example(),env=bound(spec,{cueColor:'#17251d'}),display=assistanceFor(spec,['long']),turns=cueTurns(env);
+  env.output.setPracticeAssistance(display);
+  const cues=[...env.mount.querySelectorAll('.engraving-machine-cue')].filter(cue=>cue.dataset.sourceNoteId==='split');assert.deepEqual(cues.map(cue=>cue.dataset.sourceMeasureIndex),['0','1']);
+  const path=env.paths.get('N1_4_2'),before=path.getAttribute('d');path.parentElement.getBoundingClientRect=()=>({x:160,y:190,width:8,height:7});
+  env.output.refreshExpectedCueGeometry();for(let i=0;i<5;i++)turns.turn();assert.equal(cues[1].style.left,'152px');assert.equal(cues[1].style.top,'177px');assert.equal(cues[1].hidden,false);assert.equal(path.getAttribute('d'),before);
+  env.output.setExpectedWrittenNotes({sourceNoteIds:['split'],sourceMeasureIndex:1});assert.deepEqual(env.output.expectedNoteBounds().rects,[]);
+  env.output.dispose();assert.ok(cues.every(cue=>!cue.isConnected));
+});
+
+test('stale or partial assistance clears all prior staff roles and cannot fall back to selected-part coloring',()=>{
+  const spec=example(),env=bound(spec),display=assistanceFor(spec);env.output.setPracticeAssistance(display);
+  assert.equal(env.mount.querySelectorAll('.engraving-machine-cue').length,1,'A noncolor cue is provided even without optional expected cue settings');
+  assert.throws(()=>env.output.setPracticeAssistance({...display,assistance:assistanceFor(spec).assistance}),{code:'practice_assistance_display_identity'});
+  assert.equal(env.svg.querySelectorAll('[data-practice-role]').length,0);assert.equal(env.mount.querySelectorAll('.engraving-machine-cue').length,0);
+  env.output.setExpectedWrittenNotes({sourceNoteIds:['long','short'],sourceMeasureIndex:0});assert.deepEqual(env.output.expectedNoteBounds().rects,[]);
+  const other=example();other.score.parts[0].notes[0].id='foreign';const invalid=assistanceFor(other,['long','split']);
+  assert.throws(()=>env.output.setPracticeAssistance(invalid),{code:'practice_assistance_display_identity'});assert.equal(env.svg.querySelectorAll('[data-practice-role]').length,0);env.output.dispose();
 });

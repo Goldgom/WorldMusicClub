@@ -13,7 +13,7 @@ export const FIELD_COLORS=Object.freeze({background:'#142333',backgroundEnd:'#1d
 export function updateWrittenNoteHighlights(root,sourceNoteIds){
   const activeIds=new Set(sourceNoteIds);
   for(const node of root.querySelectorAll('.score-note')){
-    const active=activeIds.has(node.dataset.noteId),text=String(active);
+    const active=activeIds.has(node.dataset.noteId)&&!['machine','unavailable'].includes(node.dataset.practiceRole)&&!node.classList.contains('practice-machine-hidden'),text=String(active);
     if(node.classList.contains('active')!==active)node.classList.toggle('active',active);
     if(node.getAttribute('aria-current')!==text)node.setAttribute('aria-current',text);
   }
