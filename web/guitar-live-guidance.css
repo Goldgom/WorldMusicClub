@@ -41,3 +41,15 @@
  .guitar-live-position{line-height:16px}
  .guitar-live-action{line-height:12px}
 }
+/* Human ownership is a full-width footer row. Keeping this paragraph inside
+   the half-width planning column adds default margins and wraps its label,
+   which steals height from the complete current/next matrix in landscape.
+   Only closed disclosures flatten into the stage grid; expanded editors keep
+   their existing bounded scrolling and all source/lock text. */
+@media(max-height:600px) and (min-width:651px){
+ .performance-layout #workspace .guitar-stage:has(#guitar-selected-parts):not(:has(#guitar-plan-controls[open],.guitar-details[open])){grid-template-rows:minmax(0,1fr) 56px max-content max-content}
+ .performance-layout #workspace .guitar-stage:has(#guitar-selected-parts):not(:has(#guitar-plan-controls[open],.guitar-details[open])) #guitar-planning{display:contents}
+ .performance-layout #workspace .guitar-stage:has(#guitar-selected-parts):not(:has(#guitar-plan-controls[open],.guitar-details[open])) #guitar-selected-parts{grid-column:1/-1;grid-row:3;margin:0;line-height:1.4;max-height:2.8em;overflow:auto;overscroll-behavior:contain;overflow-wrap:anywhere}
+ .performance-layout #workspace .guitar-stage:has(#guitar-selected-parts):not(:has(#guitar-plan-controls[open],.guitar-details[open])) #guitar-plan-controls{grid-column:1;grid-row:4}
+ .performance-layout #workspace .guitar-stage:has(#guitar-selected-parts):not(:has(#guitar-plan-controls[open],.guitar-details[open])) .guitar-details{grid-column:2;grid-row:4}
+}

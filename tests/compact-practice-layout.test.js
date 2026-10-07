@@ -173,3 +173,32 @@ test('piano score options pin paging and complete Follow status ahead of long sc
   assert.equal(style(prefix).overflow,'auto','All retained scope, source and help details remain reachable in the original pane');
   for(const selector of [prefix+' .notation-panel',prefix+' .engraving-follow-controls',prefix+' #engraving-follow-status'])for(const property of ['height','max-height','text-overflow'])assert.equal(style(selector).getPropertyValue(property),'','The pinned content is not clipped or shortened');
 });
+
+
+test('selected guitar ownership shares the full stage width before the two compact disclosures',async()=>{
+  // Check the final cascade and actual selector applicability, not a simulated
+  // browser height. Hosted tests retain the 98% / 24px marker requirements.
+  const files=['performance-stage.css','guitar-live-guidance.css'];
+  const css=(await Promise.all(files.map(file=>readFile(new URL('../web/'+file,import.meta.url),'utf8')))).join('\n');
+  const {document}=parseHTML(`<style>${css}</style><body class="performance-layout"><main id="workspace" class="with-notation"><div class="guitar-stage"><div id="guitar-guidance"></div><div class="guitar-scroll"></div><section id="guitar-planning"><p id="guitar-selected-parts">Human parts: Guitar · 18 source occurrences in this selection</p><details id="guitar-plan-controls"><summary>Route settings</summary><p id="guitar-plan-status">One whole-phrase route · 18</p></details></section><details class="guitar-details"><summary>Tuning &amp; sources</summary></details></div></main></body>`);
+  const rules=[...document.querySelector('style').sheet.cssRules].filter(rule=>rule.media?.mediaText==='(max-height:600px) and (min-width:651px)').flatMap(rule=>[...rule.cssRules]);
+  const selected='.performance-layout #workspace .guitar-stage:has(#guitar-selected-parts):not(:has(#guitar-plan-controls[open],.guitar-details[open]))';
+  const rule=selector=>rules.findLast(item=>item.selectorText===selector).style;
+  const stage=document.querySelector('.guitar-stage'),planning=document.getElementById('guitar-planning'),label=document.getElementById('guitar-selected-parts'),route=document.getElementById('guitar-plan-controls'),sources=document.querySelector('.guitar-details');
+  assert.equal(stage.matches(selected),true);assert.equal(planning.matches(selected+' #guitar-planning'),true);
+  assert.equal(rule(selected)['grid-template-rows'],'minmax(0,1fr) 56px max-content max-content');
+  assert.equal(rule(selected+' #guitar-planning').display,'contents','Only the closed planning wrapper stops reserving its own half-width footer row');
+  const scope=rule(selected+' #guitar-selected-parts');assert.equal(scope['grid-column'],'1/-1');assert.equal(scope['grid-row'],'3');assert.equal(scope.margin,'0');assert.equal(scope['line-height'],'1.4');
+  assert.equal(scope['max-height'],'2.8em');assert.equal(scope.overflow,'auto','Long source names stay reachable in a bounded scroller');assert.equal(scope['overflow-wrap'],'anywhere');
+  for(const property of ['font-size','display','visibility','text-overflow','white-space','-webkit-line-clamp'])assert.equal(scope.getPropertyValue(property),'','Full labels keep their existing 12px font and wrap without elision');
+  assert.equal(rule(selected+' #guitar-plan-controls')['grid-column'],'1');assert.equal(rule(selected+' #guitar-plan-controls')['grid-row'],'4');
+  assert.equal(rule(selected+' .guitar-details')['grid-column'],'2');assert.equal(rule(selected+' .guitar-details')['grid-row'],'4');
+  for(const disclosure of [route,sources]){disclosure.setAttribute('open','');assert.equal(stage.matches(selected),false,'Opening either existing control restores the original editor/source layout');disclosure.removeAttribute('open');assert.equal(stage.matches(selected),true);}
+  assert.equal(label.textContent,'Human parts: Guitar · 18 source occurrences in this selection');assert.equal(route.querySelector('summary').textContent,'Route settings');assert.equal(sources.querySelector('summary').textContent,'Tuning & sources');
+  // Recorded source dimensions from hosted run 37560469397: the old half-width
+  // label was two 19.1875px lines, plus 24px of default paragraph margins. The
+  // new full-width single line recovers >40px without changing marker fonts.
+  const recovered=2*19.1875+24-12*Number(scope['line-height']);
+  const oldVisibleNext=28*0.09654017857142858;
+  assert.ok(recovered>28-oldVisibleNext+3,'Recovered footer space exceeds the observed missing Next marker height plus the added grid gap');
+});

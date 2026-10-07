@@ -2476,15 +2476,23 @@ test('real guitar current and next six-note recommendations are entirely visible
   for(const viewport of [{width:1280,height:720},{width:844,height:390}]){
     await page.setViewportSize(viewport);await ui('#jianpu-button').click();
     const current=await actualMarkerVisibility('.guitar-live-current .guitar-live-choice'),next=await actualMarkerVisibility('.guitar-live-next .guitar-live-choice');
+    const layout=await page.evaluate(()=>Object.fromEntries(['.guitar-stage','#guitar-guidance','#guitar-selected-parts','#guitar-planning','#guitar-plan-controls','.guitar-details','.guitar-scroll','.transport','#notice'].map(selector=>{
+      const node=document.querySelector(selector),rect=node.getBoundingClientRect(),style=getComputedStyle(node);
+      return[selector,{x:rect.x,y:rect.y,width:rect.width,height:rect.height,clientHeight:node.clientHeight,scrollHeight:node.scrollHeight,scrollTop:node.scrollTop,display:style.display,gridTemplateRows:style.gridTemplateRows,gridColumn:style.gridColumn,gridRow:style.gridRow,fontSize:style.fontSize,lineHeight:style.lineHeight,marginTop:style.marginTop,marginBottom:style.marginBottom,overflowY:style.overflowY}];
+    })));
+    evidence.push({viewport,current,next,layout});
+    // Preserve the real stage geometry and PNG even if a complete marker fails.
+    await writeFile(join(artifactDirectory,'worldmusichub-live-complete-guitar-chords.json'),JSON.stringify({plan,evidence,complete:false},null,2));
+    await screenshot(`guitar-complete-chords-${viewport.width}x${viewport.height}`);
     assert.equal(current.length,6);assert.equal(next.length,6);
     assert.deepEqual(new Set(current.flatMap(x=>x.occurrences)),new Set(plan.assignments.filter(x=>x.onset_index===0).map(x=>x.occurrence_id)));
     assert.deepEqual(new Set(next.flatMap(x=>x.occurrences)),new Set(plan.assignments.filter(x=>x.onset_index===1).map(x=>x.occurrence_id)));
     for(const marker of [...current,...next])assert.ok(marker.painted&&marker.fraction>=.98&&marker.height>=24,`Entire chosen guitar position must be visible: ${JSON.stringify({viewport,marker})}`);
     assert.equal(await page.locator('#guitar-show-alternatives').isChecked(),false);assert.match(await page.locator('#guitar-live-transition').textContent(),/Chosen frets/);
-    assert.equal((await page.locator('#progress').evaluate(readPlaybackClock)).positionMs,position);evidence.push({viewport,current,next});await screenshot(`guitar-complete-chords-${viewport.width}x${viewport.height}`);
+    assert.equal((await page.locator('#progress').evaluate(readPlaybackClock)).positionMs,position);
   }
   assert.deepEqual(await exportTakeData(),take);assert.deepEqual(await exportScore(),score);
-  await writeFile(join(artifactDirectory,'worldmusichub-live-complete-guitar-chords.json'),JSON.stringify({plan,evidence,paused_take_unchanged:true,canonical_score_unchanged:true},null,2));
+  await writeFile(join(artifactDirectory,'worldmusichub-live-complete-guitar-chords.json'),JSON.stringify({plan,evidence,complete:true,paused_take_unchanged:true,canonical_score_unchanged:true},null,2));
 });
 
 async function prepareKeyboardBrowserPractice(id) {
