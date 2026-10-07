@@ -50,6 +50,7 @@ pub mod practice_progression;
 pub mod practice_source;
 mod public_domain;
 pub mod results;
+pub mod source_instrument;
 pub mod targets;
 pub mod transposition;
 pub use musicxml::import_musicxml;
