@@ -32,7 +32,7 @@ export function observeDenseRenditionAudio(root=globalThis){
 export async function installDenseRenditionObserver({library,audioProbe}={}){
  const {BasicKeyAudioReceiver,Renderer}=library||{...(await import('/basic-key-audio-receiver.js')),Renderer:globalThis.opensheetmusicdisplay?.OpenSheetMusicDisplay};
  if(!Renderer)throw Error('Load the first real staff page before installing the dense observer');
- const doc=globalThis.document,now=()=>performance.now(),get=id=>doc.getElementById(id),limits={pumps:4096,schedules:8192,renders:256,frames:4096,scope:128,states:128,errors:32,longTasks:256},data={version:2,pumps:[],schedules:[],renders:[],frames:[],scope:[],states:[],errors:[],longTasks:[],longTaskSupported:false,overflow:[],counts:{pumps:0,schedules:0,renders:0},listeningStarted:null,listeningEnded:null};
+ const doc=globalThis.document,now=()=>performance.now(),get=id=>doc.getElementById(id),limits={pumps:4096,schedules:8192,renders:256,frames:4096,scope:128,states:128,errors:32,longTasks:256},data={version:3,pumps:[],schedules:[],renders:[],frames:[],scope:[],states:[],errors:[],longTasks:[],longTaskSupported:false,longTaskObservation:{version:1,sampleLimit:256,observedCount:0,retainedCount:0,omittedCount:0,totalDurationMs:0,maxDurationMs:null,firstStartTimeMs:null,lastEndTimeMs:null},overflow:[],counts:{pumps:0,schedules:0,renders:0},listeningStarted:null,listeningEnded:null};
  let active=true,context=null;const contexts=new Map(),restores=[],painted=new Set();
  const push=(kind,row)=>{if(!active)return;if(data[kind].length<limits[kind])data[kind].push(row);else if(!data.overflow.includes(kind))data.overflow.push(kind);};
  const screen=()=>{const clock=globalThis.__wmhReadPlaybackClock(doc);return{wall:now(),clock,position:clock.positionMs,renderer:get('clean-song-stage').dataset.rendererState,scoreState:get('workspace').dataset.scoreState,range:get('engraving-range').textContent,captured:get('hud-captured').textContent,notice:get('notice').textContent,audioTime:context?.currentTime??null,audioState:context?.state??null};};
@@ -60,7 +60,21 @@ export async function installDenseRenditionObserver({library,audioProbe}={}){
   }
   globalThis.requestAnimationFrame=observedFrame;restores.push(()=>{if(globalThis.requestAnimationFrame===observedFrame)globalThis.requestAnimationFrame=requestFrame;return globalThis.requestAnimationFrame===requestFrame;});
  }
- let longTaskObserver;if(globalThis.PerformanceObserver?.supportedEntryTypes?.includes('longtask')){data.longTaskSupported=true;longTaskObserver=new PerformanceObserver(list=>{for(const entry of list.getEntries())push('longTasks',{startTime:entry.startTime,duration:entry.duration});});longTaskObserver.observe({type:'longtask',buffered:false});}
+ // Long tasks are timing diagnostics, not audio source identities. Retain the
+ // first finite sample budget and account for every observed entry, including
+ // omitted raw rows. Other observer budgets remain fail-closed.
+ const recordLongTasks=entries=>{if(!active)return;for(const entry of entries){
+  const {startTime,duration}=entry,endTime=startTime+duration,summary=data.longTaskObservation;
+  if(!Number.isFinite(startTime)||startTime<0||!Number.isFinite(duration)||duration<0||!Number.isFinite(endTime)||!Number.isSafeInteger(summary.observedCount+1)||!Number.isFinite(summary.totalDurationMs+duration)){
+   push('errors',{code:'dense_long_task_observer',message:'Invalid long-task timing or aggregate bound'});continue;
+  }
+  summary.observedCount++;summary.totalDurationMs+=duration;
+  summary.maxDurationMs=summary.maxDurationMs===null?duration:Math.max(summary.maxDurationMs,duration);
+  summary.firstStartTimeMs=summary.firstStartTimeMs===null?startTime:Math.min(summary.firstStartTimeMs,startTime);
+  summary.lastEndTimeMs=summary.lastEndTimeMs===null?endTime:Math.max(summary.lastEndTimeMs,endTime);
+  if(data.longTasks.length<summary.sampleLimit){data.longTasks.push({startTime,duration});summary.retainedCount++;}else summary.omittedCount++;
+ }};
+ let longTaskObserver;if(globalThis.PerformanceObserver?.supportedEntryTypes?.includes('longtask')){data.longTaskSupported=true;longTaskObserver=new PerformanceObserver(list=>recordLongTasks(list.getEntries()));longTaskObserver.observe({type:'longtask',buffered:false});}
  const scope=event=>{const detail=event.detail,stage=get('workspace'),row={...screen(),scope:detail.scope,status:detail.status,page:detail.page,parts:[...(detail.renderedPartIds||[])],loadMs:Number(stage.dataset.notationLoadMs),prefetch:stage.dataset.notationPrefetch};
   const identity=JSON.stringify([row.range,row.parts]);if(detail.status==='ready'&&row.parts.length===4&&!painted.has(identity)){painted.add(identity);row.sourceIds=[...get('engraved-staff').querySelectorAll('[data-source-note-id]')].map(node=>node.dataset.sourceNoteId);row.heads=get('engraved-staff').querySelectorAll('.vf-notehead').length;row.svg=get('engraved-staff').querySelectorAll('svg').length;try{row.renderOwners=engraving.visible(get('engraved-staff')).map(owner=>{const nodes=[...owner.container.querySelectorAll('.engraving-expected-cue[data-source-note-id][data-xml-note-id]')];if(nodes.length>8192)throw Error('Visible source-binding observation bound');return {...owner.evidence,partId:owner.container.closest('[data-notation-part-id]')?.dataset.notationPartId,bindings:nodes.map(node=>[node.dataset.xmlNoteId,node.dataset.sourceNoteId])};});}catch(error){push('errors',{code:'dense_engraving_ownership',message:String(error?.message||error).slice(0,512)});}}push('scope',row);};
  get('workspace').addEventListener('notationscopecontext',scope);
@@ -69,6 +83,7 @@ export async function installDenseRenditionObserver({library,audioProbe}={}){
  return{markEnded(){const end=screen();if(!end.clock.completed||end.clock.phase!=='ended'||end.position!==end.clock.durationMs||end.renderer!=='ended'||!receiverState().completed||!receiver.quiet())throw Error('Natural processor End and disposal are not observable yet');data.listeningEnded=end;return structuredClone(end);},status:()=>({errors:[...structuredClone(data.errors),...receiverState().errors],overflow:[...data.overflow,...(receiverState().overflow?['audioThread']:[])],schedules:receiver.count(),completed:receiverState().completed,quiet:receiver.quiet(),current:screen()}),snapshot,stop(){
   const cleanupErrors=[];let restored=true,final,receiverCleanup;
   const attempt=(name,run)=>{try{const result=run();if(result===false||result?.restored===false||result?.cleanupErrors?.length)throw Error(result?.cleanupErrors?.map(error=>error.message).join('; ')||'Observer restoration was incomplete');return result;}catch(error){restored=false;cleanupErrors.push({name,message:String(error?.message||error).slice(0,512)});}};
+  attempt('long-task-drain',()=>recordLongTasks(longTaskObserver?.takeRecords()||[]));
   final=attempt('snapshot',snapshot)||{...structuredClone(data)};active=false;
   attempt('long-task-observer',()=>longTaskObserver?.disconnect());attempt('notation-scope-listener',()=>get('workspace').removeEventListener('notationscopecontext',scope));
   for(const[index,restore]of restores.entries())attempt(`method-${index}`,restore);

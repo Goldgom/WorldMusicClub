@@ -10,7 +10,7 @@ import {DOMParser,parseHTML} from 'linkedom';
 import {finishDenseReport} from '../scripts/dense-report-cleanup.mjs';
 import {DENSE_STREAM,originalDenseRenditionMidi,expectedDenseAttacks,denseDigest} from '../scripts/prepare-dense-rendition-fixture.mjs';
 import {observeDenseRenditionAudio,denseRenditionBootstrap} from '../scripts/dense-rendition-observer.mjs';
-import {denseTimingMetrics,validateDenseRenditionEvidence} from '../scripts/verify-dense-rendition-evidence.mjs';
+import {denseTimingMetrics,validateDenseRenditionEvidence,validateDenseLongTaskObservation} from '../scripts/verify-dense-rendition-evidence.mjs';
 import {observeCanonicalPcm} from './canonical-pcm-observer-fixture.js';
 import {basicKeySong} from './basic-key-rendition-fixtures.js';
 import {buildBasicKeyAudioPlan} from '../web/basic-key-audio-plan.js';
@@ -127,9 +127,85 @@ test('dense pending report is unaccepted, every cleanup runs and final validatio
  const invalid={ok:true};await finishDenseReport(invalid,{resources,persist:async()=>{},validate(){throw Error('source identity failure');}});assert.equal(invalid.ok,false);assert.match(invalid.error,/source identity failure/);
  const writeFailed={ok:true},closed=[];await assert.rejects(finishDenseReport(writeFailed,{resources:resources.map(row=>({...row,close:async()=>closed.push(row.name)})),persist:async()=>{throw Error('quota');},validate(){}}),/evidence write failed/);assert.deepEqual(closed,['context','browser','driver']);assert.equal(writeFailed.ok,false);
 });
+async function observedSyntheticLongTasks(entries,{queued=[]}={}){
+ // Original scalar diagnostic fixtures only. No browser or audio is launched.
+ const nodes={progress:clockProgress(0),'clean-song-stage':{dataset:{rendererState:'ready'}},workspace:{dataset:{scoreState:'session'},addEventListener(){},removeEventListener(){}},'engraving-range':{textContent:''},'hud-captured':{textContent:'0'},notice:{textContent:''}};
+ let deliver,options,disconnected=false;
+ class PerformanceObserver{
+  static supportedEntryTypes=['longtask'];
+  constructor(callback){deliver=entries=>callback({getEntries:()=>entries});}
+  observe(value){options=value;}
+  takeRecords(){const records=queued;queued=[];return records;}
+  disconnect(){disconnected=true;}
+ }
+ class Renderer{load(){}updateGraphic(){}render(){}}
+ const realm=vm.createContext({document:{getElementById:id=>nodes[id]},performance:{now:()=>48000},PerformanceObserver,structuredClone,localStorage:{setItem(){}}});
+ vm.runInContext(`(()=>{${denseRenditionBootstrap()}})();`,realm);
+ const observer=await realm.__wmhDenseObserverTools.install({library:{Renderer,observeReceiver:async()=>({status:()=>syntheticAudioThreadStatus(),snapshot:()=>[],count:()=>1,quiet:()=>true,restore:()=>({restored:true,overflow:false,errors:[],cleanupErrors:[]})})},audioProbe:{snapshot:()=>({}),restore:()=>true}});
+ deliver(entries);const status=observer.status(),trace=observer.stop();assert.equal(disconnected,true);assert.deepEqual({...options},{type:'longtask',buffered:false});
+ deliver([{startTime:47000,duration:999}]);assert.deepEqual(observer.snapshot().longTaskObservation,trace.longTaskObservation,'Callbacks delivered after stop cannot alter evidence');
+ return {trace,status};
+}
+test('dense long-task observation accounts for omitted raw samples and queued late maxima within the original sample budget',async()=>{
+ const entries=Array.from({length:600},(_,index)=>({startTime:index*60,duration:50})),queued=[{startTime:36000,duration:400}];
+ const {trace,status}=await observedSyntheticLongTasks(entries,{queued});
+ assert.equal(trace.version,3);assert.equal(trace.longTasks.length,256);assert.deepEqual([...trace.longTasks].map(row=>({...row})),entries.slice(0,256));
+ assert.deepEqual({...trace.longTaskObservation},{version:1,sampleLimit:256,observedCount:601,retainedCount:256,omittedCount:345,totalDurationMs:30400,maxDurationMs:400,firstStartTimeMs:0,lastEndTimeMs:36400});
+ assert.deepEqual([...status.overflow],[]);assert.deepEqual([...trace.overflow],[]);assert.deepEqual([...trace.errors],[]);assert.equal(trace.cleanup.restored,true);
+ validateDenseLongTaskObservation(trace);const metrics=denseTimingMetrics(trace);assert.equal(metrics.maxLongTaskMs,400);assert.deepEqual(metrics.longTaskObservation,trace.longTaskObservation);
+ const good=syntheticProof();Object.assign(good.trace,{longTasks:trace.longTasks,longTaskSupported:true,longTaskObservation:trace.longTaskObservation});good.metrics=denseTimingMetrics(good.trace);validateDenseRenditionEvidence(good);
+ for(const mutate of [
+  report=>report.trace.errors.push({code:'audio_processor_error'}),
+  report=>{report.trace.audioThread[0].terminals=[];report.trace.audioThread[0].rawTerminals=[];},
+  report=>{report.trace.listeningEnded=null;},
+  report=>report.trace.overflow.push('frames'),
+  report=>report.trace.cleanup.restored=false,
+  report=>report.trace.scope.pop(),
+ ]){const bad=structuredClone(good);mutate(bad);bad.metrics=denseTimingMetrics(bad.trace);assert.throws(()=>validateDenseRenditionEvidence(bad));}
+});
+test('dense long-task evidence rejects invalid counts, durations, timestamp bounds and misleading summary versions',async()=>{
+ const entries=Array.from({length:300},(_,index)=>({startTime:index*100,duration:index===299?200:50})),{trace}=await observedSyntheticLongTasks(entries);
+ const reject=mutate=>{const bad=structuredClone(trace);mutate(bad);assert.throws(()=>validateDenseLongTaskObservation(bad));};
+ for(const mutate of [
+  t=>delete t.longTaskObservation,t=>t.longTaskObservation.version=2,t=>t.longTaskObservation.sampleLimit=257,
+  t=>t.longTaskObservation.observedCount=Number.MAX_SAFE_INTEGER+1,t=>t.longTaskObservation.retainedCount=255,t=>t.longTaskObservation.omittedCount=43,
+  t=>t.longTaskObservation.omittedCount=-1,t=>t.longTaskObservation.observedCount=300.5,t=>t.longTaskObservation.totalDurationMs=Infinity,
+  t=>t.longTaskObservation.totalDurationMs=1,t=>t.longTaskObservation.maxDurationMs=NaN,t=>t.longTaskObservation.maxDurationMs=1,
+  t=>t.longTaskObservation.maxDurationMs=20000,t=>t.longTaskObservation.firstStartTimeMs=1,t=>t.longTaskObservation.firstStartTimeMs=-1,
+  t=>t.longTaskObservation.lastEndTimeMs=10,t=>t.longTaskObservation.lastEndTimeMs=Infinity,t=>t.longTaskObservation.lastEndTimeMs=48001,
+  t=>t.longTasks[0].duration=-1,t=>t.longTasks[0].startTime=Infinity,t=>t.longTasks.push({startTime:1,duration:50}),
+  t=>t.longTaskSupported=false,t=>t.longTaskObservation.completeRawRetention=true,t=>t.version=2,
+ ])reject(mutate);
+ const {trace:oneOmitted}=await observedSyntheticLongTasks(Array.from({length:257},(_,index)=>({startTime:index*100,duration:index===256?200:50})));
+ for(const totalDurationMs of [12800,12900,100000]){const bad=structuredClone(oneOmitted);Object.assign(bad.longTaskObservation,{totalDurationMs,maxDurationMs:500});assert.throws(()=>validateDenseLongTaskObservation(bad),'The omitted duration must be possible for its count and maximum');}
+ const hugeCount=structuredClone(oneOmitted);Object.assign(hugeCount.longTaskObservation,{observedCount:Number.MAX_SAFE_INTEGER,omittedCount:Number.MAX_SAFE_INTEGER-256,totalDurationMs:12800,maxDurationMs:500});assert.throws(()=>validateDenseLongTaskObservation(hugeCount),'A large safe count cannot use arithmetic tolerance to invent an omitted maximum');
+ const {trace:empty}=await observedSyntheticLongTasks([]);validateDenseLongTaskObservation(empty);assert.equal(denseTimingMetrics(empty).maxLongTaskMs,null);
+ for(const mutate of [t=>t.longTaskObservation.maxDurationMs=0,t=>t.longTaskObservation.firstStartTimeMs=0,t=>t.longTaskObservation.totalDurationMs=1]){const bad=structuredClone(empty);mutate(bad);assert.throws(()=>validateDenseLongTaskObservation(bad));}
+ const {trace:one}=await observedSyntheticLongTasks([{startTime:100,duration:50}]);validateDenseLongTaskObservation(one);
+ for(const mutate of [t=>t.longTaskObservation.totalDurationMs=51,t=>t.longTaskObservation.maxDurationMs=51,t=>t.longTaskObservation.firstStartTimeMs=99,t=>t.longTaskObservation.lastEndTimeMs=151]){const bad=structuredClone(one);mutate(bad);assert.throws(()=>validateDenseLongTaskObservation(bad));}
+ const proof=syntheticProof();proof.metrics.longTaskObservation.omittedCount=1;assert.throws(()=>validateDenseRenditionEvidence(proof),'Metrics cannot hide omitted samples');
+});
+test('dense accounting preserves fractional timestamps and durations without rounding them into different observations',async()=>{
+ const fixtures=[
+  [{startTime:1000.1,duration:1000}],
+  [{startTime:0.1,duration:64}],
+  Array.from({length:257},(_,index)=>({startTime:index*100+.1,duration:50.1})),
+  ...[500.1,500.3].map(duration=>Array.from({length:257},(_,index)=>({startTime:index*100+.1,duration:index===256?duration:50}))),
+ ];
+ for(const entries of fixtures){const {trace}=await observedSyntheticLongTasks(entries);validateDenseLongTaskObservation(trace);assert.equal(trace.longTaskObservation.totalDurationMs,entries.reduce((sum,row)=>sum+row.duration,0));assert.equal(trace.longTaskObservation.maxDurationMs,Math.max(...entries.map(row=>row.duration)));}
+});
+test('dense invalid observed timing stays fatal instead of being summarized as valid diagnostics',async()=>{
+ for(const row of [{startTime:-1,duration:50},{startTime:1,duration:-50},{startTime:1,duration:Infinity},{startTime:NaN,duration:50},{startTime:Number.MAX_VALUE,duration:Number.MAX_VALUE}]){
+  const {trace,status}=await observedSyntheticLongTasks([row]);assert.equal(status.errors[0].code,'dense_long_task_observer');assert.equal(trace.errors[0].code,'dense_long_task_observer');assert.equal(trace.longTaskObservation.observedCount,0);assert.equal(trace.longTasks.length,0);
+ }
+});
+test('historical version 2 dense reports keep their raw-only metrics and overflow rejection',()=>{
+ const legacy=syntheticProof();legacy.trace.version=2;delete legacy.trace.longTaskObservation;legacy.metrics=denseTimingMetrics(legacy.trace);assert.equal(legacy.metrics.longTaskObservation,undefined);assert.equal(legacy.metrics.maxLongTaskMs,200);validateDenseRenditionEvidence(legacy);
+ legacy.trace.overflow.push('longTasks');assert.throws(()=>validateDenseRenditionEvidence(legacy),'Historical overflow cannot be reclassified as complete evidence');
+});
 function syntheticProof(){
  // Synthetic verifier records only; these never establish a browser/audio run.
- const expected=expectedDenseAttacks(sourceSha),trace={version:2,cleanup:{restored:true,stopped:true,players:1,contexts:1,errors:[],receiver:{restored:true,overflow:false,errors:[],cleanupErrors:[]}},errors:[],overflow:[],states:[{state:'running'}],longTasks:[{startTime:16000,duration:200}],counts:{pumps:0,schedules:0},pumps:[],schedules:[],frames:Array.from({length:200},(_,i)=>({durationMs:1,audioTime:i*.24,audioState:'running',renderer:'playing'})),listeningStarted:{audioTime:0,wall:0},current:{renderer:'ended',position:48000,clock:createPlaybackClock({positionMs:48000,durationMs:48000,completed:true}),captured:'0',audioState:'running',audioTime:48.1,wall:48100},audio:{created:0,overflow:false,sourceStarts:0,oscillatorStarts:0,activeSources:0,pendingSources:0},receiver:syntheticAudioThreadStatus(),audioThread:[syntheticAudioThreadRun(expected,{sourceSha256:sourceSha,durationMs:48000})],scope:[0,8,16].map(first=>({scope:'all',status:'ready',range:`第 ${first+1}–${first+8} 小节，共24小节`,renderer:first?'playing':'ready',parts:[2,3,4,5].map((track,i)=>`midi-t${track}-c${i+1}-r0`),sourceIds:expected.filter(n=>n.startMs>=first*2000&&n.startMs<(first+8)*2000).map(n=>n.id),svg:4,heads:2048,loadMs:30})),renders:[9,17].map(from=>({method:'render',renderer:'playing',range:`Measures ${from}–${from+7} / 24`,durationMs:200}))};
+ const expected=expectedDenseAttacks(sourceSha),trace={version:3,longTaskSupported:true,longTaskObservation:{version:1,sampleLimit:256,observedCount:1,retainedCount:1,omittedCount:0,totalDurationMs:200,maxDurationMs:200,firstStartTimeMs:16000,lastEndTimeMs:16200},cleanup:{restored:true,stopped:true,players:1,contexts:1,errors:[],receiver:{restored:true,overflow:false,errors:[],cleanupErrors:[]}},errors:[],overflow:[],states:[{state:'running'}],longTasks:[{startTime:16000,duration:200}],counts:{pumps:0,schedules:0},pumps:[],schedules:[],frames:Array.from({length:200},(_,i)=>({durationMs:1,audioTime:i*.24,audioState:'running',renderer:'playing'})),listeningStarted:{audioTime:0,wall:0},current:{renderer:'ended',position:48000,clock:createPlaybackClock({positionMs:48000,durationMs:48000,completed:true}),captured:'0',audioState:'running',audioTime:48.1,wall:48100},audio:{created:0,overflow:false,sourceStarts:0,oscillatorStarts:0,activeSources:0,pendingSources:0},receiver:syntheticAudioThreadStatus(),audioThread:[syntheticAudioThreadRun(expected,{sourceSha256:sourceSha,durationMs:48000})],scope:[0,8,16].map(first=>({scope:'all',status:'ready',range:`第 ${first+1}–${first+8} 小节，共24小节`,renderer:first?'playing':'ready',parts:[2,3,4,5].map((track,i)=>`midi-t${track}-c${i+1}-r0`),sourceIds:expected.filter(n=>n.startMs>=first*2000&&n.startMs<(first+8)*2000).map(n=>n.id),svg:4,heads:2048,loadMs:30})),renders:[9,17].map(from=>({method:'render',renderer:'playing',range:`Measures ${from}–${from+7} / 24`,durationMs:200}))};
  const pages=[];trace.renders=[];trace.engravingOwnership={version:1,overflow:false};
  for(const [pageIndex,frame]of trace.scope.entries()){
   const first=pageIndex*8;frame.wall=1000+first*2000;frame.renderOwners=[];
