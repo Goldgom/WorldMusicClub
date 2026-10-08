@@ -891,7 +891,7 @@ async function checkInstrument(profile = currentProfile(), apply = false) {
   if(apply){state.profileDirty=false;if(profile.kind==='piano'){state.keys=profile.key_count;state.lowestMidi=profile.lowest_midi;}else state.guitar={tuning:profile.tuning,frets:profile.frets,capo:profile.capo};}
   const request = ++state.instrumentRequest; const compiled = state.compiled; const selection = state.practiceVersion;
   const song=state.cleanSong,generation=state.generation,mode=state.mode,profileKey=JSON.stringify(profile);
-  const current=()=>request===state.instrumentRequest&&compiled===state.compiled&&selection===state.practiceVersion&&song===state.cleanSong&&generation===state.generation&&mode===state.mode&&profileKey===JSON.stringify(currentProfile());
+  const current=()=>request===state.instrumentRequest&&compiled===state.compiled&&selection===state.practiceVersion&&(!isBasicKeysSong(song)||song===state.cleanSong&&generation===state.generation&&mode===state.mode&&profileKey===JSON.stringify(currentProfile()));
   state.instrumentOutOfRange = null; state.instrumentConflict = false;
   bindText($('instrument-report'), () => t('app.checkingRange'));
   try {
