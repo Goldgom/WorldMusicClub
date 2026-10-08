@@ -110,7 +110,10 @@ pub(crate) fn describe(library: &NativeLibrary, bytes: &[u8]) -> Result<Value, L
 
 /// Basic-only GM evidence. A canonical saved score is never converted or
 /// reinterpreted as Basic, even when it retains valid original MIDI bytes.
-pub(crate) fn describe_identity(library: &NativeLibrary, bytes: &[u8]) -> Result<Value, LibraryError> {
+pub(crate) fn describe_identity(
+    library: &NativeLibrary,
+    bytes: &[u8],
+) -> Result<Value, LibraryError> {
     let (source, verified) = load_verified(library, bytes)?;
     let score = match verified {
         VerifiedSource::Basic(score) => score,

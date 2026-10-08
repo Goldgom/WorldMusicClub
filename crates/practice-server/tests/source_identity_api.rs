@@ -41,9 +41,10 @@ fn exact_core_authority_and_numeric_runtime_independence() {
         let bytes = basic_keys::encode_json(&source).unwrap();
         let numeric = value(NUMERIC, bytes.clone(), 200);
         let snapshot = || {
-            serde_json::to_vec(&basic_keys::compile_rendition(&source).map(|compiled| {
-                (compiled.timeline, compiled.rendition, compiled.diagnostics)
-            }))
+            serde_json::to_vec(
+                &basic_keys::compile_rendition(&source)
+                    .map(|compiled| (compiled.timeline, compiled.rendition, compiled.diagnostics)),
+            )
             .unwrap()
         };
         let before = snapshot();
