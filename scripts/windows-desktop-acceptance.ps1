@@ -100,13 +100,18 @@ if($Scenario -eq 'pitch-mod'){Add-Type -Path (Join-Path $PSScriptRoot 'native-pi
 . (Join-Path $PSScriptRoot 'windows-desktop-geometry.ps1')
 . (Join-Path $PSScriptRoot 'windows-build-diagnostics.ps1')
 . (Join-Path $PSScriptRoot 'windows-picker-observation.ps1')
+. (Join-Path $PSScriptRoot 'windows-action-timing.ps1')
+$actionTiming=$null
 $catalogRendererGeometry=$null;$catalogReportedViewport=$null;$catalogCaptureGeometryFile=$null
-function Save-Json($Value,[string]$Path) {
+function Save-Json($Value,[string]$Path,[switch]$ObserveResultPublication) {
+  if($ObserveResultPublication){Record-NativeActionTiming $actionTiming 'result-write-start'}
   $temporary="$Path.tmp"
   $Value | ConvertTo-Json -Depth 16 | Set-Content -Encoding utf8 $temporary
+  if($ObserveResultPublication){Record-NativeActionTiming $actionTiming 'result-temporary-written';Record-NativeActionTiming $actionTiming 'result-rename-start'}
   Move-Item -Force $temporary $Path
+  if($ObserveResultPublication){Record-NativeActionTiming $actionTiming 'result-published'}
 }
-function Capture-Handle([IntPtr]$Handle,[string]$Name,[switch]$ClientOnly,[string]$GeometryFile) {
+function Capture-Handle([IntPtr]$Handle,[string]$Name,[switch]$ClientOnly,[string]$GeometryFile,[switch]$ObserveActionTiming) {
   $rectangle=New-Object NativeAcceptance+RECT;$printFlags=2
   if($ClientOnly) {
     if($Scenario -cnotin @('library-catalog','complete-practice','canonical-practice')){throw 'Client-only acceptance capture requires a measured scenario'}
@@ -118,10 +123,14 @@ function Capture-Handle([IntPtr]$Handle,[string]$Name,[switch]$ClientOnly,[strin
   } elseif(-not [NativeAcceptance]::GetWindowRect($Handle,[ref]$rectangle)) { throw 'Cannot read native window bounds' }
   $bitmap=New-Object System.Drawing.Bitmap(($rectangle.Right-$rectangle.Left),($rectangle.Bottom-$rectangle.Top))
   $graphics=[System.Drawing.Graphics]::FromImage($bitmap);$device=$graphics.GetHdc()
+  if($ObserveActionTiming){Record-NativeActionTiming $actionTiming 'print-start'}
   try { if(-not [NativeAcceptance]::PrintWindow($Handle,$device,$printFlags)){throw 'Native screenshot failed'} }
   finally { $graphics.ReleaseHdc($device);$graphics.Dispose() }
+  if($ObserveActionTiming){Record-NativeActionTiming $actionTiming 'print-completed'}
   try {
+    if($ObserveActionTiming){Record-NativeActionTiming $actionTiming 'png-start'}
     $bitmap.Save((Join-Path $OutputDirectory "$Name.png"),[System.Drawing.Imaging.ImageFormat]::Png)
+    if($ObserveActionTiming){Record-NativeActionTiming $actionTiming 'png-completed'}
     if($Scenario -eq 'library-catalog') {
       $capture=Get-Item -LiteralPath (Join-Path $OutputDirectory "$Name.png") -Force
       if($capture.Length -le 0 -or $capture.Length -gt 16MB -or ($capture.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Catalog screenshot must be a bounded ordinary PNG'}
@@ -134,12 +143,18 @@ function Capture-Handle([IntPtr]$Handle,[string]$Name,[switch]$ClientOnly,[strin
   finally { $bitmap.Dispose() }
 }
 function Capture-Window($App,[string]$Name) {
+  $timed=$null -ne $actionTiming -and $null -ne $actionTiming.current -and $Name -ceq "native-action-$($actionTiming.current.phase)-$($actionTiming.current.sequence)"
+  if($timed){Record-NativeActionTiming $actionTiming 'capture-start'}
   if($Scenario -cin @('library-catalog','complete-practice','canonical-practice')) {
     $script:catalogCaptureGeometryFile="geometry-$Name.json"
+    if($timed){Record-NativeActionTiming $actionTiming 'geometry-start'}
     $geometry=Get-NativeWindowGeometry $App $env:WMH_DESKTOP_ACCEPTANCE_PHASE $Name $catalogRendererGeometry $catalogReportedViewport
+    if($timed){Record-NativeActionTiming $actionTiming 'geometry-completed';Record-NativeActionTiming $actionTiming 'geometry-write-start'}
     Save-Json $geometry (Join-Path $OutputDirectory $catalogCaptureGeometryFile)
+    if($timed){Record-NativeActionTiming $actionTiming 'geometry-write-completed'}
   }
-  Capture-Handle $App.MainWindowHandle $Name -ClientOnly:($Scenario -cin @('library-catalog','complete-practice','canonical-practice')) -GeometryFile $catalogCaptureGeometryFile
+  Capture-Handle $App.MainWindowHandle $Name -ClientOnly:($Scenario -cin @('library-catalog','complete-practice','canonical-practice')) -GeometryFile $catalogCaptureGeometryFile -ObserveActionTiming:$timed
+  if($timed){Record-NativeActionTiming $actionTiming 'capture-completed'}
 }
 # This closed action observes an already-visible client. Unlike an ordinary
 # click it must not refocus, move the pointer, request a redraw or wait for UI.
@@ -543,6 +558,7 @@ function Invoke-NativeAction($App,$Action,[hashtable]$Evidence,$Observation=$nul
   [NativeAcceptance]::ValidateClientClick($work,$point,$actual,$window,$foreground,($hit -eq $window -or $hitRoot -eq $window -or [NativeAcceptance]::IsChild($window,$hit)))
   [NativeAcceptance]::ClickPositioned()
   $clientSubmittedClock=[Diagnostics.Stopwatch]::StartNew()
+  Record-NativeActionTiming $actionTiming 'pointer-submitted'
   Record-PickerPoll $Observation 'client-after-click' @{input_submitted=$true} 'input-submitted' $Evidence
   if($sourcesNumeric) {
     $Evidence.native_numeric=[ordered]@{app_hwnd=$window.ToInt64();foreground=[NativeAcceptance]::GetForegroundWindow().ToInt64();app_process_id=$App.Id;kind=$Action.kind;value='2';method='fixed_ctrl_a_digits_tab';completed=$false}
@@ -707,6 +723,7 @@ $nativeReportName=if($Scenario -eq 'direct-midi'){'native-direct-midi.json'}else
 $phases=if($Scenario -eq 'direct-midi'){@('direct-midi-seed','direct-midi-restart')}elseif($Scenario -eq 'human-mod-timbre'){@('human-timbre-seed','human-timbre-migrate','human-timbre-restart')}elseif($Scenario -eq 'pitch-sources'){@('pitch-sources-seed','pitch-sources-restart','pitch-sources-zero','pitch-sources-zero-restart')}elseif($Scenario -eq 'pitch-mod'){@('pitch-mod-seed','pitch-mod-restart')}elseif($Scenario -eq 'assistance'){@('assistance-seed','assistance-restart','assistance-progression','assistance-off-restart')}elseif($Scenario -eq 'build-diagnostics'){@('build-diagnostics')}elseif($Scenario -eq 'live-tone-navigation'){@('live-navigation-settings-keyup','live-navigation-settings-navigation','live-navigation-authoring-keyup','live-navigation-authoring-navigation')}elseif($Scenario -eq 'library-catalog'){@('catalog-seed','catalog-restart','catalog-final')}elseif($Scenario -eq 'skin'){@('skin-seed','skin-restart','skin-default-restart')}elseif($Scenario -eq 'canonical-practice'){@('canonical-practice-seed','canonical-practice-controls','canonical-practice-restart')}elseif($Scenario -eq 'complete-practice'){@('complete-practice-seed','complete-practice-restart')}elseif($Scenario -eq 'basic-key'){@('basic-key-seed','basic-key-restart')}elseif($Scenario -eq 'vsq-authoring'){@('vsq-authoring-seed','vsq-authoring-restart')}elseif($Scenario -eq 'authoring'){@('authoring-seed','authoring-restart')}elseif($Scenario -eq 'pitch-bend'){@('pitch-bend-seed','pitch-bend-restart')}elseif($Scenario -eq 'performance-song'){@('performance-seed','performance-controls','performance-restart')}elseif($Scenario -eq 'vsq-song'){@('vsq-seed','vsq-restart')}elseif($Scenario -eq 'clean-song'){@('clean-seed','clean-restart')}elseif($Scenario -eq 'bulk-import'){@('bulk-seed','bulk-restart','bulk-failure')}elseif($Scenario -eq 'song-folder'){@('folder-seed','folder-restart','folder-failure')}else{@('seed','restart','close-active','reopen')}
 if($Scenario -in @('song-folder','bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','direct-midi','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre','build-diagnostics','assistance','pitch-mod','pitch-sources')){$native.profile_reused=$false;$native.scenario=$Scenario;$native.directory=Join-Path $OutputDirectory 'Scores'}
 try {
+if($Scenario -ceq 'canonical-practice'){try{$actionTiming=New-NativeActionTiming $native}catch{[Console]::Error.WriteLine('Could not initialize action timing diagnostics')}}
 if($Scenario -eq 'direct-midi') {
   $bindingJson=& node (Join-Path $PSScriptRoot 'verify-native-direct-midi-evidence.mjs') --source-binding $Repository
   if($LASTEXITCODE -ne 0){throw 'Cannot bind direct MIDI to exact source'}
@@ -781,7 +798,7 @@ if($Scenario -eq 'library-catalog') {
   if($LASTEXITCODE -ne 0){throw 'Cannot read catalog acceptance source allowlist'}
   $sourceNames=ConvertFrom-Json -InputObject $sourceNames
   # The closed catalog retains Mod, skin, membership and diagnostic-view dependencies.
-  if($sourceNames.Count -ne 57 -or @($sourceNames | Sort-Object -Unique).Count -ne 57){throw 'Catalog source allowlist must contain exactly 57 distinct modules'}
+  if($sourceNames.Count -ne 58 -or @($sourceNames | Sort-Object -Unique).Count -ne 58){throw 'Catalog source allowlist must contain exactly 58 distinct modules'}
   $native.source_hashes=[ordered]@{}
   foreach($name in $sourceNames) {
     if($name -cnotmatch '^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)+$' -or $name.Split('/') -contains '..'){throw 'Catalog source allowlist contains an unsafe path'}
@@ -846,9 +863,12 @@ if($Scenario -eq 'library-catalog') {
           Save-Json (Get-BuildDiagnosticsLibrarySnapshot (Join-Path $OutputDirectory 'Scores')) (Join-Path $OutputDirectory 'snapshot-build-diagnostics-before.json')
           Save-Json $native (Join-Path $OutputDirectory $nativeReportName)
         }
+        Start-NativeActionTiming $actionTiming $phase $app.Id $action
+        Record-NativeActionTiming $actionTiming 'input-start'
         $result=@{ok=$false}
-        try{Native-Action $app $action $result;if($action.kind -cne 'capture' -and $Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','direct-midi','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre','build-diagnostics','assistance','pitch-mod','pitch-sources') -and (-not $fixedLiveKeyScenario -or -not [NativeLiveToneNavigationKey]::Held)){Capture-Window $app "native-action-$phase-$sequence"};$result.ok=$true}catch{$result.error=$_.Exception.Message}
-        Save-Json $result (Join-Path $OutputDirectory "result-$phase-$sequence.json")
+        try{Native-Action $app $action $result;Record-NativeActionTiming $actionTiming 'input-completed';if($action.kind -cne 'capture' -and $Scenario -in @('bulk-import','clean-song','vsq-song','performance-song','pitch-bend','authoring','vsq-authoring','direct-midi','basic-key','complete-practice','canonical-practice','skin','library-catalog','live-tone-navigation','human-mod-timbre','build-diagnostics','assistance','pitch-mod','pitch-sources') -and (-not $fixedLiveKeyScenario -or -not [NativeLiveToneNavigationKey]::Held)){Capture-Window $app "native-action-$phase-$sequence"};$result.ok=$true}catch{$result.error=$_.Exception.Message;Record-NativeActionTiming $actionTiming 'input-or-capture-failed'}
+        Save-Json $result (Join-Path $OutputDirectory "result-$phase-$sequence.json") -ObserveResultPublication
+        if($null -ne $actionTiming){$actionTiming.current=$null}
         # A native modal can suspend the renderer, including its result poll.
         # Fail here after preserving the real action error instead of waiting
         # for the renderer to consume it and hiding it behind the phase limit.
@@ -1017,6 +1037,8 @@ if($Scenario -eq 'library-catalog') {
       if(Test-Path -LiteralPath $stage -PathType Leaf){Remove-Item -LiteralPath $stage}
       if(-not (Test-Path -LiteralPath $stage)){Move-Item -LiteralPath $preservedStagePath -Destination $stage}
     }
+    try {Save-NativeActionTiming $actionTiming $OutputDirectory}
+    catch {[Console]::Error.WriteLine('Could not persist action timing diagnostics')}
     $env:WMH_DESKTOP_SMOKE_DIR=$previousDirectory;$env:WMH_DESKTOP_ACCEPTANCE_PHASE=$previousPhase
   }
 }

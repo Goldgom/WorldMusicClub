@@ -270,5 +270,6 @@
   "tests/source-identity-details-view.test.js",
   "tests/frontend-source-identity.test.js",
   "tests/source-identity-proof.test.js",
-  "tests/source-identity-backend-retention.test.js"
+  "tests/source-identity-backend-retention.test.js",
+  "tests/canonical-action-timing.test.js"
 ]

@@ -81,7 +81,7 @@ test('native diagnostic renderer composes only its bounded runner and existing o
 });
 test('diagnostic source extension preserves all runtime dependencies within explicit finite capacities', () => {
   const runtime = ['crates/practice-server/build_source.rs', 'crates/practice-server/src/build_identity.rs', 'web/build-diagnostics.js', 'web/build-diagnostics-view.js', 'web/build-diagnostics.css'];
-  assert.equal(CANONICAL_PRACTICE_SOURCE_FILES.length, 123);assert.equal(LIVE_TONE_NAVIGATION_SOURCE_FILES.length, 134);assert.equal(LIVE_TONE_NAVIGATION_SOURCE_LIMIT, 160);assert.equal(CATALOG_SOURCE_FILES.length, 57);
+  assert.equal(CANONICAL_PRACTICE_SOURCE_FILES.length, 124);assert.equal(LIVE_TONE_NAVIGATION_SOURCE_FILES.length, 135);assert.equal(LIVE_TONE_NAVIGATION_SOURCE_LIMIT, 160);assert.equal(CATALOG_SOURCE_FILES.length, 58);
   for (const path of runtime) for (const inventory of [CANONICAL_PRACTICE_SOURCE_FILES, LIVE_TONE_NAVIGATION_SOURCE_FILES, BUILD_DIAGNOSTICS_SOURCE_FILES]) assert.equal(inventory.filter(name => name === path).length, 1, `Missing ${path}`);
   for (const path of runtime.filter(path => path.startsWith('web/'))) assert.ok(CATALOG_SOURCE_FILES.includes(path));
   for (const path of ['scripts/windows-picker-observation.ps1', 'crates/desktop-shell/picker-observation.js']) {

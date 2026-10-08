@@ -119,9 +119,55 @@ function compactCanonicalPracticeAudio(rows){
  const compact=record=>{const r=structuredClone(record);if(r.ledgerLayout==='range-pass-major'&&r.ledger){r.ledgerCapacity=r.ledger.actualStarts.length;r.unusedLedgerSentinel=0;r.unusedLedgerEmpty=r.ledger.actualStarts.slice(r.recordCount).every(n=>n===0)&&r.ledger.actualEnds.slice(r.recordCount).every(n=>n===0);r.ledger.actualStarts=r.ledger.actualStarts.slice(0,r.recordCount);r.ledger.actualEnds=r.ledger.actualEnds.slice(0,r.recordCount);r.passFrames=Array.from(r.passFrames||[]).slice(0,r.passCount);}if(r.pauseSpans)r.pauseSpans=Array.from(r.pauseSpans);return r;};
  return rows.map(row=>({...row,terminals:row.terminals.map(t=>({...t,record:compact(t.record)})),rawTerminals:row.rawTerminals.map(t=>({...t,record:compact(t.record)}))}));
 }
+// Timing is diagnostic only. Read the already-published DOM clock; never ask
+// the transport to sample/advance itself, or use diagnostics to admit input.
+function createCanonicalActionTiming({document,performance,phase,utcNow=()=>Date.now()}){
+ const report={version:1,kind:'canonical-action-timing',diagnostic_only:true,phase,timeOrigin:performance.timeOrigin,omitted_actions:0,record_errors:0,actions:[]};
+ const allowed=['action-post-start','action-post-completed','result-headers','result-body'];
+ function publishedClock(){
+  const raw=document.getElementById('progress')?.getAttribute('data-playback-clock');
+  if(typeof raw!=='string'||raw.length>1024)return null;
+  let value;try{value=JSON.parse(raw);}catch{return null;}
+  if(!value||value.version!==1||!Number.isFinite(value.positionMs)||!Number.isFinite(value.transportPositionMs)||!Number.isFinite(value.durationMs)||!['unavailable','preparing','playing','paused','ready','ended'].includes(value.phase))return null;
+  return{positionMs:value.positionMs,transportPositionMs:value.transportPositionMs,durationMs:value.durationMs,phase:value.phase};
+ }
+ return{report,begin(sequence,kind){
+  let row=null;
+  if(Number.isSafeInteger(sequence)&&sequence>0&&sequence<=(phase==='canonical-practice-seed'?80:64)&&typeof kind==='string'&&kind.length<=32&&report.actions.length<80){row={sequence,kind,pending_polls:0,checkpoints:[]};report.actions.push(row);}else report.omitted_actions++;
+  return{pending(){if(row)row.pending_polls=Math.min(65535,row.pending_polls+1);},mark(stage){
+   if(!row)return;
+   try{
+    if(!allowed.includes(stage)||row.checkpoints.length>=4||row.checkpoints.some(point=>point.stage===stage))throw Error('Invalid diagnostic checkpoint');
+    const monotonic_ms=performance.now(),utc_ms=utcNow(),published_clock=publishedClock();
+    if(!Number.isFinite(monotonic_ms)||!Number.isFinite(utc_ms))throw Error('Invalid diagnostic clock');
+    row.checkpoints.push({stage,monotonic_ms,utc_ms,published_clock});
+   }catch{report.record_errors++;}
+  }};
+ }};
+}
+// Optional diagnostics must never consume the mandatory report's envelope.
+// Run only at existing finalization/publication, after timed actions finish.
+function fitCanonicalActionTiming(report){
+ if(!Object.hasOwn(report,'actionTiming'))return;
+ try{
+  const bytes=value=>new TextEncoder().encode(JSON.stringify(value)).length;
+  const mandatory={...report};delete mandatory.actionTiming;
+  const base=bytes(mandatory),overhead=new TextEncoder().encode('"actionTiming":').length+(Object.keys(mandatory).length?1:0);
+  const fits=timing=>base+overhead+bytes(timing)<1000000,timing=report.actionTiming;
+  if(fits(timing))return;
+  if(!Array.isArray(timing.actions))throw Error('Invalid optional action timing');
+  timing.truncated=true;
+  // Keep the earliest complete action records, including early Play barriers.
+  while(timing.actions.length&&!fits(timing)){timing.actions.pop();timing.omitted_actions++;}
+  if(fits(timing))return;
+  report.actionTiming={version:1,diagnostic_only:true,truncated:true};
+  if(!fits(report.actionTiming))delete report.actionTiming;
+ }catch{delete report.actionTiming;}
+}
 (() => {
  const phase=globalThis.__WMH_ACCEPTANCE_PHASE__,$=id=>document.getElementById(id),assert=(v,m)=>{if(!v)throw Error(m);},waits=createAcceptanceWait(),fetcher=globalThis.fetch.bind(globalThis),originalFetch=globalThis.fetch;
  const report={version:1,phase,origin:location.origin,ok:false,stage:'bootstrap',errors:[],requests:[],responses:[],trusted:[],samples:{},screenshots:{},files:{},runs:{},receipts:[],edits:[],controlActions:[]};
+ const actionTiming=createCanonicalActionTiming({document,performance,phase});report.actionTiming=actionTiming.report;
  let sequence=0,receiver,live,controls,restored=false;const receiptRemovers=[];
  const json=(path,body)=>waits.json(fetcher,path,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},10000);
  const until=(fn,label,ms=15000)=>waits.until(()=>{receiver?.assertHealthy();live?.assertHealthy();return fn();},`${phase}: ${report.stage}: ${label}`,ms),frame=()=>new Promise(requestAnimationFrame);
@@ -139,7 +185,7 @@ function compactCanonicalPracticeAudio(rows){
   const pointer=controlAction&&observeCanonicalPracticeOwnedClick({document,node,sequence});
   if(controlAction){controlAction.request={...a,target:{x:b.x,y:b.y,width:b.width,height:b.height}};controlAction.clicks=pointer.events;}
   try{
-   if(kind==='picker')controls.beginPicker(sequence,file);await json('/__desktop_smoke/action',a);let result;await until(async()=>{const r=await fetcher(`/__desktop_smoke/result/${sequence}`);if(r.status===404)return false;result=await r.json();return true;},`owned ${kind}`,15000);assert(result.ok,result.error);
+   if(kind==='picker')controls.beginPicker(sequence,file);const timing=actionTiming.begin(sequence,kind);timing.mark('action-post-start');await json('/__desktop_smoke/action',a);timing.mark('action-post-completed');let result;await until(async()=>{const r=await fetcher(`/__desktop_smoke/result/${sequence}`);if(r.status===404){timing.pending();return false;}timing.mark('result-headers');result=await r.json();timing.mark('result-body');return true;},`owned ${kind}`,15000);assert(result.ok,result.error);
    if(controlAction){const after=node.getBoundingClientRect();controlAction.afterDispatch={target:{x:after.x,y:after.y,width:after.width,height:after.height},disabled:node.disabled};await requireCanonicalPracticeOwnedClick({until,events:pointer.events,sequence,id:node.id,kind});}
   }finally{pointer?.restore();}
   if(field){assert(node.value===field.value,'Fixed numeric value mismatch');report.edits.push({kind,sequence,id:node.id,type:node.type,before,after:{value:node.value,captured:$('hud-captured').textContent,eventEnd:report.trusted.length}});assert($('hud-captured').textContent==='0','Editing generated music input');}
@@ -193,8 +239,8 @@ function compactCanonicalPracticeAudio(rows){
    await importFile('canonical-practice-original.musicxml');const list=await json('/api/library/list');assert(list.entries.length===2,'Both source formats persist independently');const xml=list.entries.find(row=>row.key!==report.key);report.xmlKey=xml.key;report.xmlOpened=await json('/api/library/load',{key:xml.key});await select(xml.key);mark('xml-listen');await mod.start('none',{layout:'complete'});await end();finish('xml-listen');await sample('xml-listen');await score('xmlScore');
    await select(xml.key);mark('selected-listen');await mod.start('none',{layout:'complete',muted:{P1:false,P2:true,P3:true,P4:true}});await end();finish('selected-listen');await sample('selected-listen');await score('xmlSelectedScore');
   }
-  await until(()=>receiver.quiet(),'all source receivers released');report.inventory=await json('/api/library/list');report.finalAudio=receiver.status();report.actions=sequence;report.modActions=mod.history;report.layout=geometry();cleanup();assert(report.errors.length===0,report.errors.join('; '));assert(new TextEncoder().encode(JSON.stringify(report)).length<1000000,'Canonical report stays below existing 1MiB budget');report.stage='complete';report.ok=true;
+  await until(()=>receiver.quiet(),'all source receivers released');report.inventory=await json('/api/library/list');report.finalAudio=receiver.status();report.actions=sequence;report.modActions=mod.history;report.layout=geometry();cleanup();assert(report.errors.length===0,report.errors.join('; '));fitCanonicalActionTiming(report);assert(new TextEncoder().encode(JSON.stringify(report)).length<1000000,'Canonical report stays below existing 1MiB budget');report.stage='complete';report.ok=true;
  }catch(error){report.error=String(error.stack||error);report.actions=sequence;try{report.failureScene=$('canonical-audio-policy')?scene():null;report.liveFailure=live?.failureEvidence();cleanup();}catch(cleanupError){report.errors.push(String(cleanupError));}}
- await json('/__desktop_smoke/report',report);
+ fitCanonicalActionTiming(report);await json('/__desktop_smoke/report',report);
  },{once:true});
 })();
