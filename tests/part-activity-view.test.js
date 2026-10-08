@@ -11,9 +11,9 @@ function setup() {
   const i18n = {locale: 'en'};
   return {document, window, i18n, view: createPartActivityView({document, parent: document.querySelector('main'), i18n})};
 }
-function key(window, target, type, value, code = value) {
+function key(window, target, type, value, code = value, repeat = false) {
   const event = new window.Event(type, {bubbles: true, cancelable: true});
-  Object.assign(event, {key: value, code}); target.dispatchEvent(event); return event;
+  Object.assign(event, {key: value, code, repeat}); target.dispatchEvent(event); return event;
 }
 
 test('activity is display-only and restricted to complete practice machine rows', () => {
@@ -98,4 +98,15 @@ test('native pager activation owns only its key pair and preserves held releases
   assert.deepEqual(events,['keyup','keyup','focusout']);
   key(window,next,'keydown','Tab');assert.equal(events.at(-1),'keydown');
   const root=view.root;view.destroy();assert.equal(root.parentNode,null);view.destroy();
+});
+
+
+test('repeat arriving from a held musical key never steals its release', () => {
+  const {view,window,document}=setup();view.update({rows:[machine(0),machine(1)]},context);
+  const next=view.root.querySelector('.part-activity-next'),events=[];
+  document.addEventListener('keyup',event=>events.push(event.code));
+  key(window,next,'keydown',' ','Space',true);key(window,next,'keyup',' ','Space');
+  assert.deepEqual(events,['Space']);
+  key(window,next,'keydown',' ','Space');key(window,next,'keydown',' ','Space',true);key(window,next,'keyup',' ','Space');
+  assert.deepEqual(events,['Space'],'Repeats of an owned navigation press still stay owned');
 });

@@ -82,7 +82,11 @@ export function createPartActivityView({document, parent, i18n}) {
   const navigationKey = event => event.key === 'Enter' || event.key === ' ' || event.code === 'Space';
   const keyIdentity = event => event.code || event.key;
   const keydown = event => {
-    if (navigationKey(event)) { ownedKeys.add(keyIdentity(event)); event.stopPropagation(); }
+    if (navigationKey(event)) {
+      // A repeat can have started on a musical surface before focus moved here.
+      if (!event.repeat) ownedKeys.add(keyIdentity(event));
+      event.stopPropagation();
+    }
   };
   const keyup = event => {
     // Unmatched releases belong to the existing musical input lifecycle.
