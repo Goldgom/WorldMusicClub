@@ -264,5 +264,6 @@
   "tests/independent-part-activity-stage.test.js",
   "tests/part-activity-browser-navigation.test.js",
   "tests/complete-practice-muted-reset.test.js",
-  "tests/part-activity-labels.test.js"
+  "tests/part-activity-labels.test.js",
+  "tests/part-activity-lifecycle.test.js"
 ]
