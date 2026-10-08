@@ -29,6 +29,10 @@ test('long Mod diagnostics scroll with preview details while source identity, ad
     assert.deepEqual([...footer.children].map(node=>node.className||node.id),['preview-gate','preview-actions'],'Only admission and the original actions consume pinned footer height');
     assert.deepEqual([...document.querySelectorAll('.preview-actions button')].filter(node=>!node.hidden).map(node=>node.id),['start-performance','configure-song-mod']);
   }
+  view.update({preview:{mod},canStart:false,reason,rangeRepair:{kind:'piano88',outside:1}});
+  assert.deepEqual([...footer.children].map(node=>node.className||node.id),['preview-gate','preview-actions'],'Range repair cannot add another pinned footer row');
+  assert.deepEqual([...document.querySelectorAll('.preview-actions button')].filter(node=>!node.hidden).map(node=>node.id),['start-performance','preview-range-repair','configure-song-mod']);
+  assert.equal(document.getElementById('preview-range-repair').getAttribute('aria-describedby'),summary.id);
   view.update({reason,inspectionOnly:true});
   assert.equal(document.getElementById('open-score').parentElement,footer,'Inspection-only sources retain their existing pinned action');
 });

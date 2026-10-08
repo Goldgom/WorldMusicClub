@@ -14,7 +14,7 @@ function smf(tracks,{format=tracks.length===1?0:1,division=384}={}){
  const header=Buffer.alloc(14);header.write('MThd');header.writeUInt32BE(6,4);header.writeUInt16BE(format,8);header.writeUInt16BE(tracks.length,10);header.writeUInt16BE(division,12);
  return Buffer.concat([header,...tracks.flatMap(events=>{const bytes=Buffer.from(events.flatMap(encodeEvent)),header=Buffer.alloc(8);header.write('MTrk');header.writeUInt32BE(bytes.length,4);return[header,bytes];})]);
 }
-function authored({layered=false,multitrack=false,outOfRange=false,canonical=false}={}){
+function authored({layered=false,multitrack=false,outOfRange=false,canonical=false,piano=false}={}){
  const tracks=[[
   [0,meta(3,'Original direct MIDI overlap exercise')],
   [0,meta(2,'CC0-1.0 original regression events')],
@@ -31,23 +31,25 @@ function authored({layered=false,multitrack=false,outOfRange=false,canonical=fal
   [0,meta(1,'End marker retained after the final release')],[0,[255,47]],
  ]];
  if(multitrack)tracks.push([[0,meta(3,'Original metadata-only track')],[0,meta(1,'No note content on this retained track')],[0,[255,47]]],[[0,[255,47]]]);
- const bytes=smf(tracks),filename=`original-direct-midi-${canonical?'canonical':outOfRange?'range':multitrack?'tracks':layered?'layered':'boundary'}.mid`;
+ if(piano)for(const [,event]of tracks[0])if([128,144].includes(event[0]))event[1]=({60:50,67:25,72:95})[event[1]]??event[1];
+ const bytes=smf(tracks),filename=`original-direct-midi-${piano?'piano':canonical?'canonical':outOfRange?'range':multitrack?'tracks':layered?'layered':'boundary'}.mid`;
  const expectedNotes=[
   {id:'midi-t1-e7',midi:60,velocity:91,start_ms:0,duration_ms:layered?375:250},
   {id:canonical?'midi-t1-e9':'midi-t1-e8',midi:60,velocity:73,start_ms:250,duration_ms:250},
   {id:'midi-t1-e11',midi:67,velocity:83,start_ms:750,duration_ms:250},
   {id:'midi-t1-e13',midi:outOfRange?12:72,velocity:87,start_ms:1500,duration_ms:500},
  ];
+ if(piano)for(const note of expectedNotes)note.midi=({60:50,67:25,72:95})[note.midi]??note.midi;
  return{filename,bytes,tracks,expectedNotes,manifest:{filename,bytes:bytes.length,sha256:directMidiDigest(bytes),format:tracks.length===1?0:1,ppq:384,source_tracks:tracks.length,source_events:tracks.flat().length,source_attacks:4,source_releases:4,duration_ms:2000,rights:{status:'original_authored',license:'CC0-1.0',attribution:'Newly authored isolated regression events; no private score or melody'}}};
 }
 export function directMidiFixtures(){
- const boundary=authored(),layered=authored({layered:true}),tracks=authored({multitrack:true}),range=authored({outOfRange:true}),canonical=authored({canonical:true});
+ const boundary=authored(),layered=authored({layered:true}),tracks=authored({multitrack:true}),range=authored({outOfRange:true}),canonical=authored({canonical:true}),piano=authored({piano:true});
  const invalid=[{filename:'original-direct-midi-malformed.mid',bytes:Buffer.from('Original deliberately invalid MIDI regression fixture')},{filename:'original-direct-midi-truncated.mid',bytes:boundary.bytes.subarray(0,-3)}];
- return{boundary,layered,tracks,range,canonical,invalid};
+ return{boundary,layered,tracks,range,canonical,piano,invalid};
 }
 export async function prepareDirectMidiFixtures(directory){
  const fixtures=directMidiFixtures();await mkdir(directory,{recursive:true});
- for(const fixture of [...['boundary','layered','tracks','range','canonical'].map(key=>fixtures[key]),...fixtures.invalid])await writeFile(join(directory,fixture.filename),fixture.bytes,{flag:'wx'});
- await writeFile(join(directory,'direct-midi-fixtures.json'),JSON.stringify(Object.fromEntries(['boundary','layered','tracks','range','canonical'].map(key=>[key,fixtures[key].manifest])),null,2)+'\n',{flag:'wx'});return fixtures;
+ for(const fixture of [...['boundary','layered','tracks','range','canonical','piano'].map(key=>fixtures[key]),...fixtures.invalid])await writeFile(join(directory,fixture.filename),fixture.bytes,{flag:'wx'});
+ await writeFile(join(directory,'direct-midi-fixtures.json'),JSON.stringify(Object.fromEntries(['boundary','layered','tracks','range','canonical','piano'].map(key=>[key,fixtures[key].manifest])),null,2)+'\n',{flag:'wx'});return fixtures;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){assert.equal(process.argv.length,3,'Usage: prepare-direct-midi-fixtures.mjs <fresh-directory>');await prepareDirectMidiFixtures(resolve(process.argv[2]));}

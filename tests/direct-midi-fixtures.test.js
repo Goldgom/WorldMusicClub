@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {directMidiFixtures,directMidiDigest} from '../scripts/prepare-direct-midi-fixtures.mjs';
 
 // Independent fixture-only SMF scanner. It does not use the Rust parser or
@@ -21,7 +22,7 @@ function scan(bytes){
 
 test('original direct MIDI fixtures retain bounded full tracks, metadata and exact same-tick source order',()=>{
  const fixtures=directMidiFixtures();
- for(const key of ['boundary','layered','tracks','range','canonical']){
+ for(const key of ['boundary','layered','tracks','range','canonical','piano']){
   const f=fixtures[key],scanned=scan(f.bytes);assert.equal(scanned.format,f.manifest.format);assert.equal(scanned.ppq,384);assert.deepEqual(scanned.tracks,f.tracks);assert.equal(f.manifest.sha256,directMidiDigest(f.bytes));assert.equal(f.manifest.source_events,f.tracks.flat().length);assert.equal(f.manifest.rights.license,'CC0-1.0');assert.equal(f.expectedNotes.length,4);assert.equal(f.bytes.length<1024,true);assert.deepEqual(f.bytes,directMidiFixtures()[key].bytes);
  }
  assert.deepEqual(fixtures.boundary.tracks[0].slice(6,10),[[0,[144,60,91]],[192,[144,60,73]],[0,[128,60,19]],[192,[128,60,27]]]);
@@ -30,4 +31,20 @@ test('original direct MIDI fixtures retain bounded full tracks, metadata and exa
 });
 test('malformed and truncated controls cannot be parsed into a shortened exercise',()=>{
  for(const fixture of directMidiFixtures().invalid)assert.throws(()=>scan(fixture.bytes));
+});
+
+// Four isolated authored attacks cover the failure class without private music.
+test('overlapping piano fixture retains low and high targets for an explicit 61-to-88 key repair',()=>{
+ const f=directMidiFixtures().piano;
+ assert.deepEqual(f.expectedNotes.map(note=>note.midi),[50,50,25,95]);
+ assert.equal(f.expectedNotes.filter(note=>note.midi<36||note.midi>96).length,1);
+ assert.equal(f.expectedNotes.every(note=>note.midi>=21&&note.midi<=108),true);
+ assert.deepEqual(scan(f.bytes).tracks[0].slice(6,10),[[0,[144,50,91]],[192,[144,50,73]],[0,[128,50,19]],[192,[128,50,27]]]);
+});
+
+test('piano consumer fixture binds the exact original source and genuine Rust conversion provenance',()=>{
+ const fixture=directMidiFixtures().piano,bytes=readFileSync(new URL('./fixtures/direct-midi-piano-native-open.json',import.meta.url)),opened=JSON.parse(bytes),provenance=JSON.parse(readFileSync(new URL('./fixtures/direct-midi-piano-native-open.provenance.json',import.meta.url)));
+ assert.equal(provenance.private_user_data,false);assert.equal(provenance.rust_backend_executed,true);assert.equal(provenance.native_open_sha256,directMidiDigest(bytes));assert.equal(provenance.original_input_sha256,fixture.manifest.sha256);assert.deepEqual(provenance.original_fixture,fixture.manifest);
+ const source=JSON.parse(opened.clean_package.score_json);assert.equal(source.source.sha256,fixture.manifest.sha256);assert.equal(source.source.bytes,fixture.bytes.length);assert.deepEqual(source.performance.tracks[0].events,fixture.tracks[0]);
+ assert.equal(opened.clean_package.runtime.rendition.coverage.source_attacks,4);assert.equal(opened.clean_package.runtime.rendition.coverage.practice_targets,4);
 });

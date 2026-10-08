@@ -11,7 +11,7 @@ import {DIRECT_MIDI_POLICY,directMidiDigest} from './prepare-direct-midi-fixture
 export function directMidiFixtureMetadata(scoreJson,fixture){
  assert.equal(typeof scoreJson,'string');const scoreBytes=Buffer.byteLength(scoreJson);
  assert.ok(scoreBytes>0&&scoreBytes<=256*1024,'Original fixture score must fit the evidence bound');
- assert.match(fixture.filename,/^original-direct-midi-(boundary|layered|tracks|range|canonical)\.mid$/);
+ assert.match(fixture.filename,/^original-direct-midi-(boundary|layered|tracks|range|canonical|piano)\.mid$/);
  assert.ok(Buffer.isBuffer(fixture.bytes)&&fixture.bytes.length>0&&fixture.bytes.length<=4096);
  assert.equal(fixture.manifest.bytes,fixture.bytes.length);assert.equal(fixture.manifest.sha256,directMidiDigest(fixture.bytes));
  return{

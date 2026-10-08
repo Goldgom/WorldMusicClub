@@ -1,0 +1,335 @@
+{
+  "clean_package": {
+    "capabilities": {
+      "acoustic_pitch": "not_inferred_from_key_numbers",
+      "basic_keys": "unresolved_ends",
+      "score_projection": "partial_positive_duration_keys",
+      "source_events": "complete",
+      "source_rendition": "requires_explicit_receiver_mapping"
+    },
+    "content_sha256": "06447c594b35fac1ceb567e363560c19545e7fef1416a7982a19ff51a23d80e2",
+    "coverage": {
+      "determined_ends": 2,
+      "key_attacks": 4,
+      "key_releases": 4,
+      "notation_notes": 2,
+      "projected_melodic_targets": 2,
+      "represented_events": 16,
+      "source_events": 16,
+      "source_tracks": 1,
+      "unmatched_releases": 0,
+      "unresolved_ends": 2,
+      "unresolved_route_ends": 0,
+      "zero_length_attacks": 0
+    },
+    "media": [],
+    "metadata_json": "{\n  \"format\": \"worldmusichub-song\",\n  \"id\": \"midi-basic-4021bb6a8c4b45acf2502cb0abd10d25f58463217d7ad41f551d9adf18defbf4\",\n  \"media\": [],\n  \"rights\": {\n    \"attribution\": \"User-supplied MIDI; source rights are unverified\",\n    \"license\": null,\n    \"status\": \"user_supplied_unverified\"\n  },\n  \"score\": {\n    \"bytes\": 3240,\n    \"path\": \"score.json\",\n    \"sha256\": \"02183fbb83e481d7478e84cc0761afb84ccc4ce21891c6176bc849dd48772b82\"\n  },\n  \"sources\": [\n    {\n      \"bytes\": 212,\n      \"format\": \"midi\",\n      \"sha256\": \"4021bb6a8c4b45acf2502cb0abd10d25f58463217d7ad41f551d9adf18defbf4\"\n    }\n  ],\n  \"title\": \"Original direct MIDI piano range\",\n  \"version\": 2\n}",
+    "notation_available": true,
+    "profile": "wmh-basic-keys-midi1-v1",
+    "runtime": {
+      "compilation": {
+        "diagnostics": [
+          {
+            "code": "basic_key_rendition_interpretation",
+            "message": "Complete basic-key rendition uses the named FIFO virtual-route/tempo policy and the same all-attack practice timeline. Percussion is a named selector pulse; channel stops close gates and other effects remain uninterpreted. Inferred ends and 20ms zero gates are receiver choices, never original durations or hold-scoring targets.",
+            "note_id": null,
+            "severity": "warning"
+          }
+        ],
+        "timeline": {
+          "duration_ms": 2000,
+          "note_columns": [
+            "id",
+            "part_id",
+            "midi",
+            "velocity",
+            "start_ms",
+            "duration_ms"
+          ],
+          "notes": [
+            [
+              "midi-t1-e7",
+              "midi-t1-c1-r0",
+              50,
+              91,
+              0,
+              250
+            ],
+            [
+              "midi-t1-e8",
+              "midi-t1-c1-r0",
+              50,
+              73,
+              250,
+              250
+            ],
+            [
+              "midi-t1-e11",
+              "midi-t1-c1-r0",
+              25,
+              83,
+              750,
+              250
+            ],
+            [
+              "midi-t1-e13",
+              "midi-t1-c1-r0",
+              95,
+              87,
+              1500,
+              500
+            ]
+          ]
+        }
+      },
+      "parts": [
+        {
+          "attacks": 4,
+          "id": "midi-t1-c1-r0",
+          "instantaneous": 0,
+          "percussion": false,
+          "positive": 2,
+          "range": [
+            25,
+            95
+          ],
+          "unresolved": 2
+        }
+      ],
+      "profile": "wmh-basic-key-practice-v2",
+      "reference_audio": "basic_synthesized",
+      "rendition": {
+        "coverage": {
+          "control_ended_voices": 0,
+          "derived_voices": 4,
+          "interpreted_channel_stop_events": 0,
+          "maximum_allocated_voices": 2,
+          "maximum_simultaneous_voices": 1,
+          "melodic_targets": 4,
+          "metadata_events": 5,
+          "paired_releases": 4,
+          "percussion_selectors": 0,
+          "practice_targets": 4,
+          "routing_events": 0,
+          "source_attacks": 4,
+          "source_end_cleanups": 0,
+          "source_events": 16,
+          "source_proved_ends": 2,
+          "source_releases": 4,
+          "source_silence_controller_events": 0,
+          "synthetic_gates": 0,
+          "tempo_events": 1,
+          "uninterpreted_controller_events": 1,
+          "uninterpreted_pitch_bend_events": 0,
+          "uninterpreted_pressure_events": 0,
+          "uninterpreted_program_events": 1,
+          "uninterpreted_sysex_events": 0,
+          "unmatched_releases": 0,
+          "zero_tempo_events": 0
+        },
+        "duration_ms": 2000,
+        "note_columns": [
+          "note_id",
+          "attack",
+          "release",
+          "route",
+          "channel",
+          "role",
+          "start",
+          "end",
+          "source_end_tick",
+          "receiver_end_tick",
+          "source_release_status",
+          "end_reason",
+          "synthetic_gate"
+        ],
+        "notes": [
+          [
+            "midi-t1-e7",
+            [
+              0,
+              6
+            ],
+            [
+              0,
+              8
+            ],
+            0,
+            0,
+            "melodic_key",
+            [
+              "0",
+              1
+            ],
+            [
+              "250000",
+              1
+            ],
+            null,
+            192,
+            "ambiguous_release_time",
+            "fifo_release",
+            false
+          ],
+          [
+            "midi-t1-e8",
+            [
+              0,
+              7
+            ],
+            [
+              0,
+              9
+            ],
+            0,
+            0,
+            "melodic_key",
+            [
+              "250000",
+              1
+            ],
+            [
+              "500000",
+              1
+            ],
+            null,
+            384,
+            "ambiguous_release_time",
+            "fifo_release",
+            false
+          ],
+          [
+            "midi-t1-e11",
+            [
+              0,
+              10
+            ],
+            [
+              0,
+              11
+            ],
+            0,
+            0,
+            "melodic_key",
+            [
+              "750000",
+              1
+            ],
+            [
+              "1000000",
+              1
+            ],
+            768,
+            768,
+            "unique_release",
+            "fifo_release",
+            false
+          ],
+          [
+            "midi-t1-e13",
+            [
+              0,
+              12
+            ],
+            [
+              0,
+              13
+            ],
+            0,
+            0,
+            "melodic_key",
+            [
+              "1500000",
+              1
+            ],
+            [
+              "2000000",
+              1
+            ],
+            1536,
+            1536,
+            "unique_release",
+            "fifo_release",
+            false
+          ]
+        ],
+        "policy": {
+          "allocation_lookahead_ms": 100,
+          "controls": "CC120 AllSoundOff and CC123 AllNotesOff end all held voices on their virtual bus/channel immediately under this basic receiver policy, without sustain. Other controllers, program, bank, bend, pressure and SysEx remain counted source evidence but do not alter this rendition. Source mixer/silence controls are disclosed; all attacks audition by default.",
+          "event_order": "tick_track_index_event_index",
+          "instantaneous": "Only a zero-time receiver gate receives a 20ms audition/target gate. Source start/end and chosen release remain unchanged. Positive gates are never lengthened, quantized or clamped.",
+          "melodic_sound": "WMH basic sine v1: one neutral sine at the nominal MIDI key frequency for every key 0..127, using the positive source attack velocity. No original-instrument, acoustic-pitch or physical-keyboard provenance claim.",
+          "missing_release": "A held voice without a chosen release ends at the global source end; an individual track's EndOfTrack does not clear shared state. This is receiver cleanup, not an original duration.",
+          "mixing": "Mute/solo filters attack-owned voices after complete-source FIFO interpretation. Release events from muted tracks still determine gates. Practice part selection is separate from accompaniment audibility.",
+          "percussion_sound": "WMH basic percussion pulse v1: the same deterministic dry noise pulse at 1500Hz for every channel-10 key selector 0..127. Selectors remain distinct; no original kit or GM map is inferred.",
+          "receiver_gate_tail_ms": 0,
+          "repeated_keys": "Every positive NoteOn creates a voice. NoteOff and zero-velocity NoteOn release the oldest held voice on the same virtual bus/channel/key, including across tracks. Unmatched releases are acknowledged.",
+          "routes": "Each distinct Port/DeviceName declaration is a separate virtual bus; the fully unspecified declaration is one shared default bus. No physical-device alias is inferred. Channel state is shared across tracks on the same virtual bus.",
+          "scoring": "Use this same interpreted timeline for selected-part MIDI note-on targets. Score attack timing/key only, never inferred releases, hold duration, original timbre or kit identity. Prefer a melodic part; percussion selector practice must be explicitly selected. Device range is diagnosed without dropping, folding or clamping keys.",
+          "tempo": "Start at 500000 microseconds per quarter; apply positive tempo changes in tick/track/event order. Last positive tempo at a tick wins. A zero tempo is retained and acknowledged but holds the previous positive tempo. This chosen clock is not a claim that conflicting source tempos have an exact original order.",
+          "transport": "Stop/pause/seek must cancel all active and scheduled audio. Resume may restart remaining derived gates with a fresh basic envelope; preserve IDs and the common transport clock. Never feed synthesized accompaniment into user MIDI input.",
+          "voice_limit": 128
+        },
+        "policy_id": "wmh-basic-key-rendition-fifo-v1",
+        "source_clock_available": true,
+        "source_duration_ms": 2000,
+        "source_sha256": "4021bb6a8c4b45acf2502cb0abd10d25f58463217d7ad41f551d9adf18defbf4",
+        "unmatched_releases": []
+      },
+      "source_rendition": "unresolved",
+      "source_sha256": "4021bb6a8c4b45acf2502cb0abd10d25f58463217d7ad41f551d9adf18defbf4"
+    },
+    "score_json": "{\"format\":\"worldmusichub-complete-score\",\"version\":1,\"source\":{\"format\":\"midi\",\"bytes\":212,\"sha256\":\"4021bb6a8c4b45acf2502cb0abd10d25f58463217d7ad41f551d9adf18defbf4\"},\"notation\":{\"format_metadata\":{\"schema_revision\":2,\"producer\":\"WorldMusicHub\",\"producer_version\":\"0.2.0-alpha.1\"},\"version\":1,\"id\":\"midi-basic-4021bb6a8c4b45acf2502cb0abd10d25f58463217d7ad41f551d9adf18defbf4\",\"title\":\"Original direct MIDI piano range\",\"composer\":\"\",\"provenance\":{\"kind\":\"user_supplied_unverified\",\"attribution\":\"User-supplied MIDI; source rights unverified; nominal MIDI key-number projection\",\"source_url\":null,\"license\":null},\"parts\":[{\"id\":\"midi-t1-c1-r0\",\"name\":\"Original direct MIDI overlap exercise / ch 1\",\"instrument\":\"midi-key-number\",\"notes\":[{\"id\":\"midi-t1-e11\",\"at\":{\"numerator\":3,\"denominator\":2},\"duration\":{\"numerator\":1,\"denominator\":2},\"pitch\":{\"step\":\"C\",\"alter\":1,\"octave\":1},\"voice\":\"1\",\"staff\":1,\"velocity\":83,\"tie_start\":false,\"tie_stop\":false},{\"id\":\"midi-t1-e13\",\"at\":{\"numerator\":3,\"denominator\":1},\"duration\":{\"numerator\":1,\"denominator\":1},\"pitch\":{\"step\":\"B\",\"alter\":0,\"octave\":6},\"voice\":\"1\",\"staff\":1,\"velocity\":87,\"tie_start\":false,\"tie_stop\":false}]}],\"tempo\":[{\"at\":{\"numerator\":0,\"denominator\":1},\"bpm\":120.0}],\"meters\":[{\"at\":{\"numerator\":0,\"denominator\":1},\"numerator\":4,\"denominator\":4}],\"keys\":[],\"measures\":[],\"repeats\":[],\"source\":null},\"performance\":{\"profile\":\"wmh-basic-keys-midi1-v1\",\"source_format\":0,\"ppq\":384,\"end_tick\":1536,\"tracks\":[{\"id\":\"track-1\",\"name\":\"Original direct MIDI overlap exercise\",\"source_index\":0,\"end_tick\":1536,\"events\":[[0,[255,3,79,114,105,103,105,110,97,108,32,100,105,114,101,99,116,32,77,73,68,73,32,111,118,101,114,108,97,112,32,101,120,101,114,99,105,115,101]],[0,[255,2,67,67,48,45,49,46,48,32,111,114,105,103,105,110,97,108,32,114,101,103,114,101,115,115,105,111,110,32,101,118,101,110,116,115]],[0,[255,81,7,161,32]],[0,[255,88,4,2,24,8]],[0,[192,0]],[0,[176,7,100]],[0,[144,50,91]],[192,[144,50,73]],[0,[128,50,19]],[192,[128,50,27]],[192,[144,25,83]],[192,[128,25,35]],[384,[144,95,87]],[384,[128,95,43]],[0,[255,1,69,110,100,32,109,97,114,107,101,114,32,114,101,116,97,105,110,101,100,32,97,102,116,101,114,32,116,104,101,32,102,105,110,97,108,32,114,101,108,101,97,115,101]],[0,[255,47]]]}],\"routes\":[{\"port\":null,\"device_name_bytes\":null}],\"parts\":[{\"id\":\"midi-t1-c1-r0\",\"track_id\":\"track-1\",\"channel\":0,\"route\":0,\"key_semantics\":\"midi_key_number\"}],\"timing\":{\"event_order\":\"tick_track_index_event_index\",\"relative_clock_available\":true,\"end_relative_microseconds\":{\"numerator\":\"2000000\",\"denominator\":1},\"smf_default_tempo_used\":false,\"source_tempo_events\":1,\"source_meter_events\":1,\"meter\":\"source_declared\",\"legacy_running_status_events\":0,\"invalid_program_events\":0}},\"coverage\":{\"source_tracks\":1,\"source_events\":16,\"represented_events\":16,\"key_attacks\":4,\"key_releases\":4,\"determined_ends\":2,\"zero_length_attacks\":0,\"unresolved_ends\":2,\"unmatched_releases\":0,\"notation_notes\":2,\"projected_melodic_targets\":2,\"unresolved_route_ends\":0},\"capabilities\":{\"source_events\":\"complete\",\"basic_keys\":\"unresolved_ends\",\"score_projection\":\"partial_positive_duration_keys\",\"source_rendition\":\"requires_explicit_receiver_mapping\",\"acoustic_pitch\":\"not_inferred_from_key_numbers\"}}",
+    "version": 2
+  },
+  "entry": {
+    "clean_package": {
+      "bytes": 3896,
+      "capabilities": {
+        "acoustic_pitch": "not_inferred_from_key_numbers",
+        "basic_keys": "unresolved_ends",
+        "score_projection": "partial_positive_duration_keys",
+        "source_events": "complete",
+        "source_rendition": "requires_explicit_receiver_mapping"
+      },
+      "content_sha256": "06447c594b35fac1ceb567e363560c19545e7fef1416a7982a19ff51a23d80e2",
+      "coverage": {
+        "determined_ends": 2,
+        "key_attacks": 4,
+        "key_releases": 4,
+        "notation_notes": 2,
+        "projected_melodic_targets": 2,
+        "represented_events": 16,
+        "source_events": 16,
+        "source_tracks": 1,
+        "unmatched_releases": 0,
+        "unresolved_ends": 2,
+        "unresolved_route_ends": 0,
+        "zero_length_attacks": 0
+      },
+      "media": [],
+      "notation_available": true,
+      "profile": "wmh-basic-keys-midi1-v1",
+      "version": 2
+    },
+    "composer": "",
+    "content_sha256": "06447c594b35fac1ceb567e363560c19545e7fef1416a7982a19ff51a23d80e2",
+    "key": "song-06447c594b35fac1ceb567e363560c19545e7fef1416a7982a19ff51a23d80e2",
+    "label": "Original direct MIDI piano range",
+    "library_format_version": 2,
+    "provenance": {
+      "attribution": "User-supplied MIDI; source rights unverified; nominal MIDI key-number projection",
+      "kind": "user_supplied_unverified",
+      "license": null,
+      "source_url": null
+    },
+    "retained_source": null,
+    "revision": 1,
+    "saved_at_unix_ms": 1791436101584,
+    "score_bytes": 1182,
+    "score_id": "midi-basic-4021bb6a8c4b45acf2502cb0abd10d25f58463217d7ad41f551d9adf18defbf4",
+    "score_sha256": "9323698e550e167f515bb25b7549c1cb84628e0e41a751f6ef023b20ba57542a",
+    "title": "Original direct MIDI piano range"
+  },
+  "score_json": null
+}

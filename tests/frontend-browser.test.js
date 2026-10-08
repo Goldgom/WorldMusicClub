@@ -843,3 +843,21 @@ test('notation export failure follows the current language without retrying or c
     const downloaded=page.waitForEvent('download');await ui('#export-button').click();assert.deepEqual(JSON.parse(await readFile(await(await downloaded).path(),'utf8')),fixture);
   }finally{release();}
 });
+
+// Real-browser visibility and interaction proof with authored source notes. The
+// mocked API does not establish Rust MIDI conversion, which has separate tests.
+for(const height of [540,720])test(`blocked piano range offers a visible explicit 88-key repair beside Start at 1280 by ${height}`,async()=>{
+ const score=catalogCopy(`piano-range-${height}`,'Original low-range piano exercise');
+ const original=structuredClone(fixture.parts[0].notes[0]);
+ score.parts[0].notes=[{...original,id:'low-original',pitch:{step:'C',alter:1,octave:1}},{...original,id:'high-original',at:{numerator:1,denominator:1},pitch:{step:'B',alter:0,octave:6}}];
+ await routeCatalog([score]);await page.setViewportSize({width:1280,height});await page.reload();await waitForPlaybackClock(page);await page.locator('#home-single-player').click();
+ await configureSongMod(page,{performers:'all'});await page.locator('#preview-range-repair').waitFor({state:'visible'});
+ assert.equal(await page.locator('#start-performance').isDisabled(),true);assert.equal(await page.locator('#key-count').inputValue(),'61');
+ const geometry=await page.locator('#preview-range-repair').evaluate(button=>{const box=button.getBoundingClientRect(),hit=document.elementFromPoint(box.x+box.width/2,box.y+box.height/2);return{left:box.left,right:box.right,top:box.top,bottom:box.bottom,height:box.height,visible:hit===button||button.contains(hit),width:innerWidth,viewHeight:innerHeight,parent:button.parentElement.className};});
+ assert.equal(geometry.parent,'preview-actions');assert.equal(geometry.visible,true,JSON.stringify(geometry));assert.ok(geometry.left>=0&&geometry.right<=geometry.width&&geometry.top>=0&&geometry.bottom<=geometry.viewHeight&&geometry.height>=36,JSON.stringify(geometry));
+ await page.screenshot({path:`/tmp/worldmusicclub-explicit-piano-range-${height}.png`,fullPage:true});
+ await page.locator('#preview-range-repair').click();await waitForStartPerformance(page);
+ assert.equal(await page.locator('#key-count').inputValue(),'88');assert.equal(await page.locator('#preview-range-repair').isVisible(),false);assert.equal(await page.locator('#workspace').isVisible(),false,'Choosing range does not start or replace a performance');
+ await page.locator('#start-performance').click();await page.locator('#workspace').waitFor({state:'visible'});
+ const download=page.waitForEvent('download');await ui('#export-button').click();assert.deepEqual(JSON.parse(await readFile(await(await download).path(),'utf8')),score,'No note or timing changes during repair');
+});

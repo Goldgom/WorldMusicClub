@@ -38,7 +38,7 @@ export async function importDirectMidiFallback(file,{getStorage,transport=create
 
 export function directMidiImportText(locale,{reason,warnings=[],inspection=false}={}){
   const message=locale==='en'
-    ?inspection?'Complete MIDI source saved. Playback and scored practice are unavailable because no supported practice clock was admitted.':'Complete MIDI source saved. Listen and practice use the disclosed FIFO basic-key interpretation. Original instrument sounds are not reproduced.'
-    :inspection?'完整 MIDI 源文件已保存。未能建立受支持的练习时钟，暂不可播放或评分练习。':'完整 MIDI 源文件已保存。聆听与练习采用已说明的 FIFO 基础按键解释方式，不复现原始乐器声音。';
+    ?inspection?'Complete MIDI source saved. Playback and scored practice are unavailable because no supported practice clock was admitted.':'Complete MIDI source saved. The Start area shows whether practice is ready and any device-range changes needed. Listen and practice use the disclosed FIFO basic-key interpretation. Original instrument sounds are not reproduced.'
+    :inspection?'完整 MIDI 源文件已保存。未能建立受支持的练习时钟，暂不可播放或评分练习。':'完整 MIDI 源文件已保存。开始演奏区域会显示练习是否就绪及所需的设备音域设置。聆听与练习采用已说明的 FIFO 基础按键解释方式，不复现原始乐器声音。';
   return [message,locale==='en'?`Strict notation import: ${reason}`:`严格记谱导入：${reason}`,...warnings].filter(Boolean).join(' ');
 }

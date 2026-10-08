@@ -8,7 +8,9 @@ import {importFile,importReport,importItem,selectImportFiles} from './bulk-impor
 import {keyboardGeometry} from '../web/music.js';
 import {getAppI18n} from '../web/app-locale.js';
 import {importDirectMidiFallback} from '../web/direct-midi-import.js';
+import {practiceRangeRepair} from '../web/practice-range-repair.js';
 import {createBulkImportTransport} from '../web/bulk-import.js';
+import {directMidiFixtures} from '../scripts/prepare-direct-midi-fixtures.mjs';
 
 // The original 117-byte consumer fixture, authored only for this repository.
 // This is transport/DOM coverage; Rust source conversion is tested separately.
@@ -25,14 +27,14 @@ function originalMidi(){
   return importFile('original-direct-midi.mid',bytes);
 }
 
-async function setup({canonical=false,rejectionStatus=400,invalid=false,blocked=false,existing=false,intercept,now=()=>1000}={}){
-  const opened=blocked?JSON.parse(readFileSync(new URL('./fixtures/basic-keys-native-open.json',import.meta.url),'utf8')):basicKeyRenditionFixture(),descriptor=opened.clean_package;
+async function setup({piano=false,canonical=false,rejectionStatus=400,invalid=false,blocked=false,existing=false,intercept,now=()=>1000}={}){
+  const opened=piano?JSON.parse(readFileSync(new URL('./fixtures/direct-midi-piano-native-open.json',import.meta.url),'utf8')):blocked?JSON.parse(readFileSync(new URL('./fixtures/basic-keys-native-open.json',import.meta.url),'utf8')):basicKeyRenditionFixture(),descriptor=opened.clean_package;
   if(blocked){const full=JSON.parse(descriptor.score_json);full.performance.timing.relative_clock_available=false;descriptor.score_json=JSON.stringify(full);descriptor.runtime.compilation=null;}
   const score=JSON.parse(descriptor.score_json).notation,key=`song-${descriptor.content_sha256}`;
   const summary={version:2,content_sha256:descriptor.content_sha256,profile:descriptor.profile,capabilities:descriptor.capabilities,coverage:descriptor.coverage,notation_available:true,media:[]};
   const entry={key,revision:1,title:score.title,composer:score.composer,score_id:score.id,label:score.title,score_bytes:Buffer.byteLength(descriptor.score_json),saved_at_unix_ms:1700000000000,clean_package:summary};
   const server=await nativeScoreServer();if(existing)server.records.set(key,{...opened,entry});
-  const file=originalMidi(),strictReason='Overlapping MIDI notes make note-off pairing ambiguous',warnings=['Basic MIDI-key rendition uses FIFO/tempo interpretation; source sounds remain unresolved.'];
+  const file=piano?importFile(directMidiFixtures().piano.filename,directMidiFixtures().piano.bytes):originalMidi(),strictReason='Overlapping MIDI notes make note-off pairing ambiguous',warnings=['Basic MIDI-key rendition uses FIFO/tempo interpretation; source sounds remain unresolved.'];
   server.setRoute(async request=>{
     const override=await intercept?.(request);if(override!==undefined)return override;
     const {path,body}=request;
@@ -132,7 +134,7 @@ test('unparseable raw source remains a parser error without a save or fabricated
 });
 
 test('saved complete MIDI keeps independent range gates and offers the existing explicit repair',async()=>{
-  const value=await setup(),{app,score}=value;try{await importBasic(value);app.$('preview-part').value=score.parts[1].id;app.emit(app.$('preview-part'),'change');await app.until(()=>app.$('preview-gate').classList.contains('preview-blocked'));assert.equal(app.$('start-practice').disabled,true);assert.equal(app.$('start-listen').disabled,false);assert.match(app.$('basic-key-preview-range-text').textContent,/1 outside/);await app.click('basic-key-preview-piano-88');await app.until(()=>!app.$('start-practice').disabled);assert.equal(app.$('key-count').value,'88');assert.equal(imports(app).length,2);}finally{await app.close();}
+  const value=await setup(),{app,score}=value;try{await importBasic(value);app.$('preview-part').value=score.parts[1].id;app.emit(app.$('preview-part'),'change');await app.until(()=>app.$('preview-gate').classList.contains('preview-blocked'));assert.equal(app.$('start-practice').disabled,true);assert.equal(app.$('start-performance').disabled,true);assert.equal(app.$('start-listen').disabled,false);assert.match(app.$('basic-key-preview-range-text').textContent,/1 outside/);assert.equal(app.$('preview-range-repair').hidden,false);assert.ok(app.$('preview-range-repair').closest('.preview-actions'));assert.equal(app.$('key-count').value,'61');assert.match(app.$('preview-range-repair').title,/does not extend a physical keyboard/);await app.click('preview-range-repair');await app.until(()=>!app.$('start-practice').disabled);assert.equal(app.$('key-count').value,'88');assert.equal(app.$('preview-range-repair').hidden,true);assert.equal(app.$('start-performance').disabled,false);assert.equal(imports(app).length,2);}finally{await app.close();}
 });
 
 test('a source without an admitted practice clock is saved for inspection and never enabled for Start',async()=>{
@@ -219,4 +221,42 @@ for(const inspection of [false,true])for(const entryOnly of [false,true])test(`r
   const result=await importDirectMidiFallback(value.file,{...value,onCommitted:async()=>{refreshed++;}});
   assert.deepEqual(result,{libraryKey:`native:song-${value.summary.content_sha256}`,warnings:[],status:'duplicate'});
   assert.deepEqual(value.calls,['preview','commit']);assert.equal(refreshed,1);
+});
+
+const rangeContext=(keys=[25,50,50,95])=>({mode:'practice',compatibility:{status:'blocked',reasonCode:'instrument_unplayable',reasonParams:{outside:1,conflict:false}},profile:{kind:'piano',key_count:61,lowest_midi:null},targets:keys.map((midi,index)=>({id:`original-${index}`,midi}))});
+test('range repair guidance proposes 88 keys only when every checked human pitch fits and never overrides admission',()=>{
+ const context=rangeContext(),snapshot=structuredClone(context);
+ assert.deepEqual(practiceRangeRepair(context),{kind:'piano88',outside:1});assert.deepEqual(context,snapshot);
+ for(const keys of [[20,50],[25,109],[],[25,NaN]])assert.equal(practiceRangeRepair(rangeContext(keys)).kind,'setup');
+ assert.equal(practiceRangeRepair({...context,profile:{kind:'guitar'}}).kind,'setup');
+ assert.equal(practiceRangeRepair({...context,profile:{kind:'piano',key_count:88,lowest_midi:null}}).kind,'setup');
+ for(const mode of ['listen',undefined])assert.equal(practiceRangeRepair({...context,mode}),null);
+ for(const status of ['ready','pending','dirty','error'])assert.equal(practiceRangeRepair({...context,compatibility:{...context.compatibility,status}}),null);
+ for(const reasonCode of ['instrument_no_targets','instrument_report_coverage',undefined])assert.equal(practiceRangeRepair({...context,compatibility:{...context.compatibility,reasonCode}}),null);
+ assert.equal(practiceRangeRepair({...context,compatibility:{...context.compatibility,reasonParams:{outside:0,conflict:true}}}),null);
+});
+
+// Real Rust-converted four-note CC0 fixture, not a private song. Conversion was
+// produced by c105a7375b4c5f977b457853c62fa48bb964b056; complete BasicKeys
+// converter/runtime sources are unchanged in the implementation under test.
+// The mocked native HTTP transport remains DOM/consumer evidence only.
+test('original overlapping piano raw import separates a complete save from range readiness, then preserves all targets through explicit repair',async()=>{
+ const value=await setup({piano:true}),{app,descriptor,server,key}=value,source=descriptor.score_json,fixture=directMidiFixtures().piano;
+ try{
+  assert.equal(JSON.parse(source).source.sha256,fixture.manifest.sha256);
+  assert.deepEqual(descriptor.runtime.compilation.timeline.notes.map(note=>note[2]),[50,50,25,95]);
+  await importBasic(value);await app.until(()=>app.$('preview-range-repair').hidden===false);
+  assert.equal(app.$('key-count').value,'61');assert.equal(app.$('start-performance').disabled,true);
+  assert.match(app.$('notice-message').textContent,/Complete MIDI source saved.*Start area.*FIFO/);
+  assert.match(app.$('preview-gate').textContent,/Selected notes outside this instrument range: 1/);
+  assert.equal(app.$('preview-range-repair').textContent,'Use 88 keys');
+  const i18n=getAppI18n(app.document);i18n.setLocale('zh-CN');assert.equal(app.$('preview-range-repair').textContent,'使用 88 键');assert.match(app.$('notice-message').textContent,/源文件已保存.*练习是否就绪/);i18n.setLocale('en');
+  const before=app.requests.filter(row=>row.path==='/api/practice-targets').length;
+  await app.click('preview-range-repair');await app.until(()=>!app.$('start-performance').disabled);
+  assert.ok(app.requests.filter(row=>row.path==='/api/practice-targets').length>before,'Range repair rechecks targets; it never overrides admission');
+  assert.equal(app.$('key-count').value,'88');assert.equal(app.$('preview-range-repair').hidden,true);assert.equal(app.document.body.dataset.screen,'library');
+  await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');await app.click('play-button');
+  const take=await app.exported('export-takes');assert.deepEqual(take.passes[0].timeline.notes.map(note=>note.midi),[50,50,25,95]);assert.equal(take.passes[0].inputs.length,0);assert.equal(take.passes[0].interpretation.policy_id,'wmh-basic-key-rendition-fifo-v1');
+  assert.equal(server.records.get(key).clean_package.score_json,source);assert.equal(imports(app).length,2);assert.equal(app.requests.some(row=>/transpose|adaptation/.test(row.path)),false);
+ }finally{await app.close();}
 });

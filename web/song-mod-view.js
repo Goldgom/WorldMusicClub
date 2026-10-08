@@ -10,14 +10,16 @@ import {pitchModSemitones,pitchModRange} from './pitch-mod.js';
 import {midiName} from './music.js';
 
 /** One entry point and a reversible draft; configuration does not start playback. */
-export function setupSongModView({document,i18n,getContext,onOpen=()=>{},onApply,onStart,onPitchCheck,getAssistanceController=(_where,value)=>value?.assistanceController||null}) {
+export function setupSongModView({document,i18n,getContext,onOpen=()=>{},onApply,onStart,onRangeRepair=()=>{},onPitchCheck,getAssistanceController=(_where,value)=>value?.assistanceController||null}) {
   const $=id=>document.getElementById(id),text=(en,zh)=>i18n.locale==='en'?en:zh;
   const make=(tag,id,parent)=>{const node=document.createElement(tag);if(id)node.id=id;parent?.append(node);return node;};
   const actions=document.querySelector('.preview-actions'),start=make('button','start-performance',actions),configure=make('button','configure-song-mod',actions);
   start.type=configure.type='button';start.className='button primary';configure.className='button secondary';
-  // Admission and the two actions stay pinned. Full Mod diagnostics belong to
+  const rangeRepair=make('button','preview-range-repair',actions);rangeRepair.type='button';rangeRepair.className='button secondary';rangeRepair.hidden=true;configure.before(rangeRepair);
+  rangeRepair.addEventListener('click',()=>{if(!rangeRepair.disabled&&lastState.rangeRepair)onRangeRepair(lastState.rangeRepair.kind);});
+  // Admission and its actions stay pinned. Full Mod diagnostics belong to
   // the existing detail scroller; a long reason must not grow the Start footer.
-  const previewCopy=document.querySelector('.preview-copy'),previewSummary=make('p','song-mod-preview-summary',previewCopy);previewCopy.prepend(previewSummary);previewSummary.className='song-mod-summary';previewSummary.setAttribute('role','status');configure.setAttribute('aria-describedby',previewSummary.id);
+  const previewCopy=document.querySelector('.preview-copy'),previewSummary=make('p','song-mod-preview-summary',previewCopy);previewCopy.prepend(previewSummary);previewSummary.className='song-mod-summary';previewSummary.setAttribute('role','status');configure.setAttribute('aria-describedby',previewSummary.id);rangeRepair.setAttribute('aria-describedby',previewSummary.id);
   const stage=make('section','song-mod-stage',$('stage-hud')||document.querySelector('.stage-hud')||$('workspace'));stage.className='song-mod-stage';stage.dataset.keyboardInput='off';
   const edit=make('button','edit-song-mod',stage),stageSummary=make('span','song-mod-stage-summary',stage);edit.type='button';edit.className='button secondary compact';edit.setAttribute('aria-describedby',stageSummary.id);
   const dialog=make('dialog','song-mod-dialog',document.body);dialog.className='shell-dialog song-mod-dialog';dialog.dataset.keyboardInput='off';dialog.setAttribute('aria-labelledby','song-mod-title');
@@ -68,6 +70,7 @@ export function setupSongModView({document,i18n,getContext,onOpen=()=>{},onApply
       row.reason.hidden=!row.reason.textContent;row.actor.disabled=row.mute.disabled=row.visible.disabled=busy;row.actor.setAttribute('aria-label',`${row.name.textContent} · ${row.actorLabel.textContent}`);row.instrument.setAttribute('aria-label',`${row.name.textContent} · ${row.instrumentLabel.textContent}`);
     }
     cancel.disabled=false;human.disabled=machine.disabled=restore.disabled=layout.disabled=others.disabled=busy;apply.disabled=busy||Boolean(admissionIssue)||!assistanceView.canApply()||!pitchView.canApply();
+    rangeRepair.hidden=!lastState.rangeRepair;rangeRepair.disabled=busy||lastState.admitting;rangeRepair.textContent=lastState.rangeRepair?.kind==='piano88'?text('Use 88 keys','使用 88 键'):text('Device range','设备音域');rangeRepair.title=lastState.rangeRepair?.kind==='piano88'?text('Use the 88-key on-screen piano range (MIDI 21–108), or match an 88-key device. This does not extend a physical keyboard or change any source note.','使用 88 键屏幕钢琴音域（MIDI 21～108），或匹配 88 键设备。不会扩展实体键盘或更改任何源音符。'):text('Review the device range and apply your setup. Original notes and timing stay unchanged.','检查设备音域并应用设置。原始音符和时间保持不变。');
     start.disabled=!lastState.canStart||busy||lastState.admitting;configure.disabled=!lastState.preview?.mod||busy||lastState.admitting;stage.hidden=!lastState.stage?.mod;edit.disabled=busy||lastState.admitting;
     previewSummary.textContent=summary(lastState.preview)+(lastState.reason?' · '+lastState.reason:'');stageSummary.textContent=summary(lastState.stage)+(lastState.stageReason?' · '+lastState.stageReason:'');edit.title=stageSummary.textContent;for(const [node,value]of [[previewSummary,lastState.preview],[stageSummary,lastState.stage]]){node.dataset.pitchModSemitones=String(pitchModSemitones(value));node.dataset.pitchModDigest=value?.pitchView?.identity.digest||'';}
   }

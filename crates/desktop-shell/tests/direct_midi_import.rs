@@ -308,3 +308,69 @@ fn receiver_voice_limit_is_separate_from_complete_source_import() {
     );
     assert_eq!(package.coverage["key_attacks"], 129);
 }
+
+#[test]
+fn overlapping_piano_import_keeps_all_targets_and_requires_explicit_wider_device_range() {
+    let sandbox = Sandbox::new();
+    let library = sandbox.library();
+    // Newly authored isolated keys, not a transcription of user music. The
+    // second attack precedes the first release at the same source tick.
+    let source = smf(&[vec![
+        0, 0xc0, 0, 0, 0x90, 50, 90, 48, 0x90, 50, 80, 0, 0x80, 50, 0, 48, 0x80, 50,
+        0, 0, 0x90, 25, 70, 48, 0x80, 25, 0, 0, 0x90, 95, 60, 48, 0x80, 95, 0, 0, 255,
+        47, 0,
+    ]]);
+    let strict = practice_server::api("/api/import/midi", source.clone()).unwrap_err();
+    assert!(strict.contains("Ambiguous overlapping MIDI note-ons"));
+    let saved = body(&library, "/api/library/import/commit", source.clone());
+    assert_eq!(saved["summary"]["saved"], 1);
+    assert_eq!(saved["items"][0]["playable"], true);
+    let key = saved["items"][0]["entry"]["key"].as_str().unwrap();
+    let package = library.load(key).unwrap().clean_package.unwrap();
+    let decoded = score_core::basic_keys::decode_json(package.score_json.as_bytes()).unwrap();
+    let rendition = score_core::basic_keys::compile_rendition(&decoded).unwrap();
+    assert_eq!(rendition.timeline.notes.len(), 4);
+    assert_eq!(
+        rendition
+            .timeline
+            .notes
+            .iter()
+            .map(|note| note.midi)
+            .collect::<Vec<_>>(),
+        vec![50, 50, 25, 95]
+    );
+    assert_eq!(rendition.rendition.coverage.source_attacks, 4);
+    assert_eq!(rendition.rendition.coverage.paired_releases, 4);
+    assert_eq!(rendition.rendition.coverage.synthetic_gates, 0);
+    for (key_count, outside) in [(61, 1), (88, 0)] {
+        let report = score_core::instruments::analyze_instrument(
+            &rendition.timeline,
+            &score_core::instruments::InstrumentProfile::Piano {
+                key_count,
+                lowest_midi: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(report.note_options.len(), 4);
+        assert_eq!(
+            report
+                .note_options
+                .iter()
+                .filter(|note| !note.playable)
+                .count(),
+            outside
+        );
+        assert!(!report.changed_source_notes);
+    }
+    assert_eq!(
+        library.load(key).unwrap().clean_package.unwrap().score_json,
+        package.score_json
+    );
+    let original = request(
+        &library,
+        "/api/library/import/export",
+        serde_json::to_vec(&json!({"archive_key":saved["source"]["archive_key"]})).unwrap(),
+    );
+    assert_eq!(original.status(), 200);
+    assert_eq!(original.body(), &source);
+}

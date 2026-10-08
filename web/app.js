@@ -47,6 +47,7 @@ import {setupSongAuthoringView} from './song-authoring-view.js';
 import {setupBulkImportView} from './bulk-import-view.js';
 import {isImportEnvelope} from './bulk-import.js';
 import {importDirectMidiFallback,directMidiImportText} from './direct-midi-import.js';
+import {practiceRangeRepair} from './practice-range-repair.js';
 import {setupPerformanceView,FIELD_COLORS,previewMusicMetadata,updateWrittenNoteHighlights,fallingNoteShadow} from './performance-view.js';
 import {renderPianoKeybed,renderPianoRails,pianoMinimumWidth} from './piano-stage-view.js';
 import {setupGuitarGuidance} from './guitar-guidance.js';
@@ -584,9 +585,22 @@ function modContext(origin,{loadSourceDetails=false}={}) {
 function scoreAdmissionPending(){return Boolean(state.compileController&&!state.compileController.signal.aborted||directMidiImportOwner?.current());}
 function refreshSongModView(){
   if(!songModView)return;
-  const candidate=modContext('preview'),active=modContext('stage');let reason='',canStart=false;
-  if(candidate){try{if(candidate.pitchError)throw candidate.pitchError;assertSongModSupported(candidate.mod,candidate.capabilities,{assistance:candidate.assistance});assertPartInstrumentPolicyReady(modInputPolicy(candidate.mod,candidate),candidate.score.parts,i18n.locale);const options=songModOptions(candidate.mod);canStart=!startingPreview&&preview.canStart(options.mode);if(!canStart)reason=compatibilityText(preview.value.compatibility);if((candidate.capabilities.audioThread||modNeedsLiveAudio(candidate.mod))&&!synth.muted&&liveAudioUnavailable()){canStart=false;reason=liveAudioUnavailableReason();}}catch(error){reason=i18n.locale==='en'?error.message:'当前 Mod 无法播放：'+error.message;}}
-  if(preview.value.score?.parts.length>128)reason=i18n.locale==='en'?'This source exceeds the 128-part Mod budget. Inspect the complete source below.':'此来源超出 Mod 的 128 声部预算；可在下方查看完整来源。';if(!candidate&&preview.value.status==='choice')reason=i18n.locale==='en'?'Choose the basic instrumental renderer below to configure this source.':'请先在下方选择基础器乐渲染器，再配置此来源。';songModView.update({preview:candidate,stage:active,stageReason:active?partInstrumentPolicyIssue(modInputPolicy(active.mod,active,state.mode),active.score.parts,i18n.locale):'',canStart:canStart&&!scoreAdmissionPending(),admitting:scoreAdmissionPending(),reason:scoreAdmissionPending()?t('app.preparingScore'):reason,inspectionOnly:(preview.value.status==='inspection'||preview.value.score?.parts.length>128)&&Boolean(preview.value.score)});
+  const candidate=modContext('preview'),active=modContext('stage');let reason='',canStart=false,rangeRepair=null;
+  if(candidate){try{if(candidate.pitchError)throw candidate.pitchError;assertSongModSupported(candidate.mod,candidate.capabilities,{assistance:candidate.assistance});assertPartInstrumentPolicyReady(modInputPolicy(candidate.mod,candidate),candidate.score.parts,i18n.locale);const options=songModOptions(candidate.mod);canStart=!startingPreview&&preview.canStart(options.mode);if(!canStart){reason=compatibilityText(preview.value.compatibility);rangeRepair=previewRangeRepair(candidate,options.mode);}if((candidate.capabilities.audioThread||modNeedsLiveAudio(candidate.mod))&&!synth.muted&&liveAudioUnavailable()){canStart=false;reason=liveAudioUnavailableReason();}}catch(error){reason=i18n.locale==='en'?error.message:'当前 Mod 无法播放：'+error.message;}}
+  if(preview.value.score?.parts.length>128)reason=i18n.locale==='en'?'This source exceeds the 128-part Mod budget. Inspect the complete source below.':'此来源超出 Mod 的 128 声部预算；可在下方查看完整来源。';if(!candidate&&preview.value.status==='choice')reason=i18n.locale==='en'?'Choose the basic instrumental renderer below to configure this source.':'请先在下方选择基础器乐渲染器，再配置此来源。';songModView.update({preview:candidate,stage:active,stageReason:active?partInstrumentPolicyIssue(modInputPolicy(active.mod,active,state.mode),active.score.parts,i18n.locale):'',canStart:canStart&&!scoreAdmissionPending(),rangeRepair,admitting:scoreAdmissionPending(),reason:scoreAdmissionPending()?t('app.preparingScore'):reason,inspectionOnly:(preview.value.status==='inspection'||preview.value.score?.parts.length>128)&&Boolean(preview.value.score)});
+}
+function previewRangeRepair(candidate,mode=songModOptions(candidate.mod).mode){
+  const targets=candidate.assistance?scopedAssistanceTargets(candidate.assistance,candidate.compiled.timeline,null).sourceTimeline.notes:practiceScope(candidate.compiled.timeline,candidate.practiceSelection,null).targets.notes;
+  return practiceRangeRepair({mode,compatibility:preview.value.compatibility,profile:currentProfile(),targets});
+}
+function repairPreviewRange(kind){
+  // Re-read the current candidate after navigation or a pending admission. The
+  // explicit click changes only the device profile, never source notes or Mod.
+  if(scoreAdmissionPending()||startingPreview)return;
+  const candidate=modContext('preview');if(!candidate)return;
+  const repair=previewRangeRepair(candidate);if(repair?.kind!==kind)return;
+  if(kind==='piano88'){$('key-count').value='88';$('key-count').dispatchEvent(new window.Event('change',{bubbles:true}));}
+  else openCleanRangeSetup();
 }
 async function prepareTempoPitchCarry(compiled,semitones,signal){
   const source={score:compiled.score,compiled,cleanSong:null,mode:state.mode,practiceSelection:state.practiceSelection,practiceLayout:state.practiceLayout,showOthers:state.showOtherParts},mod=createSongMod(songMods.identity(source),state.songMod?.config||songMods.read(source).mod.config),options=songModOptions(mod);
@@ -2007,7 +2021,7 @@ function openCleanRangeSetup(){
 }
 fallingNoteLabels=setupFallingNoteLabels({document,i18n,onChange:()=>drawFrame(true)});
 completePracticeView=setupCompletePracticeView({document,i18n,replacedByMod:true,getContext:origin=>origin==='preview'?{...preview.value,selection:preview.value.practiceSelection,previewVersion:preview.version}:({score:state.score,compiled:state.compiled,cleanSong:state.cleanSong,selection:state.practiceSelection,showOthers:state.showOtherParts,hasTakes:transport.hasStarted||state.recorder.passes.length>0}),onOpen:()=>pausePlayback(),onDisplay:show=>{state.showOtherParts=show;engravedView.practicePartChanged();renderNotationPage();drawFrame(true);refreshPracticeView();},onApply:applyCompletePracticeChoice});
-songModView=setupSongModView({document,i18n,getContext:origin=>modContext(origin,{loadSourceDetails:true}),onOpen:()=>pausePlayback(),onPitchCheck:checkSongPitchMod,getAssistanceController:getSongModAssistanceController,onApply:applySongMod,onStart:startUnifiedPerformance});
+songModView=setupSongModView({document,i18n,getContext:origin=>modContext(origin,{loadSourceDetails:true}),onOpen:()=>pausePlayback(),onPitchCheck:checkSongPitchMod,getAssistanceController:getSongModAssistanceController,onApply:applySongMod,onStart:startUnifiedPerformance,onRangeRepair:repairPreviewRange});
 cleanView=setupCleanSongView({document,i18n,unifiedEntry:true,onRangeSetup:openCleanRangeSetup,onVsqStart:chooseVsqAndStart,onVsqChoice:()=>preview.chooseVsqPractice(async(song,signal)=>(await scoreStorage.storage()).chooseVsqPractice(song,{signal})),onOpen:()=>pausePlayback(),onTarget:part=>{if(!state.cleanSong||transport.running)return;void applyHumanSelection({kind:'parts',part_ids:[part]},{layout:'solo'});},onMute:(part,muted)=>{if(transport.running)return;if(muted)cleanMutedParts.add(part);else cleanMutedParts.delete(part);resetPlayback();},onSolo:(part,solo)=>{if(transport.running)return;if(solo)cleanSoloParts.add(part);else cleanSoloParts.delete(part);resetPlayback();},onResetMix:()=>{if(transport.running)return;cleanMutedParts.clear();cleanSoloParts.clear();resetPlayback();},onRange:()=>{$('key-count').value='88';$('key-count').dispatchEvent(new window.Event('change',{bubbles:true}));}});
 performanceListening=setupCompletePerformanceListening({document,i18n,synth,host:$('clean-song-preview'),isVisible:()=>shell.screen()==='library',allowed:()=>!document.hidden&&!document.querySelector('dialog[open]'),onBeforePlay:()=>pausePlayback(),onActiveChange:()=>syncInputRoute(),getSoundEnabled:()=>!synth.muted,onSoundChange:setSoundEnabled});
 const loadCleanAsset=async(key,handle,options)=>(await scoreStorage.storage()).loadAsset(key,handle,options);
