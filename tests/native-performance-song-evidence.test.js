@@ -143,3 +143,36 @@ test('hosted entry point refuses local launch and retains real chooser/console/n
 test('performance-song requires distinct phase profiles and matching fresh host records in the hashed proof',async t=>{
  const f=await syntheticEvidence(t);await assertNativeProfileEvidence({directory:f.directory,native:f.native,save:f.save,verify:verifyNativePerformanceSongEvidence,nativeFile:'native-performance-song.json'});
 });
+
+// These modeled DOM/audio diagnostics do not claim native gestures or acceptance.
+test('terminal reference errors fail start observation immediately and retain visible state without mutation', async () => {
+ const {parseHTML}=await import('linkedom');
+ const dom=parseHTML(`<html><body data-screen="library"><p id="complete-performance-status" data-state="error">Reference unavailable</p><p id="complete-performance-problems">Diagnostic late_scheduler: Audio missed a scheduling deadline and stopped.</p><output id="complete-performance-clock">0:00.4 / 0:05.0</output><input id="complete-performance-sound" type="checkbox" checked><input id="complete-performance-policy-accept" type="checkbox" checked><button id="complete-performance-play" disabled></button><button id="complete-performance-pause" disabled></button></body></html>`);
+ const {document}=dom;document.hasFocus=()=>true;document.hidden=false;document.visibilityState='visible';for(const id of ['sound','policy-accept'])document.getElementById(`complete-performance-${id}`).checked=true;const check=vm.runInContext('performanceReferencePlaying',scope),audio={...empty(),contexts:[{state:'running',currentTime:20.45,sampleRate:48000}]},before=document.body.outerHTML;
+ let attempts=0;
+ await assert.rejects(createAcceptanceWait().until(()=>{attempts++;return check(document,()=>audio);},'reference started',1000),error=>{
+  assert.match(error.message,/late_scheduler/);assert.doesNotMatch(error.message,/Timed out/);
+  const state=error.performanceReference;assert.equal(state.state,'error');assert.equal(state.clock,'0:00.4 / 0:05.0');assert.equal(state.problems.code,'late_scheduler');
+  assert.equal(state.soundEnabled,true);assert.equal(state.policyAccepted,true);assert.equal(state.hidden,document.hidden);assert.equal(state.visibilityState,document.visibilityState);assert.equal(state.audio,audio);return true;
+ });
+ assert.equal(attempts,1);assert.equal(document.body.outerHTML,before);
+ document.getElementById('complete-performance-status').dataset.state='starting';assert.equal(check(document,()=>{throw Error('Healthy polling must not snapshot audio');}),false);
+ document.getElementById('complete-performance-status').dataset.state='playing';assert.equal(check(document,()=>{throw Error('Healthy polling must not snapshot audio');}),true);
+
+});
+
+test('audio diagnostics retain a previously observed real context across an allocation-free replay scope',()=>{
+ const contexts=new Set(),original=Audio.prototype.createGain,context=new Audio();
+ const first=observe({AudioContext:Audio},{contexts});context.createGain();first.restore();
+ const second=observe({AudioContext:Audio},{contexts});context.currentTime=12.45;
+ const snapshot=JSON.parse(JSON.stringify(second.snapshot()));second.restore();
+ assert.deepEqual(snapshot.contexts,[{state:'running',currentTime:12.45,sampleRate:48000}]);assert.equal(snapshot.sourceStarts,0);assert.deepEqual(snapshot.parameters,[]);assert.equal(Audio.prototype.createGain,original);
+});
+
+test('performance failure paths preserve the probe before cleanup and leave strict screenshot and source gates present',()=>{
+ assert.match(renderer,/catch\(error\)\{error\.performanceReference\?\?=readPerformanceReferenceState\(document,audio\(\)\);throw error;\}finally\{finish\(\);\}/);
+ assert.match(renderer,/report\.referenceFailure=error\.performanceReference\?\?readPerformanceReferenceState\(document,audio\(\)\)/);
+ assert.match(renderer,/capture\.before\.activeSources>0&&capture\.after\.activeSources>0/);
+ assert.match(renderer,/variant\.liveCapture\.before\.activeSources>0&&variant\.liveCapture\.after\.activeSources>0/);
+ assert.match(renderer,/audio\(\)\.sourceStarts>0&&audio\(\)\.activeSources>0/);
+});

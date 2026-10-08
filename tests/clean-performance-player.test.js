@@ -1013,3 +1013,29 @@ test('malformed bend, unsupported range, percussion, RPN24 and shared ownership 
   const p = await load(fixture([[bend(0, 16383), on(0, 67), off(500000, 67)]])), h = harness(p);
   h.context.sampleRate = 1000; await h.play(); assert.equal(h.player.snapshot().error.code, 'unsupported_pitch_range'); h.silent();
 });
+
+// Diagnostic only: deterministic audio-clock advance during synchronous UI rendering.
+test('diagnostic: initial state render can exhaust lead before any source allocation', async () => {
+  const p = await load(fixture([[on(0), off(500000)]]));
+  let h; h = harness(p, {onState: state => { if (state.state === 'playing') h.context.currentTime += 0.075; }});
+  await h.play();
+  assert.equal(h.player.snapshot().error.code, 'late_scheduler');
+  assert.equal(h.sources().length, 0);
+  assert.equal(h.acknowledgements.length, 0);
+  h.silent();
+});
+
+test('diagnostic: a started pre-onset pass can fail closed with no sources after a polling stall', async () => {
+  const p = await load(fixture([[program(0, 40), row(250000, 'text', {role:'text',text:'Authored pre-onset marker'}), on(750000), off(4500000)]]));
+  const h = harness(p);
+  await h.play();
+  assert.equal(h.player.snapshot().state, 'playing');
+  assert.equal(h.sources().length, 0);
+  h.context.currentTime = 0.45;
+  h.timers.fire();
+  assert.equal(h.player.snapshot().state, 'error');
+  assert.equal(h.player.snapshot().error.code, 'late_scheduler');
+  near(h.player.snapshot().positionSeconds, 0.4);
+  assert.equal(h.sources().length, 0);
+  h.silent();
+});
