@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {resumePartActivityStage} from './part-activity-browser-navigation.js';
+import {resumePartActivityStage,waitForPartActivityModSource} from './part-activity-browser-navigation.js';
 
 // Routing-only double: it has no admission, audio, score mutation or UI bypass.
 // Invisible controls reject clicks just as the real browser must.
@@ -23,8 +23,26 @@ test('activity navigation rejects an unrelated imported source',async()=>{
 });
 test('both initial and replacement uploads use explicit activity stage routing',()=>{
   const source=readFileSync(new URL('./part-activity-browser-regression.js',import.meta.url),'utf8');
-  assert.match(source,/const upload=async\(score,name\)=>\{[^\n]*await readyForTitle\(score.title\);await closeShellPanels\(\);await resumePartActivityStage\(page,score.title\);\};/);
+  assert.match(source,/const upload=async\(score,name\)=>\{[^\n]*await waitForPartActivityModSource\(page,score.title\);await closeShellPanels\(\);await resumePartActivityStage\(page,score.title\);\};/);
   assert.match(source,/await upload\(score,'original-machine-activity.json'\)/);
   assert.match(source,/await upload\(replacement.score,'original-replacement-activity.json'\)/);
   assert.match(source,/performers:\[human\],layout:'complete',showOtherParts:true/);
+});
+
+test('replacement import waits for exact editable source while blocked Play can await human Mod selection',async()=>{
+ let checked=false;
+ const page={async waitForFunction(predicate,expected){
+  assert.equal(expected,'Replacement activity');const prior=globalThis.document;
+  const nodes={'#score-title':{textContent:expected},'#edit-song-mod':{disabled:false},'#play-button':{disabled:true}};
+  globalThis.document={querySelector:selector=>nodes[selector]};
+  try{
+   assert.equal(predicate(expected),true,'Out-of-range all-human Play is not a prerequisite for selecting the intended human part');
+   nodes['#score-title'].textContent='Old activity';assert.equal(predicate(expected),false,'Never configure the previous source');nodes['#score-title'].textContent=expected;
+   nodes['#edit-song-mod'].disabled=true;assert.equal(predicate(expected),false,'Admission in progress still blocks configuration');delete nodes['#edit-song-mod'];assert.equal(predicate(expected),false,'A missing Mod is not ready');checked=true;
+  }finally{if(prior===undefined)delete globalThis.document;else globalThis.document=prior;}
+ }};
+ await waitForPartActivityModSource(page,'Replacement activity');assert.equal(checked,true);
+ const source=readFileSync(new URL('./part-activity-browser-regression.js',import.meta.url),'utf8');assert.doesNotMatch(source,/readyForTitle/);
+ assert.match(source,/await upload\(replacement.score,'original-replacement-activity.json'\);await configureSongMod\(page,\{origin:'stage',performers:\[replacement.score.parts.find/);
+ assert.match(source,/Replacement cannot retain old admission/);assert.match(source,/await waitForPlaybackClockAdvance\(page\);const replaced=await waitState/);
 });
