@@ -6,6 +6,7 @@
   "tests/cross-mode-performance-transition.test.js",
   "tests/cross-mode-performance-transport.test.js",
   "tests/complete-practice-acceptance.test.js",
+  "tests/complete-practice-muted-reset.test.js",
   "tests/frontend-legacy-part-selection.test.js",
   "tests/frontend-complete-practice.test.js",
   "tests/human-practice-selection.test.js",
