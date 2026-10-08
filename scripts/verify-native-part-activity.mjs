@@ -1,0 +1,66 @@
+// Mandatory evidence gate, not an executed browser/Windows acceptance result.
+import assert from 'node:assert/strict';
+export const NATIVE_PART_ACTIVITY_STATES=Object.freeze({
+ 'complete-practice-seed':Object.freeze({'multi-visible':'paused',cancel:'paused','multi-hidden':null,'multi-restored':'paused',reset:null,'active-human':'paused','human-ended':'ended','all-blocked':null,'single-complete':null,reapplied:null,'labels-enabled':null}),
+ 'complete-practice-restart':Object.freeze({solo:null,'vsq-listen':null,'vsq-all':null,'vsq-playing':'playing','vsq-silent':'silent','vsq-mixed':'paused','vsq-muted':'muted'})
+});
+const finite=n=>typeof n==='number'&&Number.isFinite(n),near=(a,b)=>Math.abs(a-b)<=1;
+function rect(r,label){assert.ok(r&&['x','y','width','height'].every(k=>finite(r[k])),`${label}: actual DOMRect required`);assert.ok(r.width>=0&&r.height>=0);return r;}
+function inside(a,b,label){assert.ok(a.x>=b.x-1&&a.y>=b.y-1&&a.x+a.width<=b.x+b.width+1&&a.y+a.height<=b.y+b.height+1,`${label}: clipped or outside viewport`);}
+function intersects(a,b){return Math.min(a.x+a.width,b.x+b.width)-Math.max(a.x,b.x)>1&&Math.min(a.y+a.height,b.y+b.height)-Math.max(a.y,b.y)>1;}
+// Separate from the unchanged 900–1280 × 640–720 measured native-window gate.
+// 1920×1080 is only a bounded DOM contract here; no larger native run is implied.
+export function validateNativePartActivityGeometry(e,{eligible}={}){
+ const v=e.viewport;assert.ok(v&&finite(v.width)&&finite(v.height)&&v.width>=390&&v.width<=1920&&v.height>=390&&v.height<=1080,'Bounded strip viewport required');assert.ok(finite(v.dpr)&&v.dpr>0&&v.dpr<=4);assert.ok(finite(v.documentWidth)&&finite(v.documentHeight)&&v.documentWidth<=v.width+1&&v.documentHeight<=v.height+1,'Strip must not create horizontal or vertical document overflow');
+ const viewport={x:0,y:0,width:v.width,height:v.height},visible=eligible&&v.width>1000&&v.height>=700;
+ assert.equal(e.outsideHuman,true,'Strip must be outside human HUD, instrument and transport DOM');
+ for(const key of ['host','strip']){const n=e[key];assert.ok(n);rect(n.rect,key);assert.equal(n.visible,visible,`${key}: wrong responsive presentation`);assert.equal(n.hidden,!eligible,`${key}: semantic eligibility mismatch`);if(visible){assert.equal(n.position,'static',`${key}: overlays forbidden`);assert.ok(near(n.rect.height,56),`${key}: fixed 56px flow row required`);inside(n.rect,viewport,key);}else{assert.equal(n.rect.height,0,`${key}: hidden strip occupies layout`);assert.equal(n.rect.width,0);}}
+ for(const key of ['transport','humanHud','stageHud','instrument','notation','play','reset']){const n=e.surfaces?.[key];assert.ok(n&&n.visible,`${key}: human surface must remain visible`);rect(n.rect,key);inside(n.rect,viewport,key);if(visible)assert.equal(intersects(e.host.rect,n.rect),false,`${key}: strip overlaps human surface`);}
+ for(const key of ['keyboard','firstKey']){const n=e.surfaces?.[key];assert.ok(n?.visible&&n.rect.width>0&&n.rect.height>0,`${key}: accepted human geometry missing`);rect(n.rect,key);}
+ if(visible){inside(e.strip.rect,e.host.rect,'strip');assert.equal(e.rows.length,1);assert.equal(e.rows[0].visible,true);assert.ok(e.rows[0].rect.height>0&&e.rows[0].rect.height<=56);inside(rect(e.rows[0].rect,'row'),e.strip.rect,'row');}
+ else assert.ok(e.rows.every(row=>!row.visible&&row.rect.height===0),'Hidden rows cannot substitute for rendered evidence');
+ return{visible,collapsed:eligible&&!visible};
+}
+function sourceLabel(parts,id){const part=parts.find(p=>(p.id||p.part_id)===id);assert.ok(part);return part.name??part.label??id;}
+function validateClockWindow(e,s,state){
+ const live=['playing','silent','muted'].includes(state),phase=live?'playing':state,{before,after}=e.captureWindow||{};assert.deepEqual(after,e.clock,'Screenshot action must bind its after-clock');
+ for(const clock of [before,after]){assert.equal(clock?.phase,phase);assert.equal(clock.running,live);assert.equal(clock.completed,state==='ended');assert.equal(clock.available,true);assert.equal(clock.positionMs,clock.transportPositionMs);assert.ok(clock.positionMs>=0&&clock.positionMs<=clock.durationMs);}
+ assert.equal(after.positionMs,s.position);assert.equal(after.durationMs,before.durationMs);assert.equal(e.rendererState,phase);
+ if(live){assert.ok(after.positionMs>=before.positionMs&&after.positionMs<after.durationMs);if(state==='playing')assert.ok(before.positionMs>0&&after.positionMs<1418.75116875,'Playing capture must stay within original VSQ gate');if(state==='silent')assert.ok(before.positionMs>=1800&&after.positionMs<3500,'Silent capture must stay inside the original VSQ rest');}
+ else{assert.equal(before.positionMs,after.positionMs,'Retired transport must stay stopped through actual screenshot');if(state==='paused')assert.ok(s.position>0&&s.position<after.durationMs);else assert.equal(s.position,after.durationMs);}
+ return live;
+}
+function validateAdmission(e,s,run,{state,partId,label,sourceSha256,noteIds}){
+ assert.ok(run?.prepared&&run?.started,'Actual preparation/start receipts required');assert.deepEqual(e.receiver,{index:e.receiver.index,receiverId:run.receiverId,planGeneration:run.planGeneration,positionFrame:run.positionFrame,plan:run.plan},'Sample receiver differs from unchanged audio ledger');assert.equal(run.plan.sourceSha256,sourceSha256);assert.deepEqual(run.plan.notes.map(n=>n[0]),noteIds,'Original machine ownership changed');
+ const {current,admitted:a}=e.admission||{};assert.ok(a&&current,'Genuine saved admission plus current facade state required');assert.equal(a.receiverIndex,e.receiver.index,'Retired state cannot borrow a prior receiver');assert.equal(current.source,a.source,'Retired source replaced');assert.equal(current.runtime,a.runtime,'Retired runtime replaced');assert.ok(['ready','unavailable'].includes(current.status));assert.ok(Number.isSafeInteger(a.epoch)&&a.epoch>=0);for(const n of [a.source,a.runtime,...Object.values(a.identity)])assert.ok(Number.isSafeInteger(n)&&n>0&&n<=128);assert.deepEqual(Object.keys(a.identity).sort(),['ownershipToken','planToken','runtimeToken','sourceToken']);
+ assert.deepEqual(a.parts.map(p=>p.partId),[partId]);assert.equal(a.parts[0].label,label);assert.equal(a.parts[0].machineSubset,false);assert.deepEqual(a.gates,run.plan.notes.map(n=>({partId,occurrenceId:n[0],startMs:n[2]*1000/run.plan.sampleRate,endMs:n[3]*1000/run.plan.sampleRate})),'Keep every admitted machine gate, including out-of-keyboard-range gates');assert.equal(a.durationMs,run.plan.durationFrames*1000/run.plan.sampleRate);
+ const live=validateClockWindow(e,s,state);assert.equal(current.running,live);assert.ok(Number.isInteger(current.plans)&&current.plans>=0&&current.plans<=1);
+ if(live){assert.equal(current.status,'ready');assert.equal(current.plans,1);assert.equal(a.frame.positionMs,s.position);assert.equal(a.frame.transport,'running');assert.equal(a.frame.rendererState,'running');assert.equal(a.frame.countIn,false);assert.equal(a.frame.soundEnabled,true);assert.deepEqual(a.frame.mutedPartIds,state==='muted'?[partId]:[]);const gates=a.gates.filter(g=>s.position>=g.startMs&&s.position<g.endMs);assert.equal(state,state==='muted'?'muted':gates.length?'playing':'silent');}
+ else{assert.ok(['running','paused','ended'].includes(a.frame.transport),'Retired rows need a genuine prior admitted frame');assert.ok(a.frame.positionMs<=s.position,'Retired receipt cannot come from a future frame');}
+ assert.equal(e.rows.length,1);const row=e.rows[0];assert.equal(row.state,state);assert.equal(row.stateText,{playing:'Playing',silent:'Silent',muted:'Muted',paused:'Paused',ended:'Ended'}[state],'Visible state text must match real transport/source state');assert.equal(row.label,label);assert.equal(row.labelTitle,label);assert.equal(row.machine,'Machine');assert.equal(row.source,'Original instrument: not identified');assert.equal(row.subsetHidden,true);
+ assert.equal(e.navigation.hidden,true);assert.equal(e.navigation.page,'Page 1 of 1');for(const [name,label]of [['previous','Previous accompaniment parts'],['next','Next accompaniment parts']]){const button=e.navigation[name];assert.equal(button.disabled,true);assert.equal(button.label,label);assert.equal(typeof button.focused,'boolean');assert.equal(typeof button.focusVisible,'boolean');assert.equal(button.focused,false,'Hidden single-page button must not keep keyboard focus');}
+}
+export function validateCompletePracticeStripEvidence(r,f,vsq){
+ const states=NATIVE_PART_ACTIVITY_STATES[r.phase];assert.ok(states);assert.equal(r.activityObserverRestored,true);assert.deepEqual(Object.keys(r.samples).sort(),Object.keys(states).sort(),'Missing mandatory strip checkpoint');
+ for(const [name,state]of Object.entries(states)){
+  const s=r.samples[name],e=s.strip;assert.equal(e?.version,2,`${name}: mandatory production strip evidence missing`);assert.equal(e.screen,'stage');assert.equal(e.mode,name==='vsq-listen'?'listen':'practice');assert.equal(e.ariaLabel,'Machine accompaniment');assert.equal(e.ariaLive,'off');assert.equal(e.keyboardInput,'off');assert.deepEqual(e.liveRegions,[{className:'part-activity-page-label',value:'polite'}]);assert.equal(e.forbiddenSurfaces,0);
+  for(const key of ['width','height','dpr','documentWidth'])assert.equal(e.viewport[key],s.geometry[key]);validateNativePartActivityGeometry(e,{eligible:state!==null});if(!state)continue;
+  const isVsq=name.startsWith('vsq-'),index=isVsq?name==='vsq-muted'?4:3:name==='active-human'?1:name==='human-ended'?2:0,partId=isVsq?'vsq-track-1':'midi-t3-c3-r0';assert.equal(e.receiver?.index,index);assert.equal(s.audioPrepared,index+1);
+  validateAdmission(e,s,r.audio[index],{state,partId,label:sourceLabel(isVsq?vsq.runtime.runtime.parts:r.opened.clean_package.runtime.parts,partId),sourceSha256:isVsq?vsq.runtime.runtime.source_sha256:f.manifest.source.sha256,noteIds:isVsq?state==='muted'?[]:['vsq-t1-ID#0001']:f.manifest.machine_source_ids});
+ }
+ if(r.phase==='complete-practice-seed'){
+  const first=r.samples['multi-visible'].strip;
+  for(const name of ['cancel','multi-restored'])assert.deepEqual(r.samples[name].strip.admission.admitted,first.admission.admitted,'Display/cancel cannot change saved original admission');
+  for(const name of ['multi-visible','multi-restored'])for(const key of ['keyboard','firstKey'])for(const dimension of ['width','height'])assert.equal(r.samples[name].strip.surfaces[key].rect[dimension],r.samples['multi-hidden'].strip.surfaces[key].rect[dimension],'Strip must not shrink accepted human keys');
+  for(const name of ['active-human','human-ended']){const identity=r.samples[name].strip.admission.admitted.identity;assert.equal(identity.sourceToken,first.admission.admitted.identity.sourceToken);assert.equal(identity.runtimeToken,first.admission.admitted.identity.runtimeToken);assert.notEqual(identity.planToken,first.admission.admitted.identity.planToken);}
+  assert.notEqual(r.samples['active-human'].strip.admission.admitted.identity.planToken,r.samples['human-ended'].strip.admission.admitted.identity.planToken);
+ }else{
+  assert.equal(r.audio.length,5,'Retain solo/listen/all-human/mixed/muted receiver inventory');assert.deepEqual(r.vsqMixed,[r.audio[3]]);assert.deepEqual(r.vsqMuted,[r.audio[4]]);
+  for(const name of ['vsq-playing','vsq-silent','vsq-mixed','vsq-muted']){assert.equal(r.samples[name].captured,'0');assert.deepEqual(r.samples[name].sourceTargets,['vsq-t2-ID#0001']);}
+  assert.ok(r.samples['vsq-all'].sequence<r.vsqMixedStartAction&&r.vsqMixedStartAction<r.samples['vsq-playing'].sequence&&r.samples['vsq-playing'].sequence<r.samples['vsq-silent'].sequence&&r.samples['vsq-silent'].sequence<r.samples['vsq-mixed'].sequence&&r.samples['vsq-mixed'].sequence<r.vsqMutedStartAction&&r.vsqMutedStartAction<r.samples['vsq-muted'].sequence);
+  for(const [sequence,id]of [[r.vsqMixedStartAction,'start-performance'],[r.vsqMutedStartAction,'play-button']])assert.ok(r.trusted.some(e=>e.id===id&&e.type==='click'&&e.sequence===sequence&&e.trusted));
+  assert.ok(r.modActions.some(a=>a.field==='mute'&&a.part==='vsq-track-1'&&a.checked===true&&a.sequence>r.samples['vsq-mixed'].sequence&&a.sequence<r.vsqMutedStartAction),'Muted row requires a real committed Mod mute');
+  const identities=['vsq-playing','vsq-silent','vsq-mixed'].map(name=>r.samples[name].strip.admission.admitted.identity);assert.deepEqual(identities[0],identities[1]);assert.deepEqual(identities[1],identities[2]);assert.notEqual(identities[0].planToken,r.samples['vsq-muted'].strip.admission.admitted.identity.planToken);
+ }
+ return r;
+}

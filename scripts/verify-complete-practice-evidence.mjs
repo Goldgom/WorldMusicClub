@@ -1,5 +1,6 @@
 // Independent bounded evidence gate. Pure Node checks never establish GUI acceptance.
 import assert from 'node:assert/strict';
+import {validateCompletePracticeStripEvidence} from './verify-native-part-activity.mjs';
 import {validateSongModActionHistory} from './verify-song-mod-controls.mjs';
 import {readFile,lstat,writeFile} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
@@ -15,7 +16,7 @@ import {validateVsqAudioThreadRuns,expectedVsqAudioPlan} from './vsq-audio-threa
 const human=['midi-t1-c1-r0','midi-t2-c2-r0'],sorted=a=>[...a].sort();
 export const COMPLETE_SCREENSHOTS=Object.freeze({
  'complete-practice-seed':['multi-visible','cancel','multi-hidden','multi-restored','reset','active-human','human-ended','all-blocked','single-complete','reapplied','labels-enabled'],
- 'complete-practice-restart':['solo','vsq-listen','vsq-all']
+ 'complete-practice-restart':['solo','vsq-listen','vsq-all','vsq-playing','vsq-silent','vsq-mixed','vsq-muted']
 });
 // Independent gates of the committed mechanical fixture. These are source
 // milliseconds, not renderer IDs, a production visibility helper, or a new clock.
@@ -32,7 +33,7 @@ export function completePracticeWindowIds({phase,name,position,reducedMotion}){
   if(name==='multi-hidden')machineGates=[];
  }else if(name==='solo'){humanGates=SINGLE_HUMAN_GATES;machineGates=[];assert.ok(position<=5000);}
  else if(name==='vsq-listen'){humanGates=[];machineGates=[];}
- else{const source=vsqAcceptanceFixture().runtime.compilation.timeline;humanGates=[[source.notes[0].id,source.notes[0].start_ms,source.notes[0].start_ms+source.notes[0].duration_ms]];machineGates=[];assert.ok(position<=source.duration_ms);}
+ else{const source=vsqAcceptanceFixture().runtime.compilation.timeline;const mixed=['vsq-playing','vsq-silent','vsq-mixed','vsq-muted'].includes(name),humanNote=source.notes[mixed?1:0];humanGates=[[humanNote.id,humanNote.start_ms,humanNote.start_ms+humanNote.duration_ms]];machineGates=mixed?[[source.notes[0].id,source.notes[0].start_ms,source.notes[0].start_ms+source.notes[0].duration_ms]]:[];assert.ok(position<=source.duration_ms);}
  const visible=gates=>gates.filter(([,start,end])=>end>position&&start<=position+(reducedMotion?0:4000)).map(([id])=>id);
  return{human:visible(humanGates),machine:visible(machineGates)};
 }
@@ -107,17 +108,20 @@ export function validateCompletePracticeRenderer(r,f=completePracticeFixture(),{
   assert.deepEqual(r.labelsAtLaunch,{stored:'true',checked:true});assert.deepEqual(r.labelsResetByUser,{stored:'false',checked:false});trusted('falling-note-labels','change');assert.deepEqual(s.solo.machine,[]);assert.deepEqual(s.solo.notationParts,[human[0]]);assert.equal(s.solo.labels,'false');
   assert.equal(r.vsqBefore.status,'choice');assert.equal(r.vsqBefore.completeVisible,false);assert.equal(r.vsqBefore.listenDisabled,true);assert.equal(r.vsqBefore.choiceVisible,true);assert.equal(r.vsqBefore.fullVocalDisabled,true);assert.equal(r.vsqAfter.receiverCount,r.vsqBefore.receiverCount,'Explicit choice must not auto-start audio');
   trusted('vsq-choose-base-notes');trusted('start-performance');trusted('configure-song-mod');trusted('song-mod-all-human');trusted('song-mod-all-machine');const v=vsqAcceptanceFixture().runtime;validateVsqAudioThreadRuns(r.vsqListen,v,{complete:false,natural:false,pcm:true});validateAudioThreadRuns(r.vsqAll,[],{sourceSha256:v.runtime.source_sha256,sourceNotes:2,endMicroseconds:v.runtime.end_microseconds,planOracle:expectedVsqAudioPlan,allowCountIn:true,complete:true,natural:false,pcm:false});
+  validateVsqAudioThreadRuns(r.vsqMixed,v,{mode:'practice',targetPart:'vsq-track-2',complete:false,natural:false,pcm:true});assert.equal(r.vsqMixed.length,1);validateVsqAudioThreadRuns(r.vsqMuted,v,{mode:'practice',targetPart:'vsq-track-2',mutedParts:['vsq-track-1'],complete:true,natural:false,pcm:false});assert.equal(r.vsqMuted.length,1);
   assert.equal(s['vsq-listen'].captured,'0');assert.equal(s['vsq-listen'].exportDisabled,true);assert.deepEqual(s['vsq-all'].machine,[]);assert.equal(s['vsq-all'].captured,'0');assert.deepEqual(sorted(s['vsq-all'].notationParts),['vsq-track-1','vsq-track-2']);
  }
+ validateCompletePracticeStripEvidence(r,f,vsqAcceptanceFixture());
  return r;
 }
 export function validateCompletePracticeTakes(takes,r,f=completePracticeFixture()){
+ assert.deepEqual(Object.keys(takes).sort(),r.phase==='complete-practice-seed'?['human','machine']:['solo','vsqAll','vsqMixed'],'Every mandatory native take must be retained exactly once');
  const check=(take,partIds,ids,kind='parts')=>{assert.deepEqual(take.practice_selection,{kind,part_ids:partIds});assert.ok(take.passes.length>0);assert.deepEqual(take.target_plan.timeline.notes.map(n=>n.id),ids);for(const pass of take.passes){assert.deepEqual(pass.interpretation.practice_selection,take.practice_selection);assert.deepEqual(pass.timeline.notes.map(n=>n.id),ids);assert.ok(pass.inputs.every(n=>n.midi!==60&&n.midi!==115));}return take;};
  if(r.phase==='complete-practice-seed'){
   const machine=check(takes.machine,human,f.manifest.target_ids),humanTake=check(takes.human,human,f.manifest.target_ids);assert.equal(machine.view_configuration.practice_layout,'complete');assert.ok(machine.passes.every(p=>p.inputs.length===0&&(p.assessment?.hits||[]).length===0));assert.equal(humanTake.target_plan.source_note_count,4);assert.equal(humanTake.target_plan.target_count,3);const group=humanTake.target_plan.groups.find(g=>g.target_id==='midi-t1-e2');assert.deepEqual(group,{target_id:'midi-t1-e2',source_occurrence_ids:['midi-t1-e2','midi-t2-e1'],source_note_ids:['midi-t1-e2','midi-t2-e1'],part_ids:human});
   const target=humanTake.target_plan.timeline.notes[0];assert.equal(target.midi,72);assert.equal(target.start_ms,1500);assert.equal(target.duration_ms,1000);assert.equal(target.velocity,90);assert.equal(humanTake.passes.length,1,'Pause and resume must preserve one human take');const pass=humanTake.passes.find(p=>p.inputs.length);assert.ok(pass);assert.equal(pass.timeline.duration_ms,5000);assert.equal(pass.clock_segments.length,2);assert.equal(pass.clock_segments[0].positionStart,0);assert.equal(pass.clock_segments[1].positionStart,r.audio[2].started.positionMs,'Resumed take must share the real receiver source anchor');assert.equal(pass.inputs.length,1);assert.equal(pass.inputs[0].midi,72);assert.deepEqual(pass.interpretation.source_target_ids,f.manifest.human_source_ids);assert.equal(pass.interpretation.source_sha256,f.manifest.source.sha256);assert.equal(pass.assessment.hits.length,1);assert.equal(pass.assessment.hits[0].note_id,'midi-t1-e2');assert.equal(pass.assessment.misses.length,2);assert.deepEqual(pass.assessment.extras,[]);assert.ok(Math.abs(pass.assessment.hits[0].delta_ms)<=180);
   const requests=r.requests.filter(x=>x.path==='/api/assess');assert.ok(requests.some(x=>x.body.inputs.length===1));for(const x of requests)assert.deepEqual(x.body.timeline.notes.map(n=>n.id),f.manifest.target_ids);
- }else{const solo=check(takes.solo,[human[0]],['midi-t1-e2','midi-t1-e4']);assert.equal(solo.view_configuration.practice_layout,'solo');const v=check(takes.vsqAll,['vsq-track-1','vsq-track-2'],['vsq-t1-ID#0001'],'all');assert.equal(v.target_plan.source_note_count,2);assert.equal(v.target_plan.target_count,1);assert.ok(v.passes.every(p=>p.inputs.length===0));}
+ }else{const solo=check(takes.solo,[human[0]],['midi-t1-e2','midi-t1-e4']);assert.equal(solo.view_configuration.practice_layout,'solo');const v=check(takes.vsqAll,['vsq-track-1','vsq-track-2'],['vsq-t1-ID#0001'],'all');assert.equal(v.target_plan.source_note_count,2);assert.equal(v.target_plan.target_count,1);assert.ok(v.passes.every(p=>p.inputs.length===0));const mixed=check(takes.vsqMixed,['vsq-track-2'],['vsq-t2-ID#0001']);assert.equal(mixed.view_configuration.practice_layout,'complete');assert.ok(mixed.passes.every(p=>p.inputs.length===0));assert.equal(mixed.target_plan.source_note_count,1);assert.equal(mixed.target_plan.target_count,1);}
 }
 // Only these two processes may reuse this exact test-owned profile. No cache
 // contents are read, copied, synthesized, or included in the evidence artifact.
