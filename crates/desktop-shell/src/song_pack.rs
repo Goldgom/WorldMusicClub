@@ -213,6 +213,7 @@ pub fn is_large_operation(path: &str) -> bool {
                 | "/api/library/pitch-mod/project"
                 | "/api/library/fingering/piano"
                 | "/api/library/fingering/guitar"
+                | "/api/library/practice-admission"
                 | "/api/library/assistance/original"
                 | "/api/library/assistance/generate"
                 | "/api/library/assistance/create"

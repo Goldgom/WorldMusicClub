@@ -374,6 +374,16 @@ fn automatic_selection(
         .filter(|(_, ids)| ids.iter().any(|id| source.keyboard_excluded.contains(id)))
         .map(|(atom, _)| (atom, "percussion_selector"))
         .collect();
+    for (atom, ids) in groups.atoms.iter().enumerate() {
+        if ids
+            .iter()
+            .any(|id| source.original_instrument_excluded.contains(id))
+        {
+            // An explicitly chosen automatic plan may move the entire
+            // indivisible atom to Machine, never only its unsupported member.
+            rejected.insert(atom, "original_instrument_unsupported");
+        }
+    }
     for atom in &groups.cross_scope {
         rejected.insert(*atom, "cross_scope_physical_group");
     }
@@ -552,6 +562,18 @@ fn build(
             (human, reasons)
         }
     };
+    let mut unsupported_human: Vec<_> = human
+        .intersection(&source.original_instrument_excluded)
+        .cloned()
+        .collect();
+    if !unsupported_human.is_empty() {
+        unsupported_human.sort();
+        return Err(PracticeAssistanceError {
+            code: "practice_original_instrument_unsupported".into(),
+            message: "Known unsupported original instruments cannot be assigned to Human practice; choose different parts or explicitly select assistance that assigns the complete affected atoms to Machine".into(),
+            source_ids: unsupported_human,
+        });
+    }
     exclusion_reasons.sort_by(|a, b| a.source_ids.cmp(&b.source_ids));
     let mut human_occurrences = HashSet::new();
     for group in &groups.selected.groups {

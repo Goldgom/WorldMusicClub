@@ -37,6 +37,63 @@ pub struct PracticeRuntimeReceipt {
     pub runtime_policy: String,
     pub choice: Option<vsq_clean::PracticeChoice>,
     pub runtime_digest: String,
+    /// Original Basic source policy evidence; recomputed natively, never
+    /// accepted as authority. Omitted for pre-existing non-Basic domains.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_eligibility: Option<SourceEligibilityReceipt>,
+}
+
+/// A compact equality witness, not a caller-mintable PracticeSource. The
+/// fingerprint has its own domain and includes the complete original exclusion
+/// inventory without duplicating that inventory on runtime/plan responses.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SourceEligibilityReceipt {
+    pub revision: u32,
+    pub analysis_policy_id: String,
+    pub identity_table_revision: String,
+    pub product_policy_id: String,
+    pub eligibility_policy_id: String,
+    pub source_profile: String,
+    pub source_binding: PracticeSourceBinding,
+    pub fingerprint: String,
+}
+impl SourceEligibilityReceipt {
+    pub fn from_analysis(
+        analysis: &crate::source_identity::SourcePracticeEligibility,
+    ) -> Result<Self, PracticeSourceError> {
+        let mut receipt = Self {
+            revision: analysis.revision(),
+            analysis_policy_id: analysis.analysis_policy_id().into(),
+            identity_table_revision: analysis.identity_table_revision().into(),
+            product_policy_id: analysis.product_policy_id().into(),
+            eligibility_policy_id: analysis.eligibility_policy_id().into(),
+            source_profile: analysis.source_profile().into(),
+            source_binding: analysis.source_binding().clone(),
+            fingerprint: String::new(),
+        };
+        let parts: Vec<_> = analysis
+            .parts()
+            .iter()
+            .map(|part| {
+                (
+                    part.part_id(),
+                    part.attack_count(),
+                    part.supported_count(),
+                    part.known_unsupported_count(),
+                    part.unresolved_count(),
+                )
+            })
+            .collect();
+        receipt.fingerprint = hash(&(
+            "wmc-original-source-practice-eligibility-v1",
+            &receipt,
+            analysis.complete_attack_count(),
+            analysis.known_unsupported_source_attack_ids(),
+            parts,
+        ))?;
+        Ok(receipt)
+    }
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct PracticeSourceError {
@@ -285,6 +342,9 @@ pub struct PracticeSource {
     pub(crate) units: Vec<PracticeSourceUnit>,
     pub(crate) gates: HashMap<String, Gate>,
     pub(crate) keyboard_excluded: HashSet<String>,
+    /// Original attack IDs only. These are independent of percussion pitch
+    /// selectors, effective pitches and aggregate part classifications.
+    pub(crate) original_instrument_excluded: HashSet<String>,
     pub(crate) diagnostics: Vec<Diagnostic>,
 }
 impl PracticeSource {
@@ -430,6 +490,10 @@ impl PracticeSource {
     }
     pub fn from_basic(score: &basic_keys::CompleteBasicKeys) -> Result<Self, PracticeSourceError> {
         let source_byte_limit = basic_source_byte_limit(score)?;
+        let eligibility = crate::source_identity::analyze_basic_practice(score).map_err(|error| {
+            PracticeSourceError::new("practice_source_eligibility_unavailable", error.to_string())
+        })?;
+        let eligibility_receipt = SourceEligibilityReceipt::from_analysis(&eligibility)?;
         // Interpret ALL source events before any ownership choice. In particular,
         // filtering note-ons here would change FIFO release assignments.
         let compiled = basic_keys::compile_rendition(score)
@@ -457,7 +521,7 @@ impl PracticeSource {
                 part_id: n.part_id.clone(),
             })
             .collect();
-        Self::finish(
+        let mut source = Self::finish(
             score,
             source_byte_limit,
             "wmc-basic-complete-serde-json",
@@ -481,7 +545,14 @@ impl PracticeSource {
                 .map(|n| n.note_id.clone())
                 .collect(),
             compiled.diagnostics,
-        )
+        )?;
+        source.original_instrument_excluded = eligibility
+            .known_unsupported_source_attack_ids()
+            .iter()
+            .cloned()
+            .collect();
+        source.receipt.source_eligibility = Some(eligibility_receipt);
+        Ok(source)
     }
     pub fn from_vsq(
         score: &vsq_clean::VsqCompleteScore,
@@ -681,6 +752,7 @@ impl PracticeSource {
             runtime_policy: policy.into(),
             choice,
             runtime_digest: hash(&(policy, choice, &timeline, ordered_gates, excluded))?,
+            source_eligibility: None,
         };
         Ok(Self {
             receipt,
@@ -689,6 +761,7 @@ impl PracticeSource {
             units,
             gates,
             keyboard_excluded,
+            original_instrument_excluded: HashSet::new(),
             diagnostics,
         })
     }

@@ -342,12 +342,23 @@ fn basic_runtime_upper_bound(score: &score_core::basic_keys::CompleteBasicKeys) 
         parts: score_core::basic_keys::part_inventory(score),
         reference_audio: "basic_synthesized",
         source_rendition: "unresolved",
+        source_eligibility: None,
     })?;
     let envelope = basic_note_envelope_bytes()?;
     let evidence_envelope = basic_rendition_note_envelope_bytes()?;
     let mut bytes = base
         .saturating_add(8192)
+        .saturating_add(4096) // Fixed compact eligibility receipt and summary envelope.
         .saturating_add(score.coverage.key_releases.saturating_mul(64));
+    // The compact eligibility summary adds one bounded count record per part
+    // and a fixed receipt. Its IDs must be counted with their JSON escaping;
+    // the fixed receipt/counters fit inside the additional 4096-byte envelope.
+    // Catalog reads still need no attack analysis or runtime compilation.
+    for part in &score.performance.parts {
+        bytes = bytes
+            .saturating_add(json_bytes(&part.id)?)
+            .saturating_add(256);
+    }
     for note in &score.performance.notes {
         bytes = bytes.saturating_add(basic_note_upper_bound(
             envelope,
@@ -842,6 +853,8 @@ fn parse_reusing_source(
             response_bytes = open_response_bytes(&package)?;
         }
     }
+    response_bytes =
+        fit_optional_basic_summary(&mut package, response_bytes, MAX_OPEN_RESPONSE_BYTES)?;
     #[cfg(test)]
     tests::record_response_bytes(response_bytes);
     if response_bytes > MAX_OPEN_RESPONSE_BYTES {
@@ -850,6 +863,19 @@ fn parse_reusing_source(
         ));
     }
     Ok(package)
+}
+
+/// Discard only optional disclosure when it would displace a previously fitting
+/// complete package. Mandatory native Human admission never uses this summary.
+fn fit_optional_basic_summary(package: &mut Package, bytes: usize, limit: usize) -> Result<usize> {
+    if bytes > limit && package.profile.as_deref() == Some(score_core::basic_keys::PROFILE) {
+        if let Some(runtime) = package.runtime.as_object_mut() {
+            runtime.remove("source_eligibility");
+        }
+        open_response_bytes(package)
+    } else {
+        Ok(bytes)
+    }
 }
 
 pub fn verify_media(media: &Media, bytes: &[u8]) -> Result<()> {
@@ -2008,6 +2034,29 @@ mod tests {
             }
         }
         assert_eq!(outcomes, [true, true, false]);
+    }
+
+    #[test]
+    fn optional_summary_preserves_exact_preexisting_open_boundary() {
+        let fixture = SyntheticLibrary::basic(1);
+        let (_, mut package) =
+            load_folder(&fixture.folder("clean-songs", 0), &fixture.entries[0].key).unwrap();
+        let mut original = package.clone();
+        original
+            .runtime
+            .as_object_mut()
+            .unwrap()
+            .remove("source_eligibility");
+        let original_bytes = open_response_bytes(&original).unwrap();
+        let with_summary = open_response_bytes(&package).unwrap();
+        assert!(with_summary > original_bytes);
+        assert_eq!(
+            fit_optional_basic_summary(&mut package, with_summary, original_bytes).unwrap(),
+            original_bytes
+        );
+        assert_eq!(package.runtime, original.runtime);
+        assert_eq!(package.score_json, original.score_json);
+        assert_eq!(package.metadata_json, original.metadata_json);
     }
 
     #[test]

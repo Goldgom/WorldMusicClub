@@ -1035,6 +1035,7 @@ pub fn dispatch(
         ("POST", "/api/library/pitch-mod/project") => crate::native_pitch_mod::project(library, bytes),
         ("POST", "/api/library/basic-keys/notation") => crate::native_basic_keys::notation(library, bytes),
         ("POST", "/api/library/fingering/piano" | "/api/library/fingering/guitar") => crate::native_fingering::plan(library, bytes, path.ends_with("/piano")),
+        ("POST", "/api/library/practice-admission") => crate::native_assistance::admit(library, bytes),
         ("POST", "/api/library/assistance/original") => crate::native_assistance::original(library, bytes),
         ("POST", "/api/library/assistance/generate") => crate::native_assistance::generate(library, bytes),
         ("POST", "/api/library/assistance/create") => crate::native_assistance::create(library, bytes),
@@ -1051,7 +1052,7 @@ pub fn dispatch(
                 serde_json::to_value(loaded).map_err(|e| corrupt(e.to_string()))
             }
         }),
-        (_, "/api/library/source-identity" | "/api/library/source-instrument-details" | "/api/library/pitch-mod/project" | "/api/library/manage/query" | "/api/library/list" | "/api/library/save" | "/api/library/load" | "/api/library/export" | "/api/library/asset" | "/api/library/runtime" | "/api/library/basic-keys/notation" | "/api/library/fingering/piano" | "/api/library/fingering/guitar" | "/api/library/assistance/original" | "/api/library/assistance/generate" | "/api/library/assistance/create" | "/api/library/assistance/validate" | "/api/library/progression/generate" | "/api/library/progression/validate") => Err(fail(405, "library_method_not_allowed", "Unsupported method for this library operation")),
+        (_, "/api/library/practice-admission" | "/api/library/source-identity" | "/api/library/source-instrument-details" | "/api/library/pitch-mod/project" | "/api/library/manage/query" | "/api/library/list" | "/api/library/save" | "/api/library/load" | "/api/library/export" | "/api/library/asset" | "/api/library/runtime" | "/api/library/basic-keys/notation" | "/api/library/fingering/piano" | "/api/library/fingering/guitar" | "/api/library/assistance/original" | "/api/library/assistance/generate" | "/api/library/assistance/create" | "/api/library/assistance/validate" | "/api/library/progression/generate" | "/api/library/progression/validate") => Err(fail(405, "library_method_not_allowed", "Unsupported method for this library operation")),
         _ => Err(fail(404, "library_unknown_route", "Unknown native library operation")),
     };
     match result {
@@ -1060,8 +1061,26 @@ pub fn dispatch(
     }
 }
 
-fn json_response(path: &str, value: serde_json::Value) -> http::Response<Vec<u8>> {
-    let bytes = serde_json::to_vec(&value).expect("library JSON");
+fn json_response(path: &str, mut value: serde_json::Value) -> http::Response<Vec<u8>> {
+    let mut bytes = serde_json::to_vec(&value).expect("library JSON");
+    if bytes.len() > crate::MAX_RESPONSE {
+        // Compact informational summaries never displace complete source or
+        // reference playback. Only these runtime locations are optional; the
+        // source-bound checked receipt remains mandatory and unmodified.
+        for pointer in ["/clean_package/runtime", "/runtime"] {
+            if let Some(runtime) = value
+                .pointer_mut(pointer)
+                .and_then(serde_json::Value::as_object_mut)
+            {
+                if runtime.get("profile").and_then(serde_json::Value::as_str)
+                    == Some(practice_server::basic_keys_api::RUNTIME_PROFILE)
+                {
+                    runtime.remove("source_eligibility");
+                }
+            }
+        }
+        bytes = serde_json::to_vec(&value).expect("library JSON");
+    }
     if path == "/api/library/source-identity" && bytes.len() > crate::MAX_RESPONSE {
         error_response(fail(
             413,

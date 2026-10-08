@@ -90,7 +90,7 @@ impl Write for BoundedBytes {
 pub(super) fn bounded_response<T: Serialize>(status: u16, value: &T) -> ApiResponse {
     bounded_response_with_limit(status, value, MAX_SONG_RESPONSE_BYTES)
 }
-fn bounded_response_with_limit<T: Serialize>(status: u16, value: &T, limit: usize) -> ApiResponse {
+pub(super) fn bounded_response_with_limit<T: Serialize>(status: u16, value: &T, limit: usize) -> ApiResponse {
     let mut writer = BoundedBytes {
         bytes: Vec::new(),
         limit,

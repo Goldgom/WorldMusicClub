@@ -68,6 +68,18 @@ struct ValidateRequest {
     plan: PracticeAssistancePlan,
 }
 
+/// Required immediately before every saved-source Human-practice launch.
+/// Even pitch-off is explicit; no caller timeline or exclusion list is accepted.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AdmissionRequest {
+    source: Source,
+    pitch_mod: practice_server::pitch_mod_api::Configuration,
+    selection: AssistanceSelection,
+    #[serde(default)]
+    plan: Option<PracticeAssistancePlan>,
+}
+
 fn invalid(message: impl Into<String>) -> LibraryError {
     fail(400, "library_invalid_request", message)
 }
@@ -235,5 +247,44 @@ pub(crate) fn validate(library: &NativeLibrary, bytes: &[u8]) -> Result<Value, L
         load_effective_source(library, &request.source, request.pitch_mod.as_ref())?;
     let checked = automatic_assistance::validate(&native, &request.plan)
         .map_err(|error| unavailable(error.to_string()))?;
+    response(request.source, checked, pitch_mod)
+}
+
+pub(crate) fn admit(library: &NativeLibrary, bytes: &[u8]) -> Result<Value, LibraryError> {
+    let request: AdmissionRequest = decode(bytes)?;
+    let (native, pitch_mod) =
+        load_effective_source(library, &request.source, Some(&request.pitch_mod))?;
+    let checked = if let Some(plan) = &request.plan {
+        // Normalize only request ordering. Duplicate/foreign part IDs, profile
+        // mismatches and stale plan receipts remain errors, never retargeting.
+        let mut selected = request.selection.selected_part_ids.clone();
+        selected.sort();
+        if selected.windows(2).any(|pair| pair[0] == pair[1])
+            || selected != plan.selection.selected_part_ids
+            || serde_json::to_value(&request.selection.profile)
+                .map_err(|error| invalid(error.to_string()))?
+                != serde_json::to_value(&plan.selection.profile)
+                    .map_err(|error| invalid(error.to_string()))?
+        {
+            return Err(fail(
+                422,
+                "library_practice_admission_selection",
+                "The explicitly chosen assistance plan must match the current selected parts and instrument profile",
+            ));
+        }
+        automatic_assistance::validate(&native, plan)
+    } else {
+        // Original includes every attack in the selected parts. It must never
+        // silently turn unsupported attacks into accompaniment.
+        automatic_assistance::original(&native, &request.selection)
+    }
+    .map_err(|error| {
+        let code = if error.code == "practice_original_instrument_unsupported" {
+            "practice_original_instrument_unsupported"
+        } else {
+            "library_practice_admission_unavailable"
+        };
+        fail(422, code, error.to_string())
+    })?;
     response(request.source, checked, pitch_mod)
 }
