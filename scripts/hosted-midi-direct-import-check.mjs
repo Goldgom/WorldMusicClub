@@ -1,6 +1,8 @@
 // Hosted CI only: real Chromium picker/controls/AudioWorklets and real Rust
 // native-filesystem dispatch over stdin. Never a local browser/server launch.
 import assert from 'node:assert/strict';
+import {isDeepStrictEqual} from 'node:util';
+import {basicAdmissionSource,basicAdmissionTimeline,validateBasicPracticeAdmissionEvidence} from './basic-practice-admission-proof.mjs';
 import {execFileSync} from 'node:child_process';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {basename,join,resolve} from 'node:path';
@@ -13,6 +15,46 @@ import {validateAudioThreadRuns,validateAudioThreadStatus} from './audio-thread-
 import {startSongModPerformance} from './hosted-song-mod-controls.mjs';
 import {prepareDirectMidiFixtures,directMidiDigest} from './prepare-direct-midi-fixtures.mjs';
 import {validateDirectMidiImport,validateDirectMidiOpened,validateDirectMidiTake,directMidiAudioOracle} from './direct-midi-proof.mjs';
+
+/** Capture only JSON actually consumed by the app; never fetch a duplicate or
+ * clone a response. The hosted native bridge independently retains wire bytes. */
+export function observeHostedBasicAdmissions(){
+ const original=globalThis.fetch,evidence={rows:[],errors:[],restored:false},restores=new Set();let stopped=false;
+ const context=()=>({screen:document.body?.dataset.screen||null,previewId:document.getElementById('song-lobby')?.dataset.previewId||null});
+ const error=value=>evidence.errors.push(String(value).slice(0,512));
+ function fetch(...args){
+  const promise=Reflect.apply(original,this,args),path=typeof args[0]==='string'?args[0]:args[0]?.url;
+  if(stopped||path!=='/api/library/practice-admission')return promise;
+  try{
+   if(evidence.rows.length>=128)throw Error('Basic admission evidence bound');
+   const row={path,request:JSON.parse(args[1].body),status:null,response:null,observation:'fetching',started:context(),settled:null};evidence.rows.push(row);
+   Reflect.apply(Promise.prototype.then,promise,[response=>{
+    row.status=response.status;row.observation='awaiting-json';const originalJson=response.json,descriptor=Object.getOwnPropertyDescriptor(response,'json');
+    const restore=()=>{if(response.json===json){if(descriptor)Object.defineProperty(response,'json',descriptor);else delete response.json;}restores.delete(restore);};
+    function json(...values){const result=Reflect.apply(originalJson,this,values);if(this===response)Reflect.apply(Promise.prototype.then,result,[body=>{try{if(!stopped){if(new TextEncoder().encode(JSON.stringify(body)).length>256*1024)throw Error('Basic response bound');row.response=structuredClone(body);row.observation='consumed';row.settled=context();}}catch(value){error(value);}finally{restore();}},value=>{row.observation='body-rejected';error(value);restore();}]);return result;}
+    response.json=json;restores.add(restore);
+   },value=>{row.observation='fetch-rejected';error(value);}]);
+  }catch(value){error(value);}
+  return promise;
+ }
+ globalThis.fetch=fetch;
+ globalThis.__hostedBasicAdmissions={evidence,restore(){stopped=true;for(const restore of [...restores])restore();if(globalThis.fetch===fetch)globalThis.fetch=original;evidence.restored=globalThis.fetch===original;return evidence;}};
+}
+export function validateHostedDirectMidiAdmissions(profile,opened,fixture){
+ const observed=profile.admissions;assert.equal(observed?.restored,true);assert.deepEqual(observed.errors,[]);assert.ok(observed.rows.length>0&&observed.rows.length<=128);
+ const wire=profile.api.filter(row=>row.path==='/api/library/practice-admission');assert.equal(wire.length,observed.rows.length,'Every native admission must also have application-consumption evidence');
+ const source=basicAdmissionSource(opened),timeline=basicAdmissionTimeline(opened),current=[];
+ for(const [index,row]of observed.rows.entries()){
+  assert.equal(row.observation,'consumed');assert.deepEqual(row.started,row.settled);assert.equal(row.started.previewId,`native:${source.key}`);assert.ok(['library','stage'].includes(row.started.screen));
+  assert.equal(wire[index].method,'POST');assert.equal(wire[index].status,200);assert.deepEqual(wire[index].request,row.request);assert.deepEqual(wire[index].response,row.response,'Consumed receipt must be the native bridge response');
+  const checked=validateBasicPracticeAdmissionEvidence(row,{source,timeline,selection:row.request.selection,eligibilityReceipt:opened.clean_package.runtime.source_eligibility?.receipt});
+  if(row.started.screen==='stage'&&checked.human_targets.target_count===fixture.expectedNotes.length)current.push(checked);
+ }
+ assert.ok(observed.rows.some(row=>row.started.screen==='library'),'Saved preview must consume source admission');assert.ok(current.length>0,'Direct transport must consume source admission');
+ const pass=profile.take.value.passes.at(-1),checked=current.findLast(value=>isDeepStrictEqual(value.human_targets.timeline,pass.timeline));assert.ok(checked,'Retained take must use the current complete admitted source clock');
+ assert.deepEqual(profile.take.value.target_plan,checked.human_targets);assert.deepEqual(pass.interpretation.basic_practice_admission,{receipt:checked.receipt,selection_digest:checked.plan.selection_digest});
+ return checked;
+}
 
 export function observeDirectMidiControls(){
  const evidence={events:[],overflow:false};globalThis.__directMidiControls=evidence;
@@ -55,7 +97,7 @@ export async function runHostedMidiDirectImportCheck(){
  async function screenshot(label){const path=`${label}.png`;await session.page.screenshot({path:join(output,path),fullPage:true});report.screenshots.push({path,sha256:directMidiDigest(await readFile(join(output,path)))});}
  async function closeSession(){
   const owned=session;if(!owned)return;session=null;const failures=[];
-  try{owned.profile.controls=await owned.page.evaluate(()=>__directMidiControls);owned.profile.worklet_loads=await owned.page.evaluate(()=>__wmhManagementWorkletLoads);owned.profile.observer_cleanup=await owned.page.evaluate(()=>__directMidiAudio.restore());assert.equal(owned.profile.observer_cleanup.restored,true);assert.deepEqual(owned.profile.observer_cleanup.cleanupErrors,[]);}catch(error){failures.push(String(error));}
+  try{owned.profile.admissions=await owned.page.evaluate(()=>__hostedBasicAdmissions.restore());owned.profile.controls=await owned.page.evaluate(()=>__directMidiControls);owned.profile.worklet_loads=await owned.page.evaluate(()=>__wmhManagementWorkletLoads);owned.profile.observer_cleanup=await owned.page.evaluate(()=>__directMidiAudio.restore());assert.equal(owned.profile.observer_cleanup.restored,true);assert.deepEqual(owned.profile.observer_cleanup.cleanupErrors,[]);}catch(error){failures.push(String(error));}
   owned.bridge.stopAdmission();
   for(const [name,close]of [['context',()=>owned.context.close()],['native_bridge',()=>owned.bridge.drain()],['driver',()=>owned.driver.close()]])try{await close();owned.profile.cleanup[name]='closed';}catch(error){owned.profile.cleanup[name]=String(error);failures.push(String(error));}
   if(failures.length)throw Error(failures.join('\n'));
@@ -66,7 +108,7 @@ export async function runHostedMidiDirectImportCheck(){
   const buildResponse=await owned.driver.fetcher('/api/diagnostics/build',{method:'GET'});assert.equal(buildResponse.status,200);profile.build_identity=JSON.parse(await buildResponse.bytes());
   assert.equal(profile.build_identity.compiled.source_sha,head);assert.equal(profile.build_identity.compiled.source_tree,report.source_tree);assert.equal(profile.build_identity.compiled.source_status,'clean');assert.equal(profile.build_identity.compiled.source_error,null);assert.equal(profile.build_identity.native.executable_sha256,report.driver_sha256);assert.equal(profile.build_identity.native.process_id,profile.process_id);
   owned.context=await browser.newContext({viewport:report.viewport,acceptDownloads:true,serviceWorkers:'block'});
-  await owned.context.addInitScript(observeManagementWorkletLoads);await owned.context.addInitScript(observeDirectMidiControls);await owned.context.addInitScript(`globalThis.__directMidiObserveAudio=${audioThreadObserverSource};`);
+  await owned.context.addInitScript(observeHostedBasicAdmissions);await owned.context.addInitScript(observeManagementWorkletLoads);await owned.context.addInitScript(observeDirectMidiControls);await owned.context.addInitScript(`globalThis.__directMidiObserveAudio=${audioThreadObserverSource};`);
   owned.bridge=createHostedNativeBridge({origin,getOwnedPage:()=>owned.page,requestTimeoutMs:30000,maxRequests:256});profile.native_bridge=owned.bridge.evidence;
   await owned.context.route(url=>url.origin!==origin||url.pathname.startsWith('/api/'),async route=>{
    const request=route.request(),url=new URL(request.url());try{
@@ -74,7 +116,7 @@ export async function runHostedMidiDirectImportCheck(){
     await owned.bridge.run(request,async(headers,admission)=>{
      assert.ok(profile.api.length<256);const body=request.postDataBuffer()||undefined,row={sequence:profile.api.length+1,path:url.pathname+url.search,method:request.method(),request_bytes:body?.length||0,request_sha256:directMidiDigest(body||Buffer.alloc(0)),status:null};profile.api.push(row);
      const response=await owned.driver.fetcher(row.path,{method:row.method,headers,body}),bytes=await response.bytes();row.status=response.status;row.response_sha256=directMidiDigest(bytes);row.response_bytes=bytes.length;
-     if(['/api/import/midi','/api/library/import/preview','/api/library/import/commit','/api/library/load','/api/library/runtime','/api/practice-targets','/api/instrument-check'].includes(url.pathname)){assert.ok(bytes.length<=1024*1024,'Original fixture response exceeds one MiB');row.response=JSON.parse(bytes);}
+     if(['/api/import/midi','/api/library/import/preview','/api/library/import/commit','/api/library/load','/api/library/runtime','/api/practice-targets','/api/library/practice-admission','/api/instrument-check'].includes(url.pathname)){assert.ok(bytes.length<=1024*1024,'Original fixture response exceeds one MiB');row.response=JSON.parse(bytes);if(url.pathname==='/api/library/practice-admission')row.request=JSON.parse(body.toString());}
      Object.assign(admission,{native_sequence:row.sequence,native_status:row.status,native_request_bytes:row.request_bytes,native_request_sha256:row.request_sha256,native_response_sha256:row.response_sha256});
      await route.fulfill({status:response.status,contentType:response.contentType,body:bytes});
     });
@@ -115,7 +157,7 @@ export async function runHostedMidiDirectImportCheck(){
   await launch('restart');await session.page.locator(`#catalog [data-library-key="native:${openedBefore.entry.key}"]`).click();await session.page.waitForFunction(()=>document.getElementById('start-performance').disabled===false);const opened=session.profile.api.findLast(row=>row.path==='/api/library/load').response;validateDirectMidiOpened(opened,fixture);assert.deepEqual(opened,openedBefore,'Native-process/browser-profile restart must retain all original package bytes and runtime');assert.equal(session.profile.api.some(row=>row.path.startsWith('/api/library/import/')),false,'Restart must use saved library data');await directStart('restart');
   await session.page.locator('#import-tools-button').click();await session.page.locator('#bulk-import-history-button').click();const details=session.page.locator('#bulk-import-history');if(!await details.evaluate(node=>node.open))await details.locator('summary').first().click();const original=session.page.waitForEvent('download');await session.page.locator(`[data-import-archive="${commitBefore.source.archive_key}"]`).click();const download=await original,rawPath='downloads/restarted-original.mid';await download.saveAs(join(output,rawPath));assert.deepEqual(await readFile(join(output,rawPath)),fixture.bytes);session.profile.raw_export={path:rawPath,bytes:fixture.bytes.length,sha256:fixture.manifest.sha256};await screenshot('restart-retained-original-download');session.profile.ok=true;await closeSession();
   assert.equal(new Set(report.profiles.map(profile=>profile.process_id)).size,2,'Restart must use a new native process');
-  for(const profile of report.profiles){assert.deepEqual(profile.page_errors,[]);assert.deepEqual(profile.route_errors,[]);assert.equal(profile.native_bridge.drain.status,'complete');assert.ok(profile.native_bridge.requests.every(row=>row.status==='settled'));assert.equal(profile.controls.overflow,false);assert.ok(profile.controls.events.some(event=>event.id==='start-performance'&&event.type==='click'&&event.trusted));validateManagementWorkletLoads(profile.worklet_loads,origin);assert.ok(profile.worklet_loads.modules.some(row=>row.url===`${origin}/basic-key-audio-processor.js`));}
+  for(const profile of report.profiles){validateHostedDirectMidiAdmissions(profile,openedBefore,fixture);assert.deepEqual(profile.page_errors,[]);assert.deepEqual(profile.route_errors,[]);assert.equal(profile.native_bridge.drain.status,'complete');assert.ok(profile.native_bridge.requests.every(row=>row.status==='settled'));assert.equal(profile.controls.overflow,false);assert.ok(profile.controls.events.some(event=>event.id==='start-performance'&&event.type==='click'&&event.trusted));validateManagementWorkletLoads(profile.worklet_loads,origin);assert.ok(profile.worklet_loads.modules.some(row=>row.url===`${origin}/basic-key-audio-processor.js`));}
   validateDirectMidiPickerChange(report.profiles[0].controls,fixture);report.ok=true;
  }catch(error){report.error=String(error.stack||error);if(session?.page)try{report.failure_state=await session.page.evaluate(()=>({notice:document.getElementById('notice')?.textContent,preview:document.getElementById('song-lobby')?.dataset.previewId,clock:document.getElementById('progress')?.getAttribute('data-playback-clock')}));await screenshot('direct-midi-failure');}catch{}}
  finally{

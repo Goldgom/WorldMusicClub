@@ -1,10 +1,13 @@
+import {mockNativeBasicAdmission,mockNativeOriginalPracticeResponse} from './native-basic-admission-fixtures.js';
+import {basicAdmissionTimeline,validateBasicOriginalAdmission} from '../scripts/basic-practice-admission-proof.mjs';
+import {withMockBasicEligibility} from './basic-human-admission-fixtures.js';
 // Pure verifier fixtures only: no browser, AudioContext, executable or server.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {assistanceNativeFixtures,ASSISTANCE_PHASES} from '../scripts/native-assistance-fixtures.mjs';
-import {assistanceNativeSinglePreset,validateAssistancePresetControls,validateAssistanceRequestCompletion,validateAssistanceNativeActions,validateAssistanceSources,validateAssistanceTake,validateAssistanceStorage,validateAssistanceOffMarker,validateAssistanceOffTake,validateAssistanceAudio,assistanceTakeIdentity,assistanceExpectedSchedules,assistanceExpectedAudioPlan,ASSISTANCE_CLAIMS} from '../scripts/verify-native-assistance-evidence.mjs';
+import {assistanceNativeSinglePreset,validateAssistanceRequests,validateAssistancePresetControls,validateAssistanceRequestCompletion,validateAssistanceNativeActions,validateAssistanceSources,validateAssistanceTake,validateAssistanceStorage,validateAssistanceOffMarker,validateAssistanceOffTake,validateAssistanceAudio,assistanceTakeIdentity,assistanceExpectedSchedules,assistanceExpectedAudioPlan,ASSISTANCE_CLAIMS} from '../scripts/verify-native-assistance-evidence.mjs';
 import {assistanceText} from '../web/practice-assistance-locales.js';
 import {syntheticAudioThreadRun,syntheticAudioThreadStatus} from './audio-thread-proof-fixtures.js';
 const fixtures=assistanceNativeFixtures(),checked=fixtures.basic.automatic.checked,clone=structuredClone;
@@ -96,4 +99,37 @@ test('native preset verifier requires owned Single selection, real checked count
   const report=presetControlReport();mutate(report);assert.throws(()=>validateAssistancePresetControls(report));
  }
  const restored=presetControlReport('assistance-restart');restored.checkpoints[0].preset.preset='single';assert.throws(()=>validateAssistancePresetControls(restored));
+});
+
+function syntheticAdmissionRequests(){
+ const options=withMockBasicEligibility({fixtures:assistanceNativeFixtures(),single:assistanceNativeSinglePreset()}),f=options.fixtures.basic,rows=[];
+ const add=(path,request,response)=>{const context={actionSequence:rows.length+1,screen:'stage',previewId:`native:${f.source.key}`};rows.push({path,request:clone(request),response:clone(response),status:200,observation:'consumed',signalGeneration:null,signalAbortedAtStart:false,signalAborted:false,canceled:false,started:context,settled:{...context}});};
+ const makeTake=response=>({passes:[{timeline:clone(response.checked.human_targets.timeline),inputs:[],assessment:{hits:[],extras:[],misses:response.checked.human_targets.timeline.notes.map(note=>note.id)},interpretation:{basic_practice_admission:{receipt:clone(response.checked.receipt),selection_digest:response.checked.plan.selection_digest}}}]}),take=makeTake(f.automatic),offTake=makeTake(f.original);
+ for(let i=0;i<2;i++)add('/api/library/assistance/generate',{source:f.source,selection:f.automatic.checked.plan.selection,settings:f.automatic.checked.plan.settings},f.automatic);
+ const admit=(response,plan)=>add('/api/library/practice-admission',{source:f.source,pitch_mod:{format:'wmc-pitch-mod',version:1,semitones:0},selection:response.checked.plan.selection,...(plan?{plan}: {})},response);
+ admit(f.automatic,f.automatic.checked.plan);add('/api/assess',{timeline:take.passes[0].timeline,inputs:[]},take.passes[0].assessment);
+ const offRequestStart=rows.length;admit(mockNativeOriginalPracticeResponse(f.original));add('/api/assess',{timeline:offTake.passes[0].timeline,inputs:[]},offTake.passes[0].assessment);
+ return{options,take,offTake,report:{phase:'assistance-restart',requests:rows,requestsRestored:true,actions:rows.length,offRequestStart,offAssessAction:rows.length}};
+}
+test('assistance admission binds the actually checked assignment and explicit Off to scored receipts',()=>{
+ const run=value=>validateAssistanceRequests(value.report,value.take,value.offTake,value.options);run(syntheticAdmissionRequests());
+ for(const mutate of [v=>v.report.requests[2].path='/api/practice-targets',v=>v.report.requests[2].request.source.key='wrong',v=>delete v.report.requests[2].request.plan,v=>v.report.requests[2].request.timeline={},v=>delete v.report.requests[2].response.checked.receipt.source_eligibility,v=>v.report.requests[2].response.checked.source_ownership.pop(),v=>v.report.requests[2].response.checked.human_targets.timeline.duration_ms++,v=>v.report.requests[2].response.checked.plan.selection_digest='f'.repeat(64),v=>v.take.passes[0].interpretation.basic_practice_admission.selection_digest='f'.repeat(64),v=>v.report.requests.splice(2,1)]){const value=syntheticAdmissionRequests();mutate(value);assert.throws(()=>run(value));}
+});
+test('assistance observer retains mandatory Original admission even when ordinary target diagnostics are disabled',async()=>{
+ const response=new Response(JSON.stringify({checked:{testOnly:true}})),owner={fetch:()=>Promise.resolve(response)},value=requestObserver(owner);
+ await owner.fetch('/api/library/practice-admission',{method:'POST',body:'{}'});await response.json();await Promise.resolve();assert.equal(value.rows.length,1);assert.equal(value.rows[0].observation,'consumed');assert.deepEqual(value.errors,[]);assert.equal(value.observer.restore(),true);
+});
+
+test('fresh Basic preview admits its actual source subset before explicit all-Human assistance',()=>{
+ const value=syntheticAdmissionRequests(),f=value.options.fixtures.basic,timeline=basicAdmissionTimeline(f.opened),selection={...f.original.checked.plan.selection,selected_part_ids:[f.original.checked.plan.selection.selected_part_ids[0]]},notes=timeline.notes.filter(note=>selection.selected_part_ids.includes(note.part_id)),targets={timeline:{...timeline,notes},groups:notes.map(note=>({target_id:note.id,source_occurrence_ids:[note.id],source_note_ids:note.source_note_ids,part_ids:[note.part_id]})),diagnostics:[],source_note_count:notes.length,target_count:notes.length,playable:true},response=mockNativeBasicAdmission({...f.opened,entry:{key:f.source.key}},selection,targets,{sourceDiagnostics:f.original.checked.diagnostics.slice(0,-1)}),first=structuredClone(value.report.requests[0]);
+ first.path='/api/library/practice-admission';first.request={source:f.source,pitch_mod:{format:'wmc-pitch-mod',version:1,semitones:0},selection};first.response=response;for(const row of value.report.requests){row.started.actionSequence++;row.settled.actionSequence++;}value.report.requests.unshift(first);value.report.actions++;value.report.offRequestStart++;value.report.offAssessAction++;
+ validateAssistanceRequests(value.report,value.take,value.offTake,value.options);
+ first.request.selection.selected_part_ids.push('not-an-original-part');assert.throws(()=>validateAssistanceRequests(value.report,value.take,value.offTake,value.options));
+});
+
+test('unassisted Original changes only its policy disclosure and preserves every source diagnostic',()=>{
+ const original=withMockBasicEligibility(assistanceNativeFixtures()).basic.original,make=()=>mockNativeOriginalPracticeResponse(original).checked;
+ validateBasicOriginalAdmission(make(),original.checked);
+ for(const mutate of [c=>c.diagnostics.shift(),c=>c.diagnostics[0].message='lost original source warning',c=>c.diagnostics[0].severity='info',c=>c.diagnostics.at(-1).code='assistance_scope_limits',c=>c.diagnostics.at(-1).message='unverified replacement',c=>c.diagnostics.at(-1).note_id='invented',c=>c.diagnostics.push(structuredClone(c.diagnostics.at(-1))),c=>c.human_targets.diagnostics=[],c=>c.coverage.human_occurrence_count--,c=>c.receipt.runtime_digest='f'.repeat(64)]){const checked=make();mutate(checked);assert.throws(()=>validateBasicOriginalAdmission(checked,original.checked));}
+ const subset=make();subset.plan.selection.selected_part_ids.pop();validateBasicOriginalAdmission(subset,original.checked,{compareAssignment:false});subset.diagnostics.shift();assert.throws(()=>validateBasicOriginalAdmission(subset,original.checked,{compareAssignment:false}));
 });

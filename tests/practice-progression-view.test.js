@@ -1,3 +1,4 @@
+import {withMockBasicEligibility} from './basic-human-admission-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -9,8 +10,10 @@ import {prepareCleanSong,prepareVsqPractice} from '../web/clean-song-package.js'
 import {buildBasicKeyAudioPlan} from '../web/basic-key-audio-plan.js';
 import {buildVsqAudioPlan} from '../web/vsq-audio-plan.js';
 
-const vectors=Object.fromEntries(['canonical','native-basic','native-vsq'].map(kind=>[kind,JSON.parse(readFileSync(new URL(`./fixtures/progression-${kind}.json`,import.meta.url),'utf8'))]));
-test('real Rust canonical, Basic and VSQ wrappers admit every stage, including equal and empty stages',()=>{
+// Only newly mandatory Basic policy receipts are mocked at this consumer boundary.
+const legacyBasic=JSON.parse(readFileSync(new URL('./fixtures/assistance-native-basic.json',import.meta.url),'utf8'));
+const vectors=Object.fromEntries(['canonical','native-basic','native-vsq'].map(kind=>[kind,kind==='native-basic'?withMockBasicEligibility({opened:legacyBasic.opened,...JSON.parse(readFileSync(new URL(`./fixtures/progression-${kind}.json`,import.meta.url),'utf8'))}):JSON.parse(readFileSync(new URL(`./fixtures/progression-${kind}.json`,import.meta.url),'utf8'))]));
+test('native wrappers with explicitly mocked Basic policy receipts admit every stage, including equal and empty stages',()=>{
   for(const [kind,fixture]of Object.entries(vectors))for(const response of [...Object.values(fixture.layers).map(layer=>layer.response),fixture.empty,fixture.narrow_scope].filter(Boolean)){
     const plan=response.checked.plan,binding={source:fixture.source??null,score:fixture.score,sourceToken:{},runtimeToken:{},selection:plan.selection,layer:plan.layer};
     const checked=admitPracticeProgression(response,binding);assert.deepEqual(checked.plan,plan);assert.equal(checked.assistance.coverage.human_target_count,checked.layers.find(row=>row.layer===plan.layer).human_target_count);
@@ -25,9 +28,9 @@ test('bilingual stage summaries show actual equal/empty sets and clear all stale
   i18n.locale='zh-CN';view.render({visible:true,checked:vectors['native-vsq'].empty.checked});assert.match(summary.textContent,/空阶段 · 无法评分/);assert.match(document.body.textContent,/并非音乐等级或最优编配/);
   view.render({visible:true});assert.doesNotMatch(summary.textContent,/0|真人目标|human targets/);view.render({visible:false});assert.equal(summary.textContent,'');
 });
-for(const kind of ['native-basic','native-vsq'])test(`real ${kind} stages feed the full-source machine complement without changing any original audio gate`,()=>{
+for(const kind of ['native-basic','native-vsq'])test(`${kind} consumer stages with Basic policy receipts explicitly mocked feed the full-source machine complement without changing any original audio gate`,()=>{
   const fixture=vectors[kind],old=JSON.parse(readFileSync(new URL(`./fixtures/assistance-${kind}.json`,import.meta.url),'utf8'));
-  const opened=kind==='native-basic'?old.opened:JSON.parse(readFileSync(new URL('./fixtures/vsq-clean-v1-native-open.json',import.meta.url),'utf8'));
+  const opened=kind==='native-basic'?withMockBasicEligibility(old.opened):JSON.parse(readFileSync(new URL('./fixtures/vsq-clean-v1-native-open.json',import.meta.url),'utf8'));
   let song=prepareCleanSong(`native:${fixture.source.key}`,opened.clean_package,JSON.parse(opened.score_json));if(kind==='native-vsq')song=prepareVsqPractice(song,old.selected_runtime);
   const build=kind==='native-basic'?buildBasicKeyAudioPlan:buildVsqAudioPlan,before=JSON.stringify(song),full=build(song,{sampleRate:48000});
   for(const response of [...Object.values(fixture.layers).map(layer=>layer.response),fixture.empty,fixture.narrow_scope].filter(Boolean)){

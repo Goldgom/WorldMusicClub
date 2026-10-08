@@ -1,10 +1,12 @@
+import {mockNativeBasicAdmission} from './native-basic-admission-fixtures.js';
+import {mockBasicEligibilityReceipt} from './basic-human-admission-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {runInNewContext} from 'node:vm';
-import {chooseRaw,observeDirectMidiControls,validateDirectMidiMachineIsolation,validateDirectMidiPickerChange} from '../scripts/hosted-midi-direct-import-check.mjs';
+import {chooseRaw,observeHostedBasicAdmissions,validateHostedDirectMidiAdmissions,observeDirectMidiControls,validateDirectMidiMachineIsolation,validateDirectMidiPickerChange} from '../scripts/hosted-midi-direct-import-check.mjs';
 import {directMidiFixtures,prepareDirectMidiFixtures} from '../scripts/prepare-direct-midi-fixtures.mjs';
 
 // Unit-only collaborators: no browser/server is started, and these synthetic
@@ -86,4 +88,20 @@ test('hosted runner binds raw and invalid imports to verified paths and keeps th
  assert.ok(picker.indexOf('directMidiDigest(bytes)')<picker.indexOf("page.waitForEvent('filechooser')"));
  assert.match(source,/await chooseRaw\(session\.page,join\(output,'fixtures'\),fixture\)/);assert.match(source,/await chooseRaw\(session\.page,join\(output,'fixtures'\),invalid\)/);
  assert.match(source,/validateDirectMidiPickerChange\(report\.profiles\[0\]\.controls,fixture\);report\.ok=true/);
+});
+
+test('hosted Basic observer forwards application fetch/body promises and rejects unconsumed bridge-only evidence',async()=>{
+ const body={checked:{fixtureOnly:true}},jsonPromise=Promise.resolve(body),response={status:200,json(){return jsonPromise;}},promise=Promise.resolve(response),original=()=>promise,context={fetch:original,document:{body:{dataset:{screen:'stage'}},getElementById:()=>({dataset:{previewId:'native:fixture'}})},Promise,Reflect,Object,Set,JSON,TextEncoder,structuredClone};
+ runInNewContext(`(${observeHostedBasicAdmissions.toString()})()`,context);assert.equal(context.fetch('/api/library/practice-admission',{body:'{}'}),promise);await promise;assert.equal(context.__hostedBasicAdmissions.evidence.rows[0].observation,'awaiting-json');assert.equal(response.json(),jsonPromise);await jsonPromise;await Promise.resolve();assert.equal(context.__hostedBasicAdmissions.evidence.rows[0].observation,'consumed');assert.deepEqual(context.__hostedBasicAdmissions.evidence.rows[0].response,body);context.__hostedBasicAdmissions.restore();assert.equal(context.fetch,original);assert.equal(context.__hostedBasicAdmissions.evidence.restored,true);
+});
+function hostedAdmissionFixture(){
+ const fixture=directMidiFixtures().boundary,sourceHash='a'.repeat(64),sourceKey=`song-${sourceHash}`,receipt=mockBasicEligibilityReceipt('synthetic hosted proof fixture'),notes=fixture.expectedNotes.map(note=>({...note,part_id:'midi-t1-c1-r0',source_note_id:note.id,source_note_ids:[note.id],voice:'1',staff:1})),timeline={duration_ms:2000,notes};
+ const opened={entry:{key:sourceKey},clean_package:{profile:'wmh-basic-keys-midi1-v1',content_sha256:sourceHash,score_json:'synthetic hosted proof fixture',runtime:{source_eligibility:{receipt},compilation:{timeline:{duration_ms:2000,note_columns:['id','part_id','midi','velocity','start_ms','duration_ms'],notes:notes.map(note=>[note.id,note.part_id,note.midi,note.velocity,note.start_ms,note.duration_ms])}}}}};
+ const selection={selected_part_ids:['midi-t1-c1-r0'],profile:{kind:'piano',key_count:61,lowest_midi:null}},target={timeline,source_note_count:4,target_count:4,playable:true,diagnostics:[],groups:notes.map(note=>({target_id:note.id,source_occurrence_ids:[note.id],source_note_ids:[note.id],part_ids:[note.part_id]}))},response=mockNativeBasicAdmission(opened,selection,target),request={source:response.source,pitch_mod:{format:'wmc-pitch-mod',version:1,semitones:0},selection},rows=['library','stage'].map(screen=>({path:'/api/library/practice-admission',status:200,observation:'consumed',request:structuredClone(request),response:structuredClone(response),started:{screen,previewId:`native:${sourceKey}`},settled:{screen,previewId:`native:${sourceKey}`}}));
+ const profile={admissions:{restored:true,errors:[],rows},api:rows.map(row=>({path:row.path,method:'POST',status:200,request:structuredClone(request),response:structuredClone(response)})),take:{value:{target_plan:response.checked.human_targets,passes:[{timeline,interpretation:{basic_practice_admission:{receipt:response.checked.receipt,selection_digest:response.checked.plan.selection_digest}}}]}}};
+ return{profile,opened,fixture};
+}
+test('hosted source admission binds consumed JSON to native wire responses and the complete retained take',()=>{
+ const run=value=>validateHostedDirectMidiAdmissions(value.profile,value.opened,value.fixture);run(hostedAdmissionFixture());
+ for(const mutate of [v=>v.profile.admissions.rows=[],v=>v.profile.admissions.rows[0].observation='awaiting-json',v=>v.profile.api.pop(),v=>v.profile.api[0].response.checked.plan.selection_digest='f'.repeat(64),v=>v.profile.admissions.rows[1].request.source.key='wrong',v=>v.profile.admissions.rows[1].response.checked.source_ownership.pop(),v=>v.profile.take.value.passes[0].interpretation.basic_practice_admission.selection_digest='f'.repeat(64),v=>v.profile.take.value.target_plan.timeline.duration_ms=1500]){const value=hostedAdmissionFixture();mutate(value);assert.throws(()=>run(value));}
 });

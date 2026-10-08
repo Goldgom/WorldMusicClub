@@ -271,5 +271,9 @@
   "tests/frontend-source-identity.test.js",
   "tests/source-identity-proof.test.js",
   "tests/source-identity-backend-retention.test.js",
-  "tests/canonical-action-timing.test.js"
+  "tests/canonical-action-timing.test.js",
+  "tests/basic-human-admission-fixtures.test.js",
+  "tests/basic-practice-admission.test.js",
+  "tests/source-human-admission-proof.test.js",
+  "tests/frontend-basic-human-admission.test.js"
 ]

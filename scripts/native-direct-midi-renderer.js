@@ -8,7 +8,7 @@ function createNativeDirectMidiRequestObserver({fetchOwner,onRequest,onError,rea
   const promise=Reflect.apply(original,this,args);
   try{
    const input=args[0],options=args[1]||{},path=typeof input==='string'?input:input.url;
-   if(stopped||!['/api/import/midi','/api/library/import/preview','/api/library/import/commit','/api/library/load','/api/practice-targets','/api/assess'].includes(path))return promise;
+   if(stopped||!['/api/import/midi','/api/library/import/preview','/api/library/import/commit','/api/library/load','/api/practice-targets','/api/library/practice-admission','/api/assess'].includes(path))return promise;
    if(rows.length>=maxRows)throw Error('Bounded direct MIDI requests exceeded');
    const signal=options.signal;if(signal&&!signals.has(signal))signals.set(signal,++nextSignal);
    const row={path,request:typeof options.body==='string'?JSON.parse(options.body):null,status:null,response:null,observation:'fetching',signalGeneration:signal?signals.get(signal):null,signalAbortedAtStart:signal?.aborted===true,signalAborted:false,canceled:false,started:context(),settled:null};rows.push(row);onRequest(row);

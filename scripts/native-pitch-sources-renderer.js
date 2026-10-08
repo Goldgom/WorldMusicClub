@@ -8,7 +8,7 @@ function createNativePitchSourcesRequestObserver({fetchOwner,onRequest,onError,r
   const promise=Reflect.apply(original,this,args);
   try{
    const input=args[0],options=args[1]||{},path=typeof input==='string'?input:input.url;
-   if(stopped||!['/api/library/pitch-mod/project','/api/library/runtime','/api/library/basic-keys/notation','/api/export/musicxml','/api/assess','/api/practice-targets'].includes(path))return promise;
+   if(stopped||!['/api/library/pitch-mod/project','/api/library/runtime','/api/library/basic-keys/notation','/api/library/practice-admission','/api/export/musicxml','/api/assess','/api/practice-targets'].includes(path))return promise;
    if(rows.length>=maxRows)throw Error('Bounded assistance requests exceeded');
    const signal=options.signal;if(signal&&!signals.has(signal))signals.set(signal,++nextSignal);
    const row={path,request:JSON.parse(options.body),status:null,response:null,observation:'fetching',signalGeneration:signal?signals.get(signal):null,signalAbortedAtStart:signal?.aborted===true,signalAborted:false,canceled:false,started:context(),settled:null};rows.push(row);onRequest(row);
@@ -102,7 +102,9 @@ function createNativePitchSourcesRequestObserver({fetchOwner,onRequest,onError,r
   await until(()=>clock().completed&&receiver.quiet()&&canonicalPracticeCompletionReady(document),'native source natural end and assessment',15000);
   const observed=clock(),result={audio:{runs:receiver.snapshot().slice(from).filter(row=>row.started),status:receiver.status()},ended:{completed:observed.completed,phase:observed.phase,positionMs:observed.positionMs,durationMs:observed.durationMs,captured:$('hud-captured').textContent},assessmentRequests:report.requests.slice(requestStart).filter(row=>row.path==='/api/assess')};
   if(human){
-   result.targetPart=kind==='basic'?'midi-t1-c1-r0':'vsq-track-1';result.targets=report.requests.findLast(row=>row.path==='/api/practice-targets'&&row.observation==='consumed'&&row.started.case===currentCase&&row.request.timeline.notes.every(note=>note.part_id===result.targetPart));result.assessment=result.assessmentRequests.at(-1);
+   result.targetPart=kind==='basic'?'midi-t1-c1-r0':'vsq-track-1';
+   result.targets=report.requests.findLast(row=>row.observation==='consumed'&&row.started.case===currentCase&&(kind==='basic'?row.path==='/api/library/practice-admission'&&row.request.selection.selected_part_ids.length===1&&row.request.selection.selected_part_ids[0]===result.targetPart:row.path==='/api/practice-targets'&&row.request.timeline.notes.every(note=>note.part_id===result.targetPart)));
+   assert(result.targets,kind==='basic'?'Missing consumed source-bound Basic Human admission':'Missing consumed VSQ targets');result.assessment=result.assessmentRequests.at(-1);
    await click('results-button');await until(()=>!$('export-takes').disabled,'native source take export ready');const before=(await json('/__desktop_smoke/state')).downloads.length;await click('export-takes');let file;await until(async()=>{file=(await json('/__desktop_smoke/state')).downloads[before];return file?.complete;},'source take download');assert(file.success,'Source take export failed');result.takeFile=file.file;report.files[name]=file.file;await close('results-dialog');
   }
   result.notation=await notation(kind);return result;

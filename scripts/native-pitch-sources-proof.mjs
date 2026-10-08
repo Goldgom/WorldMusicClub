@@ -5,16 +5,17 @@ import {pitchSourcesVectors, PITCH_SOURCES_KINDS, PITCH_SOURCES_HUMAN_PARTS} fro
 import {validateBasicKeySchedules} from './basic-key-rendition-proof.mjs';
 import {validateAudioThreadStatus} from './audio-thread-rendition-proof.mjs';
 import {validateVsqAudioThreadRuns} from './vsq-audio-thread-proof.mjs';
+import {validateBasicPracticeAdmissionEvidence} from './basic-practice-admission-proof.mjs';
 
 const positive = value => Number.isSafeInteger(value) && value > 0;
 const configuration = semitones => ({format: 'wmc-pitch-mod', version: 1, semitones});
-function vectorFor(kind) {
+function vectorFor(kind, vectors) {
   assert.ok(PITCH_SOURCES_KINDS.includes(kind), 'Only original Basic and VSQ fixtures are admitted');
-  return pitchSourcesVectors()[kind];
+  return (vectors || pitchSourcesVectors())[kind];
 }
-export function nativePitchSourceProjection(kind, semitones) {
+export function nativePitchSourceProjection(kind, semitones, {vectors} = {}) {
   assert.ok(semitones === 0 || semitones === 2, 'Acceptance requires original or +2 pitch');
-  return vectorFor(kind)[semitones === 2 ? 'plus2' : 'zero'];
+  return vectorFor(kind, vectors)[semitones === 2 ? 'plus2' : 'zero'];
 }
 
 /** Observe the application's own consumed JSON, not a cloned response body. */
@@ -34,8 +35,8 @@ export function validateNativePitchConsumed(row, path) {
 
 /** Library-entry timestamps and the enclosing imported archive are run-local;
  * the complete clean-package and canonical notation bytes are invariant. */
-export function validateNativePitchSourceLoad(load, kind) {
-  const original = vectorFor(kind).original.opened;
+export function validateNativePitchSourceLoad(load, kind, {vectors} = {}) {
+  const original = vectorFor(kind, vectors).original.opened;
   assert.deepEqual(load.clean_package, original.clean_package, `${kind} original package bytes/runtime changed`);
   assert.equal(load.score_json, original.score_json, `${kind} original notation bytes changed`);
   for (const field of ['key', 'content_sha256', 'score_id', 'score_sha256', 'score_bytes', 'library_format_version']) {
@@ -45,8 +46,8 @@ export function validateNativePitchSourceLoad(load, kind) {
   return load;
 }
 
-export function validateNativePitchSourceProjection(row, kind, semitones, {consumed = true} = {}) {
-  const expected = nativePitchSourceProjection(kind, semitones);
+export function validateNativePitchSourceProjection(row, kind, semitones, {consumed = true, vectors} = {}) {
+  const expected = nativePitchSourceProjection(kind, semitones, {vectors});
   if (consumed) validateNativePitchConsumed(row, '/api/library/pitch-mod/project');
   else {
     assert.equal(row.status, 200);
@@ -55,7 +56,7 @@ export function validateNativePitchSourceProjection(row, kind, semitones, {consu
   }
   assert.deepEqual(row.request, {source: expected.source, configuration: configuration(semitones)});
   assert.deepEqual(row.response, expected, `${kind} projection differs from the actual Rust handler vector`);
-  const original = nativePitchSourceProjection(kind, 0), projected = row.response;
+  const original = nativePitchSourceProjection(kind, 0, {vectors}), projected = row.response;
   assert.equal(projected.compilation.timeline.duration_ms, original.compilation.timeline.duration_ms);
   assert.equal(projected.compilation.timeline.notes.length, original.compilation.timeline.notes.length);
   for (const [index, note] of projected.compilation.timeline.notes.entries()) {
@@ -102,18 +103,33 @@ export function validateNativePitchSourceAudio(audio, kind, semitones, {targetPa
 /** Validate the consumed Rust target result against retained source attacks.
  * This does not create or retain a substitute target response. Whole-source
  * grouping additionally joins the actual-handler assistance target vector. */
-export function validateNativePitchSourceTargets(row, kind, semitones, {targetPart = PITCH_SOURCES_HUMAN_PARTS[kind]} = {}) {
-  const response = validateNativePitchConsumed(row, '/api/practice-targets');
-  const vector = vectorFor(kind), projected = nativePitchSourceProjection(kind, semitones);
+export function validateNativePitchSourceTargets(row, kind, semitones, {targetPart = PITCH_SOURCES_HUMAN_PARTS[kind], vectors} = {}) {
+  const native = validateNativePitchConsumed(row, kind === 'basic' ? '/api/library/practice-admission' : '/api/practice-targets');
+  const vector = vectorFor(kind, vectors), projected = nativePitchSourceProjection(kind, semitones, {vectors});
   assert.ok(targetPart === null || targetPart === PITCH_SOURCES_HUMAN_PARTS[kind]);
   const source = projected.compilation.timeline;
   const selected = source.notes.filter(note => targetPart === null || note.part_id === targetPart);
-  assert.deepEqual(Object.keys(row.request).sort(), ['profile', 'timeline']);
-  assert.equal(row.request.timeline.duration_ms, source.duration_ms);
-  assert.deepEqual(row.request.timeline.notes, selected, 'Practice request did not use the effective native source attacks');
-  assert.equal(row.request.profile.kind, 'piano');
-  assert.equal(row.request.profile.key_count, 88);
-  assert.ok(row.request.profile.lowest_midi === null || row.request.profile.lowest_midi === 21 || row.request.profile.lowest_midi === undefined);
+  let response;
+  if (kind === 'basic') {
+    const checked = validateBasicPracticeAdmissionEvidence(row, {
+      source: projected.source, timeline: source,
+      selection: {selected_part_ids: [...new Set(selected.map(note => note.part_id))].sort(), profile: {kind: 'piano', key_count: 88, lowest_midi: 21}},
+      pitchProjection: semitones ? projected : null,
+      eligibilityReceipt: vector.original.opened.clean_package.runtime.source_eligibility?.receipt,
+    });
+    assert.equal(checked.all_selected_human, true, 'Original source admission cannot silently exclude selected attacks');
+    assert.equal(checked.scored_mode_allowed, true);
+    assert.deepEqual(checked.plan.human_source_ids, selected.map(note => note.id).sort());
+    response = checked.human_targets;
+  } else {
+    assert.deepEqual(Object.keys(row.request).sort(), ['profile', 'timeline']);
+    assert.equal(row.request.timeline.duration_ms, source.duration_ms);
+    assert.deepEqual(row.request.timeline.notes, selected, 'Practice request did not use the effective native source attacks');
+    assert.equal(row.request.profile.kind, 'piano');
+    assert.equal(row.request.profile.key_count, 88);
+    assert.ok(row.request.profile.lowest_midi === null || row.request.profile.lowest_midi === 21 || row.request.profile.lowest_midi === undefined);
+    response = native;
+  }
   assert.equal(response.playable, true);
   assert.equal(response.source_note_count, selected.length);
   assert.equal(response.timeline.duration_ms, source.duration_ms);
@@ -173,6 +189,40 @@ export function validateNativePitchSourceAssessment(row, targets) {
   return response;
 }
 
+/** The take keeps the mandatory Basic admission separate from optional note
+ * assistance. Its targets and no-input assessment must use that same check. */
+export function validateNativePitchSourceTake(take, item, {vectors} = {}) {
+  const {kind, semitones} = item, projected = nativePitchSourceProjection(kind, semitones, {vectors});
+  const targets = validateNativePitchSourceTargets(item.human.targets, kind, semitones, {targetPart: item.human.targetPart, vectors});
+  assert.equal(take.passes.length, 1);
+  const pass = take.passes[0];
+  assert.deepEqual(pass.inputs, []);
+  assert.deepEqual(pass.captures, []);
+  assert.deepEqual(pass.timeline, targets.timeline);
+  assert.deepEqual(pass.assessment, item.human.assessment.response);
+  assert.deepEqual(take.target_plan, targets);
+  assert.equal(pass.pending, false);
+  assert.equal(pass.revision, pass.assessed_revision);
+  assert.equal(take.practice_assistance, null);
+  assert.equal(take.practice_progression, null);
+  if (kind === 'basic') {
+    const checked = item.human.targets.response.checked;
+    assert.deepEqual(pass.interpretation.basic_practice_admission, {receipt: checked.receipt, selection_digest: checked.plan.selection_digest});
+  } else assert.equal(pass.interpretation.basic_practice_admission, undefined);
+  assert.deepEqual(take.practice_selection, {kind: 'parts', part_ids: [item.human.targetPart]});
+  assert.deepEqual(take.song_mod.config.parts.filter(part => part.performer === 'human').map(part => part.partId), [item.human.targetPart]);
+  if (semitones) {
+    assert.deepEqual(take.pitch_mod, projected.identity);
+    assert.deepEqual(pass.interpretation.pitch_mod, projected.identity);
+  } else {
+    assert.equal(take.pitch_mod, undefined);
+    assert.equal(pass.interpretation.pitch_mod, undefined);
+  }
+  assert.deepEqual(pass.interpretation.source_revision, {songId: vectorFor(kind, vectors).original.score.notation.id,
+    sourceRevision: {kind: 'clean-package-sha256', value: projected.source.content_sha256}});
+  return take;
+}
+
 export function validateNativePitchSourceChoice(choice) {
   const vector = vectorFor('vsq'), row = choice.runtime;
   assert.ok(Number.isSafeInteger(choice.before.runtimeRequests) && choice.before.runtimeRequests >= 0);
@@ -194,10 +244,10 @@ export function validateNativePitchSourceChoice(choice) {
 
 /** These originals fit a single whole-source page. Only requested source
  * position varies; pitches, FIFO gates, source IDs and percussion stay exact. */
-export function validateNativeBasicPitchNotation(rows, semitones) {
+export function validateNativeBasicPitchNotation(rows, semitones, {vectors} = {}) {
   assert.ok(semitones === 0 || semitones === 2);
   assert.ok(Array.isArray(rows) && rows.length >= 2 && rows.length <= 32);
-  const vector = vectorFor('basic'), seen = new Set();
+  const vector = vectorFor('basic', vectors), seen = new Set();
   for (const row of rows) {
     validateNativePitchConsumed(row, '/api/library/basic-keys/notation');
     const entry = Object.values(vector.notation).find(value => value.request.settings.part_id === row.request.settings.part_id);
@@ -243,15 +293,15 @@ function validateEnd(ended, projected, sampleRate) {
 
 /** Parent verifier additionally binds native actions, source revision, process
  * restarts, source-library snapshots, saved preferences and artifact bytes. */
-export function validateNativePitchSourceCase(item) {
-  const {kind, semitones} = item, projected = nativePitchSourceProjection(kind, semitones);
-  validateNativePitchSourceLoad(item.sourceBefore, kind);
-  validateNativePitchSourceLoad(item.sourceAfter, kind);
+export function validateNativePitchSourceCase(item, {vectors} = {}) {
+  const {kind, semitones} = item, projected = nativePitchSourceProjection(kind, semitones, {vectors});
+  validateNativePitchSourceLoad(item.sourceBefore, kind, {vectors});
+  validateNativePitchSourceLoad(item.sourceAfter, kind, {vectors});
   assert.deepEqual(item.sourceAfter, item.sourceBefore, 'Whole-song Mod must preserve complete saved source');
-  if (semitones) validateNativePitchSourceProjection(item.projection, kind, semitones);
+  if (semitones) validateNativePitchSourceProjection(item.projection, kind, semitones, {vectors});
   else {
     assert.ok(item.projection === undefined || item.projection === null, 'Zero must restore the ordinary original source path');
-    validateNativePitchSourceProjection(item.readOnlyZeroProjection, kind, 0, {consumed: false});
+    validateNativePitchSourceProjection(item.readOnlyZeroProjection, kind, 0, {consumed: false, vectors});
   }
   assert.equal(item.applied.semitones, String(semitones));
   assert.equal(item.applied.digest, projected.identity?.digest || '');
@@ -265,7 +315,7 @@ export function validateNativePitchSourceCase(item) {
   validateEnd(item.machine.ended, projected, item.machine.audio.runs[0].plan.sampleRate);
   assert.deepEqual(item.machine.assessmentRequests, []);
   assert.equal(item.human.targetPart, PITCH_SOURCES_HUMAN_PARTS[kind]);
-  const targets = validateNativePitchSourceTargets(item.human.targets, kind, semitones, {targetPart: item.human.targetPart});
+  const targets = validateNativePitchSourceTargets(item.human.targets, kind, semitones, {targetPart: item.human.targetPart, vectors});
   validateNativePitchSourceAssessment(item.human.assessment, targets);
   validateNativePitchSourceAudio(item.human.audio, kind, semitones, {targetPart: item.human.targetPart});
   validateEnd(item.human.ended, projected, item.human.audio.runs[0].plan.sampleRate);

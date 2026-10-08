@@ -1,5 +1,6 @@
 // Finite actual-Windows progression proof. Synthetic records only test rejection.
 import assert from 'node:assert/strict';
+import {basicAdmissionTimeline,validateBasicOriginalAdmission,validateBasicPracticeAdmissionEvidence} from './basic-practice-admission-proof.mjs';
 import {isDeepStrictEqual} from 'node:util';
 import {assistanceNativeFixtures,progressionNativeFixtures} from './native-assistance-fixtures.mjs';
 import {expectedAudioPlan,validateAudioThreadRuns,validateAudioThreadStatus} from './audio-thread-rendition-proof.mjs';
@@ -61,43 +62,47 @@ export function validateNativeProgressionTake(take,{human=false,off=false,captur
  }else assert.equal(take.input_evidence,undefined);
  return take;
 }
-export function nativeProgressionResponse(request){
- const kind=request.source?.profile==='wmh-basic-keys-midi1-v1'?'basic':'vsq',f=fixtures()[kind],layer=request.layer||request.plan?.layer;
+export function nativeProgressionResponse(request,fixtureSet=fixtures()){
+ const kind=request.source?.profile==='wmh-basic-keys-midi1-v1'?'basic':'vsq',f=fixtureSet[kind],layer=request.layer||request.plan?.layer;
  assert.deepEqual(request.source,f.source);assert.ok(['single','balanced','dense'].includes(layer));
  const selection=request.selection||request.plan?.selection;
  const expected=kind==='vsq'&&selection?.selected_part_ids.length===1?f.narrow_scope:f.layers[layer].response;
  assert.deepEqual(selection,expected.checked.plan.selection);assert.equal(layer,expected.checked.plan.layer);
  return expected;
 }
-export function validateNativeProgressionRequests(report,takes,validateCompletion){
- const successful=[];assert.ok(report.requests.length>0&&report.requests.length<=40);assert.equal(report.requestsRestored,true);assert.ok(report.requests.filter(r=>r.canceled).length<=4);
+export function validateNativeProgressionRequests(report,takes,validateCompletion,{originalFixtures=originals(),progressionFixtures=fixtures()}={}){
+ const successful=[];assert.ok(report.requests.length>0&&report.requests.length<=128);assert.equal(report.requestsRestored,true);assert.ok(report.requests.filter(r=>r.canceled).length<=4);
  for(const [index,row]of report.requests.entries()){
   if(!validateCompletion(row,report,index))continue;successful.push(row);
   if(row.path.startsWith('/api/library/progression/')){
-   const expected=nativeProgressionResponse(row.request);assert.deepEqual(row.response,expected,'Actual consumed Rust progression must match its original API vector');
+   const expected=nativeProgressionResponse(row.request,progressionFixtures);assert.deepEqual(row.response,expected,'Actual consumed Rust progression must match its original API vector');
    assert.deepEqual(row.request,row.path.endsWith('/validate')?{source:expected.source,plan:expected.checked.plan}:{source:expected.source,selection:expected.checked.plan.selection,layer:expected.checked.plan.layer});
    assert.ok(['/api/library/progression/generate','/api/library/progression/validate'].includes(row.path));
    admitPracticeProgression(row.response,{sourceToken:{},runtimeToken:{},source:expected.source,selection:expected.checked.plan.selection,layer:expected.checked.plan.layer,...(row.path.endsWith('/validate')?{plan:expected.checked.plan}:{})});
   }else if(row.path.startsWith('/api/library/assistance/')){
    // Only the untouched v1 VSQ preference can be restored before opting in.
-   assert.equal(row.path,'/api/library/assistance/generate');const f=originals().vsq;assert.deepEqual(row.request,{source:f.source,selection:f.narrow_scope.checked.plan.selection,settings:f.narrow_scope.checked.plan.settings});assert.deepEqual(row.response,f.narrow_scope);
-  }else if(row.path==='/api/library/runtime'){assert.deepEqual(row.request,{key:originals().vsq.source.key,profile:'wmh-vsq-clean-v1',choice:'base_notes_instrumental'});assert.deepEqual(row.response,originals().vsq.selected_runtime);}
-  else if(['/api/practice-targets','/api/instrument-check'].includes(row.path)){
-   const f=originals().basic,compact=f.opened.clean_package.runtime.compilation.timeline,source={duration_ms:compact.duration_ms,notes:compact.notes.map(([id,part_id,midi,velocity,start_ms,duration_ms])=>({id,part_id,midi,velocity,start_ms,duration_ms,source_note_id:id,source_note_ids:[id],voice:'1',staff:1}))};
-   assert.deepEqual(row.request,{timeline:source,profile:f.original.checked.plan.selection.profile});
-   if(row.path==='/api/practice-targets'){const {diagnostics,...actual}=row.response,{diagnostics:ignored,...expected}=f.original.checked.human_targets;assert.deepEqual(actual,expected);assert.ok(Array.isArray(diagnostics));}
-   else{assert.equal(row.response.changed_source_notes,false);assert.deepEqual(row.response.note_options,source.notes.map(n=>({note_id:n.id,midi:n.midi,playable:true,positions:[]})));}
+   assert.equal(row.path,'/api/library/assistance/generate');const f=originalFixtures.vsq;assert.deepEqual(row.request,{source:f.source,selection:f.narrow_scope.checked.plan.selection,settings:f.narrow_scope.checked.plan.settings});assert.deepEqual(row.response,f.narrow_scope);
+  }else if(row.path==='/api/library/runtime'){assert.deepEqual(row.request,{key:originalFixtures.vsq.source.key,profile:'wmh-vsq-clean-v1',choice:'base_notes_instrumental'});assert.deepEqual(row.response,originalFixtures.vsq.selected_runtime);}
+  else if(row.path==='/api/library/practice-admission'){
+   const f=originalFixtures.basic,selection=row.request.plan?.selection||row.request.selection;assert.deepEqual(selection.profile,f.original.checked.plan.selection.profile);assert.ok(selection.selected_part_ids.every(part=>f.original.checked.plan.selection.selected_part_ids.includes(part)));
+   const c=validateBasicPracticeAdmissionEvidence(row,{source:f.source,timeline:basicAdmissionTimeline(f.opened),selection,plan:row.request.plan,eligibilityReceipt:f.opened.clean_package.runtime.source_eligibility?.receipt});
+   if(row.request.plan){assert.ok(successful.slice(0,-1).some(prior=>prior.path.startsWith('/api/library/progression/')&&isDeepStrictEqual(prior.response.checked?.assistance?.plan,row.request.plan)),'Admission must follow the actual consumed progression check');const expected=Object.values(progressionFixtures.basic.layers).map(layer=>layer.response.checked.assistance).find(checked=>isDeepStrictEqual(checked.plan,row.request.plan));assert.ok(expected,'Admission plan must be one of the explicitly checked progression layers');assert.deepEqual(c,expected);}else validateBasicOriginalAdmission(c,f.original.checked,{compareAssignment:isDeepStrictEqual(selection,f.original.checked.plan.selection)});
   }
-  else{assert.equal(row.path,'/api/assess');assert.ok(Object.values(takes).some(t=>t.passes?.some(pass=>isDeepStrictEqual(row.request.timeline,pass.timeline)&&isDeepStrictEqual(row.request.inputs,pass.inputs)&&isDeepStrictEqual(row.response,pass.assessment))),'Assessment must match a retained current human-only take');}
+  else if(row.path==='/api/instrument-check'){
+   const f=originalFixtures.basic,compact=f.opened.clean_package.runtime.compilation.timeline,source={duration_ms:compact.duration_ms,notes:compact.notes.map(([id,part_id,midi,velocity,start_ms,duration_ms])=>({id,part_id,midi,velocity,start_ms,duration_ms,source_note_id:id,source_note_ids:[id],voice:'1',staff:1}))};
+   assert.deepEqual(row.request,{timeline:source,profile:f.original.checked.plan.selection.profile});
+   {assert.equal(row.response.changed_source_notes,false);assert.deepEqual(row.response.note_options,source.notes.map(n=>({note_id:n.id,midi:n.midi,playable:true,positions:[]})));}
+  }
+  else{assert.equal(row.path,'/api/assess');const admission=successful.slice(0,-1).findLast(prior=>prior.path==='/api/library/practice-admission');assert.ok(admission,'Scoring must follow current native Human admission');assert.deepEqual(row.request.timeline,admission.response.checked.human_targets.timeline);assert.ok(Object.values(takes).some(t=>t.passes?.some(pass=>isDeepStrictEqual(row.request.timeline,pass.timeline)&&isDeepStrictEqual(row.request.inputs,pass.inputs)&&isDeepStrictEqual(row.response,pass.assessment)&&isDeepStrictEqual(pass.interpretation.basic_practice_admission,{receipt:admission.response.checked.receipt,selection_digest:admission.response.checked.plan.selection_digest}))),'Assessment must match a retained current human-only take and admission receipt');}
  }
  if(report.phase==='assistance-off-restart'){
-  for(const path of ['/api/practice-targets','/api/instrument-check','/api/assess'])assert.ok(successful.some(r=>r.path===path));assert.ok(report.requests.every(r=>['/api/assess','/api/practice-targets','/api/instrument-check'].includes(r.path)),'Restarted Off cannot rebuild any assistance or Original DTO');
+  for(const path of ['/api/library/practice-admission','/api/instrument-check','/api/assess'])assert.ok(successful.some(r=>r.path===path));assert.ok(report.requests.every(r=>['/api/assess','/api/library/practice-admission','/api/instrument-check'].includes(r.path)),'Restarted Off cannot rebuild any assistance or Original DTO');
  }else{
-  assert.ok(successful.filter(r=>r.path==='/api/library/progression/validate'&&r.request.source.key===originals().basic.source.key).length>=2,'Saved preview and stage independently validate the exact progression proof');
+  assert.ok(successful.filter(r=>r.path==='/api/library/progression/validate'&&r.request.source.key===originalFixtures.basic.source.key).length>=2,'Saved preview and stage independently validate the exact progression proof');
   assert.equal(successful.filter(r=>r.path==='/api/library/runtime').length,1);
   assert.ok(Number.isSafeInteger(report.offRequestStart)&&Number.isSafeInteger(report.offRequestEnd)&&report.offRequestStart<report.offRequestEnd);
-  assert.ok(report.requests.slice(report.offRequestStart,report.offRequestEnd).every(r=>['/api/assess','/api/practice-targets','/api/instrument-check'].includes(r.path)),'Off uses ordinary target admission, never a giant Original response');
-  const ordinary=report.requests.slice(report.offRequestStart,report.offRequestEnd);for(const path of ['/api/practice-targets','/api/instrument-check'])assert.ok(ordinary.some(r=>r.path===path&&r.observation==='consumed'));
+  assert.ok(report.requests.slice(report.offRequestStart,report.offRequestEnd).every(r=>['/api/assess','/api/library/practice-admission','/api/instrument-check'].includes(r.path)),'Off uses saved-source admission without rebuilding an assistance preference');
+  const ordinary=report.requests.slice(report.offRequestStart,report.offRequestEnd);for(const path of ['/api/library/practice-admission','/api/instrument-check'])assert.ok(ordinary.some(r=>r.path===path&&r.observation==='consumed'));
   const off=successful.filter(r=>r.started.actionSequence===report.offAssessAction);assert.equal(off.length,1);assert.deepEqual(off[0].response,takes.progressionOff.passes[0].assessment);
  }
  return successful;
