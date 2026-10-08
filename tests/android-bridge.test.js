@@ -21,11 +21,21 @@ test('Android bridge preserves binary requests, native errors and response heade
   const {window,calls}=bridge();
   const pending=window.fetch('/api/import/midi',{method:'POST',headers:{'content-type':'audio/midi'},body:new Uint8Array([0,128,255])});
   await tick();
-  assert.deepEqual(calls[0].slice(1),['POST','https://wmh.localhost/api/import/midi','audio/midi','AID/']);
+  assert.deepEqual(calls[0].slice(1),['POST','https://wmh.localhost/api/import/midi',JSON.stringify({'content-type':'audio/midi'}),'AID/']);
   window.__worldMusicClubReply(calls[0][0],{status:422,headers:{'content-type':'application/json'},body:btoa('{"code":"unsupported"}')});
   const response=await pending;
   assert.equal(response.status,422);assert.equal(response.headers.get('content-type'),'application/json');
   assert.deepEqual(await response.json(),{code:'unsupported'});
+});
+test('Android pack requests retain encoded Unicode filenames, conflict policy and selected item',async()=>{
+  const {window,calls}=bridge();
+  const headers={'content-type':'application/octet-stream','x-wmh-filename':encodeURIComponent('原创曲包.zip'),'x-wmh-conflict':'keep-both','x-wmh-item-index':'2'};
+  const pending=window.fetch(new Request('https://wmh.localhost/api/library/import/preview',{method:'POST',headers,body:new Uint8Array([80,75,3,4])}));
+  await tick();
+  assert.deepEqual(JSON.parse(calls[0][3]),headers);
+  assert.equal(calls[0][4],'UEsDBA==');
+  window.__worldMusicClubReply(calls[0][0],{status:200,headers:{},body:''});
+  assert.equal((await pending).status,200);
 });
 test('Android cancellation ignores late replies and foreign requests never reach native host',async()=>{
   const {window,calls}=bridge();const controller=new AbortController();

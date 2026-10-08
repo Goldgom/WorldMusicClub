@@ -39,7 +39,7 @@
       const cleanup = () => normalized.signal.removeEventListener('abort', abort);
       pending.set(id, {resolve,reject,cleanup});
       normalized.signal.addEventListener('abort', abort, {once:true});
-      try { host.request(id, normalized.method, normalized.url, normalized.headers.get('content-type') || '', encode(bytes)); }
+      try { host.request(id, normalized.method, normalized.url, JSON.stringify(Object.fromEntries(normalized.headers)), encode(bytes)); }
       catch (error) { pending.delete(id); cleanup(); reject(error); }
     });
   };

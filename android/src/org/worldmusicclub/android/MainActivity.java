@@ -30,7 +30,7 @@ public final class MainActivity extends Activity {
     private static final String ORIGIN = "https://wmh.localhost";
     static { System.loadLibrary("worldmusicclub_android"); }
     private static native String nativeInitialize(String directory);
-    private static native String nativeRequest(String method, String uri, String contentType, String body);
+    private static native String nativeRequest(String method, String uri, String headersJson, String body);
     private final ThreadPoolExecutor workers = new ThreadPoolExecutor(2, 2, 0,
         TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(16));
     private WebView web;
@@ -94,7 +94,7 @@ public final class MainActivity extends Activity {
                 try {
                     if ("/android-bridge.js".equals(request.getUrl().getPath()) && request.getUrl().getQuery() == null)
                         return new WebResourceResponse("text/javascript", "UTF-8", getAssets().open("android-bridge.js"));
-                    JSONObject result = new JSONObject(nativeRequest("GET", request.getUrl().toString(), "", ""));
+                    JSONObject result = new JSONObject(nativeRequest("GET", request.getUrl().toString(), "{}", ""));
                     byte[] body = Base64.decode(result.getString("body"), Base64.DEFAULT);
                     JSONObject values = result.getJSONObject("headers");
                     HashMap<String, String> headers = new HashMap<>();
@@ -146,12 +146,13 @@ public final class MainActivity extends Activity {
             + Base64.encodeToString(("{\"error\":" + JSONObject.quote(text) + "}").getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP) + "\"}";
     }
     private final class Bridge {
-        @JavascriptInterface public void request(String id, String method, String uri, String contentType, String body) {
+        @JavascriptInterface public void request(String id, String method, String uri, String headersJson, String body) {
             if (id == null || !id.matches("[0-9]{1,16}")) return;
+            if (headersJson == null || headersJson.length() > 8192) { reply(id, failure(400, "Invalid Android request headers")); return; }
             if (body == null || body.length() > 11184812) { reply(id, failure(413, "Android request exceeds 8 MiB; no source was discarded")); return; }
             try {
                 workers.execute(() -> {
-                    String result = nativeRequest(method, uri, contentType, body);
+                    String result = nativeRequest(method, uri, headersJson, body);
                     reply(id, result == null ? failure(500, "Rust response unavailable") : result);
                 });
             } catch (java.util.concurrent.RejectedExecutionException error) { reply(id, failure(503, "The local engine is busy; retry shortly")); }

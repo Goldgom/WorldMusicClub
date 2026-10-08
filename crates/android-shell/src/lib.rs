@@ -7,14 +7,23 @@ use worldmusichub_desktop::{
 };
 
 pub const MAX_BRIDGE_BODY: usize = 8 * 1024 * 1024;
+pub const MAX_BRIDGE_HEADERS: usize = 8192;
 
 pub fn handle(
     method: &str,
     uri: &str,
-    content_type: &str,
+    headers_json: &str,
     encoded: &str,
     library: Option<&NativeLibrary>,
 ) -> Response<Vec<u8>> {
+    if headers_json.len() > MAX_BRIDGE_HEADERS {
+        return error(400, "Invalid Android request headers");
+    }
+    let headers =
+        match serde_json::from_str::<std::collections::BTreeMap<String, String>>(headers_json) {
+            Ok(headers) if headers.len() <= 32 => headers,
+            _ => return error(400, "Invalid Android request headers"),
+        };
     if encoded.len() > MAX_BRIDGE_BODY.div_ceil(3) * 4 {
         return error(
             413,
@@ -31,12 +40,11 @@ pub fn handle(
         }
         Err(_) => return error(400, "Invalid Android request encoding"),
     };
-    let request = match Request::builder()
-        .method(method)
-        .uri(uri)
-        .header("content-type", content_type)
-        .body(body)
-    {
+    let mut builder = Request::builder().method(method).uri(uri);
+    for (name, value) in headers {
+        builder = builder.header(name, value);
+    }
+    let request = match builder.body(body) {
         Ok(request) => request,
         Err(_) => return error(400, "Invalid Android request"),
     };
@@ -91,14 +99,14 @@ mod android {
         _class: JClass,
         method: JString,
         uri: JString,
-        content_type: JString,
+        headers_json: JString,
         body: JString,
     ) -> jstring {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut read = |s: &JString| env.get_string(s).map(String::from);
-            match (read(&method), read(&uri), read(&content_type), read(&body)) {
-                (Ok(method), Ok(uri), Ok(content_type), Ok(body)) => {
-                    handle(&method, &uri, &content_type, &body, LIBRARY.get())
+            match (read(&method), read(&uri), read(&headers_json), read(&body)) {
+                (Ok(method), Ok(uri), Ok(headers_json), Ok(body)) => {
+                    handle(&method, &uri, &headers_json, &body, LIBRARY.get())
                 }
                 _ => error(400, "Invalid JNI request strings"),
             }
@@ -127,7 +135,7 @@ mod tests {
         let actual = handle(
             "POST",
             &format!("{ORIGIN}/api/import/midi"),
-            "audio/midi",
+            r#"{"content-type":"audio/midi"}"#,
             &STANDARD.encode(bytes),
             None,
         );
@@ -143,14 +151,14 @@ mod tests {
     #[test]
     fn bridge_rejects_foreign_origins_invalid_encoding_and_oversize() {
         assert_eq!(
-            handle("GET", "https://evil.example/api/health", "", "", None).status(),
+            handle("GET", "https://evil.example/api/health", "{}", "", None).status(),
             403
         );
         assert_eq!(
             handle(
                 "POST",
                 &format!("{ORIGIN}/api/compile"),
-                "application/json",
+                r#"{"content-type":"application/json"}"#,
                 "!",
                 None
             )
@@ -161,16 +169,96 @@ mod tests {
             handle(
                 "POST",
                 &format!("{ORIGIN}/api/compile"),
-                "application/json",
+                r#"{"content-type":"application/json"}"#,
                 &"A".repeat(MAX_BRIDGE_BODY.div_ceil(3) * 4 + 1),
                 None
             )
             .status(),
             413
         );
-        let response = handle("GET", &format!("{ORIGIN}/api/health"), "", "", None);
+        let response = handle("GET", &format!("{ORIGIN}/api/health"), "{}", "", None);
         let health: serde_json::Value = serde_json::from_slice(response.body()).unwrap();
         assert_eq!(health["engine"], "rust");
         assert_eq!(health["network"], "native-protocol-no-listener");
+    }
+
+    #[test]
+    fn bridge_validates_bounded_headers_and_preserves_origin_checks() {
+        let uri = format!("{ORIGIN}/api/health");
+        for headers in [
+            "null",
+            "[]",
+            "{bad",
+            r#"{"x-test":42}"#,
+            r#"{"bad name":"value"}"#,
+            r#"{"x-test":"bad\r\nvalue"}"#,
+        ] {
+            assert_eq!(handle("GET", &uri, headers, "", None).status(), 400);
+        }
+        let many: std::collections::BTreeMap<_, _> =
+            (0..33).map(|i| (format!("x-{i}"), "v")).collect();
+        assert_eq!(
+            handle(
+                "GET",
+                &uri,
+                &serde_json::to_string(&many).unwrap(),
+                "",
+                None
+            )
+            .status(),
+            400
+        );
+        assert_eq!(
+            handle("GET", &uri, &" ".repeat(MAX_BRIDGE_HEADERS + 1), "", None).status(),
+            400
+        );
+        assert_eq!(
+            handle(
+                "GET",
+                &uri,
+                r#"{"origin":"https://evil.example"}"#,
+                "",
+                None
+            )
+            .status(),
+            403
+        );
+    }
+
+    #[test]
+    fn native_pack_import_receives_filename_conflict_policy_and_selection() {
+        struct Sandbox(std::path::PathBuf);
+        impl Drop for Sandbox {
+            fn drop(&mut self) {
+                std::fs::remove_dir_all(&self.0).unwrap();
+            }
+        }
+        let root = Sandbox(std::env::temp_dir().join(
+            format!("wmc-android-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()),
+        ));
+        std::fs::create_dir(&root.0).unwrap();
+        let library = NativeLibrary::open(root.0.join("Scores")).unwrap();
+        let body = STANDARD.encode(b"1=C4\nmeter=4/4\n1 2 3 0 |");
+        let uri = format!("{ORIGIN}/api/library/import/preview");
+        let mut headers = json!({"content-type":"application/octet-stream", "x-wmh-filename":"%E7%BB%83%E4%B9%A0.jianpu", "x-wmh-conflict":"keep-both", "x-wmh-item-index":"0"});
+        let response = handle("POST", &uri, &headers.to_string(), &body, Some(&library));
+        assert_eq!(response.status(), 200);
+        let report: serde_json::Value = serde_json::from_slice(response.body()).unwrap();
+        assert_eq!(report["source"]["filename"], "练习.jianpu");
+        assert_eq!(report["items"][0]["status"], "ready");
+        assert_eq!(report["source"]["retained"], false);
+        assert!(library.list().unwrap().entries.is_empty());
+        headers["x-wmh-conflict"] = json!("invalid");
+        assert_eq!(
+            handle("POST", &uri, &headers.to_string(), &body, Some(&library)).status(),
+            400
+        );
+        headers["x-wmh-conflict"] = json!("skip");
+        headers["x-wmh-item-index"] = json!("invalid");
+        assert_eq!(
+            handle("POST", &uri, &headers.to_string(), &body, Some(&library)).status(),
+            400
+        );
     }
 }

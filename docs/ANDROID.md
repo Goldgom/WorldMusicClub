@@ -68,6 +68,9 @@ the Android import/export dialogs.
 - Android requests have an explicit 8 MiB limit, including complete source
   bytes. Larger song packs are refused whole; no sources are silently removed.
   Exports have a 32 MiB limit. Large desktop library packs can exceed these limits.
+- The bridge forwards request headers, including encoded song-pack filenames,
+  conflict choices and selected song indices. Header JSON is limited to 8 KiB
+  and 32 entries; Rust validates header names, values and the request origin.
 - Debug package compilation/signature checks and device startup checks are
   separate from full browser, audio, import/export and Windows/native acceptance.
   A successful build does not accept the exact source checkpoint or promote it
