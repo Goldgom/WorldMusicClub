@@ -252,5 +252,6 @@
   "tests/native-human-mod-panel-revision.test.js",
   "tests/part-activity-admission.test.js",
   "tests/part-activity-view.test.js",
-  "tests/part-activity-browser-proof.test.js"
+  "tests/part-activity-browser-proof.test.js",
+  "tests/part-activity-retirement.test.js"
 ]
