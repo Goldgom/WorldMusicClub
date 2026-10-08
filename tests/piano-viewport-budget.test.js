@@ -313,3 +313,29 @@ test('activity settlement rejects missing commits and errors above the original 
     }finally{env.view.destroy();}
   }
 });
+
+test('short laptop blocked gate retains all warning text and Validate in two flow rows without changing piano or transport geometry',async()=>{
+  const css=await readFile(new URL('../web/piano-stage.css',import.meta.url),'utf8'),html=await readFile(new URL('../web/index.html',import.meta.url),'utf8');
+  const {document}=parseHTML(`<html><style>${css}</style><body>${html}</body></html>`),media=[...document.querySelector('style').sheet.cssRules].find(rule=>rule.media?.mediaText==='(min-height:601px) and (max-height:700px) and (min-width:901px)');
+  assert.ok(media,'Cover both actual failed viewports: browser960×640 and native1024×689, without changing720px desktop/short landscape/portrait');
+  const rules=[...media.cssRules],prefix='.game-shell #workspace.piano-workspace #practice-gate',rule=suffix=>rules.find(row=>row.selectorText===prefix+suffix).style;
+  assert.equal(rule(':not([hidden])').display,'grid');assert.equal(rule(':not([hidden])')['grid-template-columns'],'max-content minmax(0,1fr) max-content');assert.equal(rule(':not([hidden])').gap,'2px 12px');assert.equal(rule(':not([hidden])').padding,'6px 12px');assert.equal(rule(':not([hidden])').margin,'4px 14px');
+  for(const [suffix,column,row]of [['>strong','1','1'],['>p','1/3','2'],['>div>span','2','1'],[' #practice-gate-retry','3','1/3']]){assert.equal(rule(suffix)['grid-column'],column);assert.equal(rule(suffix)['grid-row'],row);}
+  assert.equal(rule('>div').display,'contents');assert.equal(rule('>p').margin,'0');
+  for(const row of rules){assert.ok(row.selectorText.startsWith(prefix),'Only the compatibility gate is changed');for(const property of ['height','max-height','min-height','overflow','visibility','font-size','line-height','position','transform'])assert.equal(row.style[property],undefined,`No shrinking/clipping/repositioning escape hatch: ${property}`);assert.notEqual(row.style.display,'none');}
+  const gate=document.getElementById('practice-gate');assert.equal(gate.getAttribute('role'),'status');assert.equal(gate.hidden,true,'Hidden compatibility gates must stay hidden');assert.ok(gate.querySelector(':scope > strong[data-i18n]'));assert.ok(gate.querySelector('#practice-gate-reason'));assert.ok(gate.querySelector(':scope > div > span[data-i18n]'));assert.equal(gate.querySelector('#practice-gate-retry').tagName,'BUTTON');
+});
+
+test('recorded721 blocked chrome exhausts the lane minimum; a two-row gate fits with unchanged keys, transport and viewport tolerance',()=>{
+  // These are actual failed recorder rectangles. This conservation test is not
+  // a browser layout claim; the fresh browser/native gates still measure CSS.
+  const cases=[{height:640,transportBottom:689.96875,keyHeight:110},{height:689,transportBottom:697.09375,keyHeight:117.125}];
+  for(const sample of cases){
+    const prior=pianoViewportBudget({viewportBottom:sample.height,laneHeight:100,transportBottom:sample.transportBottom,bottomPadding:16});assert.equal(prior.height,100);assert.ok(prior.deficit>0,'More settling frames cannot fix exhausted space');
+    // Existing gate consumes135.875px. Two unchanged text lines (22.1/20.4px)
+    // and a conservative48px unchanged Validate target use at most69px with
+    // the rule's2px row gap,12px padding,8px margin and1px existing border.
+    const compactGate=Math.max(22.1+20.4+2,48)+12+8+1,remainingBottom=sample.transportBottom-135.875+compactGate;
+    const recovered=pianoViewportBudget({viewportBottom:sample.height,laneHeight:100,transportBottom:remainingBottom,bottomPadding:16});assert.ok(recovered.available>=100);assert.equal(recovered.deficit,0);assert.ok(remainingBottom+16<=sample.height);assert.equal(sample.keyHeight,sample.height===640?110:117.125);
+  }
+});
