@@ -1,0 +1,28 @@
+{
+  "kind": "captured-real-native-import-contract-regression",
+  "source_sha": "2709cc133734bfc365f80ed0de1844b01d6350b1",
+  "source_tree": "5153d321c505a318504fcb5d81b8a7918dab1865",
+  "driver_sha256": "464aa8010d818cc0a04527bcd231d4cefe3ec777bc104e5e57c95848049fecb7",
+  "job_id": 113215764722,
+  "artifact_id": 11536089131,
+  "report_sha256": "d0e57e2b4a808043a9a9f9f780476668d9a90c9eedec5af1f6937dfad1197fab",
+  "scope": "Unmodified import commit bodies from a FAILED hosted proof. Regression fixtures only; no claim that identity UI or later cases passed.",
+  "responses": [
+    {
+      "file": "04_gm1_piano.mid.commit.json",
+      "api_sequence": 14,
+      "path": "/api/library/import/commit",
+      "status": 200,
+      "request_sha256": "0bb8bd2f3042d76a0f9fa034224b7b9e839f7b936b2d46c6c6998251cd6ceb11",
+      "response_sha256": "f89af93902a1ad2f8b4a6377aed343df36869a7c535c080a964237875648a79b"
+    },
+    {
+      "file": "01_no_gm_program.mid.commit.json",
+      "api_sequence": 16,
+      "path": "/api/library/import/commit",
+      "status": 200,
+      "request_sha256": "bde38b620853111b6c27314c02146db83c7cef8eb52cc45dc1b1ff0d87ffa871",
+      "response_sha256": "4126c6d3784792eddb01c3edbf1646ab0264284e5fb52090765384dd0c63c6a0"
+    }
+  ]
+}

@@ -9,9 +9,10 @@ export const identityDigest=value=>createHash('sha256').update(value).digest('he
 export const BASIC_PROFILE='wmh-basic-keys-midi1-v1';
 export const IDENTITY_CASES=Object.freeze([
  {id:'04_gm1_piano',labels:['Acoustic Grand Piano'],classes:['supported'],counts:[1,0,0],mixed:false,reasons:[]},
- {id:'01_no_gm_program',labels:[],classes:['unresolved'],counts:[0,0,1],mixed:false,reasons:['missing_gm_declaration']},
+ {id:'01_no_gm_program_basic_controller',labels:[],classes:['unresolved'],counts:[0,0,1],mixed:false,reasons:['missing_gm_declaration'],sha256:'6ae97dc2d8b301fe7a77b4c127f2d2593f0020c81af91344c41ea0f58ede7633'},
  {id:'14_unknown_variant',labels:[],classes:['unresolved'],counts:[0,0,1],mixed:false,reasons:['unknown_tuple']},
  {id:'31_program_changes_per_attack',labels:['Acoustic Grand Piano','Violin'],classes:['supported','known_unsupported'],counts:[1,1,0],mixed:true,reasons:[]},
+ {id:'01_no_gm_program',profile:'canonical',labels:[],classes:['unresolved'],counts:[0,0,1],mixed:false,reasons:[]},
 ]);
 
 // Fixture-only SMF scanner: no running status, tempo map, routing or guessing.
@@ -35,12 +36,31 @@ export function scanIdentityFixture(bytes){
 export async function readIdentityFixtures(root,directory=null){
  const path=join(root,'crates/score-core/src/source_identity/fixtures'),manifest=JSON.parse(await readFile(join(path,'cases.json'),'utf8'));assert.match(manifest.license,/CC0-1\.0/);
  const fixtures=[];if(directory)await mkdir(directory,{recursive:true});
- for(const expected of IDENTITY_CASES){const row=manifest.cases.find(value=>value.id===expected.id);assert.equal(row.file,`fixtures/${expected.id}.mid`);const bytes=await readFile(join(path,`${expected.id}.mid`));assert.equal(identityDigest(bytes),row.sha256);const scanned=scanIdentityFixture(bytes);assert.equal(scanned.notes.length,expected.classes.length);const fixture={...expected,...scanned,filename:`${expected.id}.mid`,bytes,sha256:row.sha256,rights:{status:'original_authored',license:'CC0-1.0',source:'crates/score-core/src/source_identity/fixtures/README.md'}};fixtures.push(fixture);if(directory)await writeFile(join(directory,fixture.filename),bytes,{flag:'wx'});}
+ for(const expected of IDENTITY_CASES){const extra=expected.id==='01_no_gm_program_basic_controller',row=extra?expected:manifest.cases.find(value=>value.id===expected.id);if(!extra)assert.equal(row.file,`fixtures/${expected.id}.mid`);const bytes=await readFile(join(extra?join(root,'tests/fixtures/source-identity'):path,`${expected.id}.mid`));assert.equal(identityDigest(bytes),row.sha256);const scanned=scanIdentityFixture(bytes);assert.equal(scanned.notes.length,expected.classes.length);const fixture={profile:BASIC_PROFILE,...expected,...scanned,filename:`${expected.id}.mid`,bytes,sha256:row.sha256,rights:{status:'original_authored',license:'CC0-1.0',source:extra?'tests/fixtures/source-identity/README.md':'crates/score-core/src/source_identity/fixtures/README.md'}};fixtures.push(fixture);if(directory)await writeFile(join(directory,fixture.filename),bytes,{flag:'wx'});}
  return fixtures;
 }
 
+// The direct importer keeps exact canonical input canonical; Basic is a fallback,
+// not an effect of using the bulk picker. Keep these two response contracts distinct.
+export function validateIdentityImport(report,fixture){
+ assert.equal(report.format,'worldmusichub-import-report');assert.equal(report.version,1);assert.equal(report.mode,'commit');assert.equal(report.source.filename,fixture.filename);assert.equal(report.source.bytes,fixture.bytes.length);assert.equal(report.source.sha256,fixture.sha256);assert.equal(report.source.retained,true);assert.equal(report.items.length,1);
+ const item=report.items[0];assert.equal(item.status,'saved');assert.equal(item.playable,true);assert.match(item.entry.key,/^song-[a-f0-9]{64}$/);
+ if(fixture.profile==='canonical'){assert.equal(item.entry.library_format_version,1);assert.equal(Object.hasOwn(item,'clean_package'),false);assert.equal(Object.hasOwn(item.entry,'clean_package'),false);assert.deepEqual(item.entry.retained_source,{format:'midi-base64',filename:null,bytes:Buffer.byteLength(fixture.bytes.toString('base64')),sha256:identityDigest(fixture.bytes.toString('base64'))});}
+ else{assert.ok(item.clean_package,`${fixture.id} must actually import as a complete Basic package`);assert.equal(item.clean_package.profile,BASIC_PROFILE);assert.equal(item.entry.library_format_version,2);assert.deepEqual(item.entry.clean_package,item.clean_package);assert.equal(item.entry.key,`song-${item.clean_package.content_sha256}`);if(fixture.id==='01_no_gm_program_basic_controller')assert.ok(report.warnings.some(warning=>warning.includes('MIDI controller 74 is unsupported')));}
+ return item;
+}
+export function validateCanonicalIdentityOpened(opened,fixture){
+ assert.equal(fixture.profile,'canonical');assert.equal(opened.entry.library_format_version,1);assert.equal(Object.hasOwn(opened,'clean_package'),false);assert.equal(Object.hasOwn(opened.entry,'clean_package'),false);assert.equal(opened.entry.score_sha256,identityDigest(opened.score_json));assert.equal(opened.entry.content_sha256,opened.entry.score_sha256);assert.equal(opened.entry.key,`song-${opened.entry.content_sha256}`);
+ const score=JSON.parse(opened.score_json);assert.equal(score.source.format,'midi-base64');assert.equal(score.source.content,fixture.bytes.toString('base64'));assert.deepEqual(Buffer.from(score.source.content,'base64'),fixture.bytes);assert.equal(score.parts.length,1);assert.equal(score.parts[0].notes.length,fixture.notes.length);
+ for(const [index,note]of score.parts[0].notes.entries()){const expected=fixture.notes[index];assert.equal(note.id,`midi-t1-c1-e${expected.coordinate.event+1}`);assert.deepEqual(note.pitch,{step:'C',alter:0,octave:4});assert.equal(note.velocity,expected.velocity);assert.equal(note.at.numerator*fixture.ppq,note.at.denominator*expected.tick);assert.equal(note.duration.numerator*500,note.duration.denominator*expected.duration_ms);}
+ return score;
+}
+export function validateCanonicalIdentityRuntime(compiled,fixture,score){
+ assert.deepEqual(compiled.score,score);assert.deepEqual(compiled.timeline.notes.map(({id,midi,velocity,start_ms,duration_ms})=>({id,midi,velocity,start_ms,duration_ms})),fixture.notes.map(({coordinate,midi,velocity,start_ms,duration_ms})=>({id:`midi-t1-c1-e${coordinate.event+1}`,midi,velocity,start_ms,duration_ms})));return compiled;
+}
+
 export function validateIdentityOpened(opened,fixture){
- const clean=opened.clean_package;assert.equal(clean.profile,BASIC_PROFILE);const score=JSON.parse(clean.score_json),metadata=JSON.parse(clean.metadata_json);
+ assert.equal(fixture.profile,BASIC_PROFILE);const clean=opened.clean_package;assert.ok(clean,`${fixture.id} must open as complete Basic, never relabel canonical input`);assert.equal(clean.profile,BASIC_PROFILE);const score=JSON.parse(clean.score_json),metadata=JSON.parse(clean.metadata_json);
  assert.deepEqual(score.source,{format:'midi',bytes:fixture.bytes.length,sha256:fixture.sha256});assert.equal(score.performance.ppq,fixture.ppq);assert.deepEqual(score.performance.tracks.map(track=>track.events),[fixture.events]);assert.equal(score.coverage.source_events,fixture.events.length);assert.equal(score.coverage.represented_events,fixture.events.length);assert.equal(score.coverage.key_attacks,fixture.notes.length);
  const typed={format:'worldmusichub-song',version:2,id:`midi-basic-${fixture.sha256}`,title:fixture.filename,score:{path:'score.json',bytes:Buffer.byteLength(clean.score_json),sha256:identityDigest(clean.score_json)},sources:[score.source],rights:{status:'user_supplied_unverified',attribution:'User-supplied MIDI; source rights are unverified',license:null},media:[]};
  assert.deepEqual(metadata,typed,'Original raw MIDI conversion metadata must match the complete fixture contract');assert.equal(clean.content_sha256,identityDigest(JSON.stringify(typed)));assert.equal(opened.entry.key,`song-${clean.content_sha256}`);
@@ -61,12 +81,13 @@ export function validateIdentityDisclosure(response,fixture,source){
 export function validateIdentityUi(ui,fixture,{faultStatus=null}={}){
  assert.equal(ui.parts.length,1);const part=ui.parts[0];assert.equal(part.collapsed,true,'Summary must be inspected with source details collapsed');assert.equal(part.collapsedBodyRows,0,'Collapsed source details must remain lazy');assert.equal(ui.startDisabled,false);assert.equal(ui.configureDisabled,false);
  const text=part.pages.flat().map(row=>row.join(': ')).join('\n');assert.match(text,/MIDI channel \(1–16\): 1/);assert.match(text,/Source note attacks \/ notated notes:/);assert.match(text,/MIDI program/);assert.match(text,/Informational only: these classifications do not decide practice support/);
+ if(fixture.profile==='canonical'){assert.match(part.summary,/Original instrument: not identified/);assert.doesNotMatch(part.summary,/Analyzed original instrument:/);assert.match(text,/Available only for Basic MIDI sources/);assert.doesNotMatch(text,/Identity analysis classification:|Analyzed original identity:|Identity analysis could not be loaded/);return ui;}
  if(faultStatus){assert.match(text,/Identity analysis could not be loaded/);assert.doesNotMatch(part.summary,/Analyzed original instrument:/);for(const label of fixture.labels)assert.ok(!part.summary.includes(label));return ui;}
  assert.match(part.summary,/Analyzed original instrument:/);assert.match(part.summary,/Informational only/);const [supported,unsupported,unresolved]=fixture.counts;assert.ok(part.summary.includes(`${supported} supported · ${unsupported} known unsupported · ${unresolved} unresolved`));assert.ok(text.includes(`${supported} supported · ${unsupported} known unsupported · ${unresolved} unresolved`));
  for(const label of fixture.labels){assert.ok(part.summary.includes(label));assert.ok(part.pages.flat().some(([key,value])=>key==='Analyzed original identity'&&value.includes(label)));}
  if(!fixture.labels.length){assert.match(part.summary,/not identified/);assert.ok(part.pages.flat().some(([key])=>key==='Unresolved identity reason'));}
  if(fixture.mixed){assert.match(part.summary,/Mixed/);assert.match(text,/Identity analysis classification: Mixed · Unresolved/);}
- if(fixture.id==='01_no_gm_program')assert.match(text,/No admitted General MIDI declaration/);
+ if(fixture.id==='01_no_gm_program_basic_controller')assert.match(text,/No admitted General MIDI declaration/);
  if(fixture.id==='14_unknown_variant')assert.match(text,/outside the reviewed identity subset/);
  return ui;
 }
