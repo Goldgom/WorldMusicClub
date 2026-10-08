@@ -1,3 +1,4 @@
+import {registerPartActivityBrowserRegression} from './part-activity-browser-regression.js';
 import {registerSourceInstrumentBrowserRegression} from './source-instrument-browser-regression.js';
 import {registerHumanModTimbreBrowserRegression} from './human-mod-timbre-browser-regression.js';
 import {browserSongModControls} from './browser-song-mod-controls.js';
@@ -2948,3 +2949,5 @@ registerHumanModTimbreBrowserRegression({test,getPage:()=>page,ui,readyForTitle,
 registerGuitarPhraseBrowserRegression({test,getPage:()=>page,ui,configureStageMod,setSessionMode,hideNotation,readyForTitle,closeShellPanels,exportTakeData,exportScore,getRequests:getRequestsForLocale,artifactDirectory,binary});
 
 registerSourceInstrumentBrowserRegression({test,getPage:()=>page,getOrigin:()=>origin,closeShellPanels,artifactDirectory,binary});
+
+registerPartActivityBrowserRegression({test,getPage:()=>page,getOrigin:()=>origin,ui,readyForTitle,closeShellPanels,exportTakeData,artifactDirectory,binary});
