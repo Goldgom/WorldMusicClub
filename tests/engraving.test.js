@@ -97,6 +97,27 @@ test('row layout options are bounded and modify only the disposable renderer mod
   ready.dispose();assert.deepEqual(ready.systemLayout(),{status:'unavailable',systems:[]});
 });
 
+test('single-system mode is explicit before load, overrides breaks and refuses incomplete rows after render or resize', async () => {
+  for(const singleSystem of [null,0,1,'true',{}])assert.equal(validate({}, {singleSystem}).status,'invalid');
+  assert.equal(validate({}, {singleSystem:true}).options.singleSystem,true);
+  assert.equal(validate({}, {singleSystem:false}).options.singleSystem,false);
+  const env=environment(),load=env.Renderer.prototype.load,render=env.Renderer.prototype.render,errors=[];
+  env.Renderer.prototype.load=function(content){assert.equal(this.options.renderSingleHorizontalStaffline,true,'Pinned OSMD requires this option before parsing');this.Sheet.SourceMeasures=Array.from({length:4},()=>({}));return load.call(this,content);};
+  env.Renderer.prototype.render=function(){
+    render.call(this);
+    const system={StaffLines:[{},{}]};system.GraphicalMeasures=this.Sheet.SourceMeasures.map(parentSourceMeasure=>[{parentSourceMeasure,ParentMusicSystem:system}]);
+    this.GraphicSheet={MusicPages:[{MusicSystems:this.renders===1?[system]:[system,system]}]};
+  };
+  const ready=await renderEngravedStaff(env.container,xml,{singleSystem:true,measuresPerRow:1,onError:error=>errors.push(error)});
+  assert.equal(ready.status,'ready');
+  const model=env.instances[0];assert.equal(model.EngravingRules.RenderSingleHorizontalStaffline,true);assert.equal(model.EngravingRules.NewSystemAtXMLNewSystemAttribute,false);
+  assert.equal(model.Zoom,1,'Single row does not shrink musical glyphs');
+  assert.ok(model.Sheet.SourceMeasures.every(measure=>!measure.printNewSystemXml),'Conflicting requested source-row breaks are not applied');
+  env.container.clientWidth=600;assert.equal(ready.resize(),false);assert.equal(errors[0].code,'engraving_resize');assert.equal(env.container.querySelector('svg'),null);
+  const missing=environment();const refused=await renderEngravedStaff(missing.container,xml,{singleSystem:true});
+  assert.equal(refused.status,'error');assert.match(refused.cause.message,/every source measure in one complete music system/);assert.equal(missing.container.querySelector('svg'),null);
+});
+
 // Original synthetic pitches only. These ratios describe timing, not a private melody.
 function exactRhythmXml({actual = 240, normal = 227, duration = 227, divisions = 480, type = 'eighth', normalType = type, extra = '', tail = ''} = {}) {
   return `<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Synthetic rhythm</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>${divisions}</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes><note id="synthetic-C"><pitch><step>C</step><octave>4</octave></pitch><duration>${duration}</duration><voice>1</voice><type>${type}</type><time-modification><actual-notes>${actual}</actual-notes><normal-notes>${normal}</normal-notes><normal-type>${normalType}</normal-type></time-modification><staff>1</staff>${extra}</note></measure>${tail}</part></score-partwise>`;

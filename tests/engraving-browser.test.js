@@ -1433,6 +1433,31 @@ test('native source-measure fragments force row breaks only at genuine source ba
   await bindingEvidence('source-fragment-system-rows',evidence);
 });
 
+test('dense native fragments retain one readable horizontal system without cropping at narrow widths',options,async()=>{
+  const fixture=JSON.parse(await readFile(new URL('./fixtures/basic-key-internal-key-pages.json',import.meta.url),'utf8')),data=fixture.noncrossing,before=JSON.stringify(data),score=data.response.page.score,exported=data.response.page.musicxml;
+  await page.setViewportSize({width:390,height:900});
+  await renderBinding(score,exported,{fromMeasure:1,toMeasure:2,zoom:2,compactHeader:true},data);
+  const wrapped=await page.evaluate(()=>window.lastEngraving.systemLayout());
+  assert.equal(wrapped.status,'ready');assert.ok(wrapped.systems.length>1,'This real narrow fragment fixture exercises the previously wrapped-row case');
+  await renderBinding(score,exported,{fromMeasure:1,toMeasure:2,zoom:2,compactHeader:true,singleSystem:true,measuresPerRow:1},data);
+  const inspect=()=>page.evaluate(()=>{
+    const watch=window.__wmhBinding,layout=window.lastEngraving.systemLayout(),host=document.getElementById('staff'),svg=host.querySelector('svg'),heads=[...svg.querySelectorAll('.vf-notehead')];
+    watch.assert(layout.status==='ready'&&layout.systems.length===1,'The independent native range is one actual MusicSystem');
+    watch.assert(layout.systems[0].measures.length===4,'All four source-bound key fragments stay in the single system');
+    watch.assert(watch.renderer.EngravingRules.RenderSingleHorizontalStaffline===true&&watch.renderer.Zoom===2,'Single-system rendering preserves the requested readable zoom');
+    watch.assert(watch.renderer.Sheet.SourceMeasures.every(measure=>!measure.printNewSystemXml),'Source row-break requests do not override the horizontal native range');
+    watch.assert(watch.reindex().length===4,'All four original note IDs still own their exact visible glyphs');
+    const svgBox=svg.getBoundingClientRect(),boxes=heads.map(head=>head.getBoundingClientRect());
+    watch.assert(boxes.every(box=>box.left>=svgBox.left-1&&box.right<=svgBox.right+1),'Every head is retained within the full-width SVG');
+    return {layout,svgWidth:svgBox.width,hostWidth:host.clientWidth,glyphHeight:Math.min(...boxes.map(box=>box.height)),mapping:window.lastEngraving.mappingStatus()};
+  });
+  const narrow=await inspect();assert.ok(narrow.svgWidth>narrow.hostWidth,'Dense notation remains horizontally scrollable, without shrinking into the viewport');assert.ok(narrow.glyphHeight>=12,'Large requested noteheads retain readable paint size');
+  const renders=await page.evaluate(()=>window.__wmhBinding.renderCalls);await page.setViewportSize({width:760,height:900});await page.waitForFunction(count=>window.__wmhBinding.renderCalls>count,renders);
+  const wider=await inspect();assert.ok(Math.abs(wider.glyphHeight-narrow.glyphHeight)<.1,'Resizing does not change glyph scale');
+  assert.equal(JSON.stringify(data),before);
+  await bindingEvidence('dense-horizontal-native-fragments',{wrapped,narrow,wider});
+});
+
 test('native internal keys keep exact source glyphs, visible key positions and original measure numbers',options,async()=>{
   const fixture=JSON.parse(await readFile(new URL('./fixtures/basic-key-internal-key-pages.json',import.meta.url),'utf8')),data=fixture.noncrossing,score=data.response.page.score,exported=data.response.page.musicxml,before=JSON.stringify(fixture),evidence=[];
   const inspect=()=>page.evaluate(()=>{

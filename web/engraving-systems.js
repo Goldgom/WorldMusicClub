@@ -30,6 +30,29 @@ export function applyEngravingSystemBreaks(renderer,coordinates,{fromMeasure=1,t
   return true;
 }
 
+/** A one-row native mount must really contain one complete MusicSystem. Do not
+ * turn an arbitrary wrapper with several dense line breaks into a temporal row.
+ * Every admitted model fragment in the requested range must still be present. */
+export function verifySingleEngravingSystem(renderer,coordinates,{fromMeasure=1,toMeasure}={}){
+  try{
+    const mapped=modelCoordinates(renderer,coordinates),pages=renderer?.GraphicSheet?.MusicPages;
+    if(!mapped||!Array.isArray(pages)||pages.some(page=>!Array.isArray(page.MusicSystems)))return false;
+    const systems=pages.flatMap(page=>page.MusicSystems);
+    if(systems.length!==1)return false;
+    const system=systems[0];
+    if(!Array.isArray(system.StaffLines)||!system.StaffLines.length||!Array.isArray(system.GraphicalMeasures))return false;
+    const expected=new Set([...mapped.values()].filter(value=>value.sourceMeasureIndex>=fromMeasure-1&&(toMeasure===undefined||value.sourceMeasureIndex<toMeasure)).map(value=>value.modelMeasureIndex)),found=new Set();
+    if(!expected.size)return false;
+    for(const measure of system.GraphicalMeasures.flat()){
+      if(!measure||measure.IsExtraGraphicalMeasure)continue;
+      const coordinate=mapped.get(measure.parentSourceMeasure);
+      if(!coordinate||measure.ParentMusicSystem!==system||!expected.has(coordinate.modelMeasureIndex))return false;
+      found.add(coordinate.modelMeasureIndex);
+    }
+    return found.size===expected.size;
+  }catch{return false;}
+}
+
 function systemRect(system,svg,unit){
   const box=system?.PositionAndShape,position=box?.AbsolutePosition,matrix=svg.getScreenCTM?.(),paint=svg.getBoundingClientRect?.();
   const style=svg.ownerDocument?.defaultView?.getComputedStyle?.(svg);
@@ -52,8 +75,9 @@ function systemRect(system,svg,unit){
 /** Read fresh screen geometry after every fit, adoption or responsive reflow.
  * Backend/page identity ties each MusicSystem to its own real SVG. Failure does
  * not substitute guessed rectangles, staff counts or printed measure numbers. */
-export function readEngravingSystems(renderer,mount,coordinates,{fromMeasure=1,toMeasure}={}){
+export function readEngravingSystems(renderer,mount,coordinates,{fromMeasure=1,toMeasure,singleSystem=false}={}){
   try{
+    if(singleSystem&&!verifySingleEngravingSystem(renderer,coordinates,{fromMeasure,toMeasure}))return unavailable();
     const mapped=modelCoordinates(renderer,coordinates),pages=renderer?.GraphicSheet?.MusicPages,drawer=renderer?.Drawer,backends=drawer?.Backends;
     if(!mapped||!Array.isArray(pages)||!Array.isArray(backends)||!mount?.contains)return unavailable();
     const unit=drawer.calculatePixelDistance?.(1),systems=[];

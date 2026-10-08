@@ -1,7 +1,7 @@
 /** Optional, offline OSMD presentation adapter. Rust remains the score/timing authority. */
 import {validateEngravingNoteMap,createEngravingNoteBindings,validateEngravingModelTies,restoreSourceBoundPageTies,isAdmittedNativeEngravingSource} from './engraving-note-map.js';
 import {createEngravingProjection,createSourceBoundEngravingFragments, restoreSourceBoundProjectionFractions, validateEngravingProjectionModel, engravingProjectionModelCoordinates, ENGRAVING_SOURCE_LIMITS} from './engraving-projection.js';
-import {applyEngravingSystemBreaks,readEngravingSystems} from './engraving-systems.js';
+import {applyEngravingSystemBreaks,readEngravingSystems,verifySingleEngravingSystem} from './engraving-systems.js';
 import {prepareEngravingFragmentLabels,prepareEngravingFragmentBarlines} from './engraving-measure-fragments.js';
 import {createEngravingRenderScheduler,notationAudioAdmission} from './engraving-render-scheduler.js';
 import {getAppI18n} from './app-locale.js';
@@ -134,9 +134,10 @@ export function validateEngravingInput(xml, options = {}, Parser = globalThis.DO
   if(options.compactHeader!==undefined&&typeof options.compactHeader!=='boolean')return invalid('compactHeader');
   if(options.cooperative!==undefined&&typeof options.cooperative!=='boolean')return invalid('options');
   if(options.measuresPerRow!==undefined&&(!Number.isInteger(options.measuresPerRow)||options.measuresPerRow<1||options.measuresPerRow>64))return invalid('options');
+  if(options.singleSystem!==undefined&&typeof options.singleSystem!=='boolean')return invalid('options');
   const identity = validateEngravingNoteMap(document, options.identity);
   if (noteCount > ENGRAVING_LIMITS.notes && !identity.ok) return unsupported('sourceMap');
-  return {ok: true, status: 'validated', document, identity, options: {dark: options.dark === true, responsive: options.responsive !== false, compactHeader:options.compactHeader===true, measuresPerRow:options.measuresPerRow, fromMeasure, toMeasure, partIds: selectedIds, zoom, width: options.width}, metadata: {noteCount, measureCount, partIds, fromMeasure, toMeasure}};
+  return {ok: true, status: 'validated', document, identity, options: {dark: options.dark === true, responsive: options.responsive !== false, compactHeader:options.compactHeader===true, measuresPerRow:options.measuresPerRow, singleSystem:options.singleSystem===true, fromMeasure, toMeasure, partIds: selectedIds, zoom, width: options.width}, metadata: {noteCount, measureCount, partIds, fromMeasure, toMeasure}};
 }
 
 function loadRenderer(document, visualLease) {
@@ -246,13 +247,18 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     reportMapping(bindings.mappingStatus());
   };
   const getWidth = () => Math.max(320, Math.min(4096, Math.round(checked.options.width ?? container.clientWidth ?? 800) || 800));
+  const requireSingleSystem=()=>{
+    if(!checked.options.singleSystem)return;
+    const coordinates=measureCoordinates();
+    if(!coordinates.ok||!verifySingleEngravingSystem(renderer,coordinates.measures,checked.options))throw new Error('The requested horizontal score row could not retain every source measure in one complete music system.');
+  };
   const resizeOwned = () => {
     if (!isCurrent() || !ready) return false;
     const nextWidth = getWidth();
     if (nextWidth === width) return true;
     width = nextWidth;
     mount.style.width = `${width}px`;
-    try { bindings?.dispose();bindings=null;renderer.render();rebind();return true; } catch (error) {
+    try { bindings?.dispose();bindings=null;renderer.render();requireSingleSystem();rebind();return true; } catch (error) {
       state.dispose();
       if (typeof options.onError === 'function') { try { options.onError(result('error', 'resize', i18n, {cause:error})); } catch { /* Consumer callbacks do not own cleanup. */ } }
       return false;
@@ -305,7 +311,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     container.appendChild(mount);
     // Collapsing visible-part rests can erase the continuation measures inside a
     // later source-index window. Keep every source measure available for paging.
-    renderer = new Renderer(mount, {backend: 'svg', autoResize: false, autoGenerateMultipleRestMeasuresFromRestMeasures: false, disableCursor: true, followCursor: false, drawingParameters: 'default', drawTitle: !checked.options.compactHeader, drawSubtitle: !checked.options.compactHeader, drawComposer: !checked.options.compactHeader, drawPartNames: true, drawTimeSignatures: true, drawMeasureNumbers: true, darkMode: checked.options.dark, pageBackgroundColor: 'transparent', defaultColorMusic: checked.options.dark ? '#f3f5ef' : '#17251d', defaultColorLabel: checked.options.dark ? '#f3f5ef' : '#17251d', useGeometricSkyBottomLineCalculation: true, pageFormat: 'Endless', drawFromMeasureNumber: projection ? projection.drawFromIndex + 1 : checked.options.fromMeasure, drawUpToMeasureNumber: projection ? projection.drawToIndex + 1 : checked.options.toMeasure});
+    renderer = new Renderer(mount, {backend: 'svg', autoResize: false, autoGenerateMultipleRestMeasuresFromRestMeasures: false, disableCursor: true, followCursor: false, drawingParameters: 'default', drawTitle: !checked.options.compactHeader, drawSubtitle: !checked.options.compactHeader, drawComposer: !checked.options.compactHeader, drawPartNames: true, drawTimeSignatures: true, drawMeasureNumbers: true, darkMode: checked.options.dark, pageBackgroundColor: 'transparent', defaultColorMusic: checked.options.dark ? '#f3f5ef' : '#17251d', defaultColorLabel: checked.options.dark ? '#f3f5ef' : '#17251d', useGeometricSkyBottomLineCalculation: true, pageFormat: 'Endless', renderSingleHorizontalStaffline:checked.options.singleSystem, drawFromMeasureNumber: projection ? projection.drawFromIndex + 1 : checked.options.fromMeasure, drawUpToMeasureNumber: projection ? projection.drawToIndex + 1 : checked.options.toMeasure});
     if (renderer.Version !== `${ENGRAVING_VERSION}-release`) { state.dispose(); return result('unavailable', 'version', i18n, {}, {version:ENGRAVING_VERSION}); }
     renderer.setLogLevel?.('error');
     // Passing a parsed Document avoids OSMD.load(string)'s automatic URL/MXL detection entirely.
@@ -340,7 +346,15 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     rules.MaxMeasureToDrawIndex = projection ? projection.drawToIndex : checked.options.toMeasure - 1;
     rules.MinMeasureToDrawNumber = 0;
     rules.MaxMeasureToDrawNumber = 0;
-    if(checked.options.measuresPerRow!==undefined){
+    if(checked.options.singleSystem){
+      // This renderer is one admitted native temporal range. Retain a readable
+      // horizontal SVG, even when it overflows; never shrink or cut its notes.
+      rules.RenderSingleHorizontalStaffline=true;
+      rules.NewSystemAtXMLNewSystemAttribute=false;
+      rules.NewSystemAtXMLNewPageAttribute=false;
+      rules.NewPageAtXMLNewPageAttribute=false;
+      rules.RenderXMeasuresPerLineAkaSystem=0;
+    }else if(checked.options.measuresPerRow!==undefined){
       const coordinates=measureCoordinates();
       if(!coordinates.ok||!applyEngravingSystemBreaks(renderer,coordinates.measures,checked.options)){state.dispose();return result('unsupported','projection',i18n);}
     }
@@ -353,6 +367,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     }
     if (scheduler && (!await scheduler.yield() || !isCurrent())) return result('cancelled', 'cancelled', i18n);
     renderer.render();
+    requireSingleSystem();
     if (!isCurrent()) return result('cancelled', 'cancelled', i18n);
     if (scheduler && (!await scheduler.yield() || !isCurrent())) return result('cancelled', 'cancelled', i18n);
     if (!mount.querySelector('svg')) { state.dispose(); return result('error', 'noStaff', i18n); }

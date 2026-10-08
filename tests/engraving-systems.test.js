@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {applyEngravingSystemBreaks,readEngravingSystems} from '../web/engraving-systems.js';
+import {applyEngravingSystemBreaks,readEngravingSystems,verifySingleEngravingSystem} from '../web/engraving-systems.js';
 
 function fixture({rows=[[0,1],[2,3]],staves=2,indices=[0,1,2,3],matrix={a:1,b:0,c:0,d:1,e:30,f:50}}={}){
   const source=indices.map((_,index)=>({MeasureNumber:index?7:0}));
@@ -32,6 +32,24 @@ test('one multi-instrument system is not mistaken for multiple sequential rows',
   assert.equal(layout.systems.length,1);
   assert.equal(layout.systems[0].staffCount,5);
   assert.deepEqual(layout.systems[0].sourceMeasureIndices,[0,1,2,3]);
+});
+
+test('single-system admission rejects multiple systems and missing native fragments',()=>{
+  const wrapped=fixture();
+  assert.equal(verifySingleEngravingSystem(wrapped.renderer,wrapped.coordinates),false);
+  assert.deepEqual(readEngravingSystems(wrapped.renderer,wrapped.mount,wrapped.coordinates,{singleSystem:true}),{status:'unavailable',systems:[]});
+  const whole=fixture({rows:[[0,1,2,3]],indices:[0,0,1,1]});
+  assert.equal(verifySingleEngravingSystem(whole.renderer,whole.coordinates),true);
+  assert.equal(readEngravingSystems(whole.renderer,whole.mount,whole.coordinates,{singleSystem:true}).systems.length,1);
+  whole.systems[0].GraphicalMeasures.pop();
+  assert.equal(verifySingleEngravingSystem(whole.renderer,whole.coordinates),false,'A lost source fragment cannot masquerade as a complete horizontal row');
+});
+
+test('single-system source ranges require all and only the selected model measures',()=>{
+  const value=fixture({rows:[[1,2]],indices:[8,9,10,11]});
+  assert.equal(verifySingleEngravingSystem(value.renderer,value.coordinates,{fromMeasure:10,toMeasure:11}),true);
+  assert.equal(verifySingleEngravingSystem(value.renderer,value.coordinates,{fromMeasure:9,toMeasure:11}),false);
+  assert.equal(verifySingleEngravingSystem(value.renderer,value.coordinates,{fromMeasure:10,toMeasure:10}),false);
 });
 
 test('SVG screen matrix handles zoom, fit, translation and current scroll exactly once',()=>{
