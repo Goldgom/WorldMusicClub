@@ -32,7 +32,12 @@ export function setupCompleteScoreReader({document=globalThis.document,getScore,
  for(const value of ['source','4/4','3/4','2/4','6/8']){const option=el('option','',meter);option.value=value;option.textContent=value;}
  meter.value='source';
  const sourceNotice=el('p','complete-score-reader-source-notice',dialog),status=el('p','complete-score-reader-status',dialog);status.setAttribute('role','status');status.setAttribute('aria-live','polite');
- const scroller=el('div','complete-score-reader-scroll',dialog);scroller.tabIndex=0;const sections=el('div','complete-score-reader-sections',scroller),sentinel=el('div','complete-score-reader-sentinel',scroller),more=el('button','complete-score-reader-more',sentinel);more.type='button';
+ // Only the small Back/title header stays outside the scroll surface. Long
+ // titles, localization, controls and source warnings must remain reachable on
+ // short landscape/mobile viewports instead of consuming the staff's height.
+ const scroller=el('div','complete-score-reader-scroll',dialog);scroller.tabIndex=0;
+ scroller.append(title,intro,controls,sourceNotice,status);
+ const sections=el('div','complete-score-reader-sections',scroller),sentinel=el('div','complete-score-reader-sentinel',scroller),more=el('button','complete-score-reader-more',sentinel);more.type='button';
  let session=null,disposed=false,generation=0,observer=null,returnFocus=null,restoredInert=[],scrollLock=null,adapter=null,localeUnsubscribe=null;
  const current=s=>session===s&&!s.controller.signal.aborted&&getScore()===s.ownerScore&&getCleanSong()===s.ownerSong;
  const state=()=>{

@@ -38,7 +38,7 @@
 .complete-score-reader-controls[hidden], .complete-score-reader label[hidden] { display: none; }
 .complete-score-reader-controls label { display: flex; gap: .5rem; align-items: center; font-size: .85rem; min-width: 0; }
 .complete-score-reader-controls select { min-width: 0; max-width: 100%; }
-.complete-score-reader-scroll { min-height: 5rem; min-width: 0; flex: 1 1 auto; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.complete-score-reader-scroll { min-height: 0; min-width: 0; flex: 1 1 auto; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .complete-score-reader-section { margin: 0 0 1rem; padding: .75rem; border: 1px solid var(--border, #aab5ae); border-radius: .5rem; }
 .complete-score-reader-section[data-status="unavailable"] { border-style: dashed; }
 .complete-score-reader-section-notice { font-size: .85rem; line-height: 1.4; }
@@ -60,3 +60,10 @@
 
 .complete-score-reader button { border: 1px solid var(--border, #aab5ae); border-radius: .4rem; padding: .4rem .8rem; background: var(--paper, #fffefb); color: var(--ink, #17251d); }
 .complete-score-reader select { width: auto; margin-top: 0; }
+
+/* Prose and controls scroll with the score; only the compact Back header is fixed. */
+.complete-score-reader-scroll > .complete-score-reader-song,
+.complete-score-reader-scroll > .complete-score-reader-intro,
+.complete-score-reader-scroll > .complete-score-reader-controls,
+.complete-score-reader-scroll > .complete-score-reader-source-notice,
+.complete-score-reader-scroll > .complete-score-reader-status { margin-bottom: .55rem; }

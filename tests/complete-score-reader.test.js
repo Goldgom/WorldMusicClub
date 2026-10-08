@@ -138,3 +138,14 @@ test('a throwing optional renderer still retains native event identities without
 test('close/reopen starts at the source beginning and repeated open preserves the existing owner',async()=>{
  const score=structuredClone(fixture);score.measures=Array.from({length:17},(_,i)=>({...score.measures[0],number:i+1}));const env=environment({score});try{await env.reader.open();await env.reader.loadMore();assert.equal(env.renders.at(-1).options.fromMeasure,9);const calls=env.calls.length,renders=env.renders.length;await env.reader.open();assert.equal(env.calls.length,calls);assert.equal(env.renders.length,renders);env.reader.close();await env.reader.open();assert.equal(env.renders.at(-1).options.fromMeasure,1);assert.equal(env.reader.state().loadedSections,1);assert.equal(env.document.querySelectorAll('.complete-score-reader-section').length,1);assert.equal(env.reader.state().endReached,false);assert.deepEqual(env.visibility,[true,false,true]);}finally{env.close();}
 });
+
+
+test('compact modal keeps all variable-height content in the scroll surface and Back outside it',async()=>{
+ const {song}=nativeFixture(),env=environment({score:song.notation,song,fetch:async()=>({ok:false,json:async()=>({error:'Source detail '.repeat(100)})})});try{
+  await env.reader.open();const scroller=env.document.querySelector('.complete-score-reader-scroll'),header=env.document.querySelector('.complete-score-reader-header');
+  assert.deepEqual([...env.dialog.children],[header,scroller],'Variable-height title, prose and controls cannot consume fixed modal height');
+  for(const className of ['song','intro','controls','source-notice','status','sections','sentinel'])assert.equal(env.document.querySelector(`.complete-score-reader-${className}`).parentNode,scroller,className);
+  assert.equal(env.document.querySelector('.complete-score-reader-back').parentNode,header,'Back remains reachable while the content is scrolled');
+  const css=readFileSync(new URL('../web/complete-score-reader.css',import.meta.url),'utf8');assert.match(css,/\.complete-score-reader-scroll[^}]*min-height: 0[^}]*flex: 1 1 auto[^}]*overflow: auto/s);assert.doesNotMatch(css,/\.complete-score-reader-scroll[^}]*min-height: (?:5rem|[1-9]\d*px)/s);
+ }finally{env.close();}
+});
