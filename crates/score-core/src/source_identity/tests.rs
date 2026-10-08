@@ -73,6 +73,7 @@ fn authored_38_case_contract_matches_49_attack_snapshots() {
         let source = basic_keys::convert_midi(&bytes, "Original authored fixture").unwrap();
         let before = basic_keys::encode_json(&source).unwrap();
         let details = describe_basic(&source).unwrap();
+        assert_eligibility_matches(&source, &details);
         let expected = case["attacks"].as_array().unwrap();
         assert_eq!(details.attacks.len(), expected.len(), "{}", case["id"]);
         for (attack, want) in details.attacks.iter().zip(expected) {
@@ -419,4 +420,267 @@ fn repeated_metadata_ports_use_interned_names_including_alternating_ports() {
             .count(),
         3
     );
+}
+
+fn assert_eligibility_matches(
+    source: &basic_keys::CompleteBasicKeys,
+    disclosure: &SourceIdentityDisclosure,
+) -> SourcePracticeEligibility {
+    let result = analyze_basic_practice(source).unwrap();
+    assert_eq!(result.revision(), 1);
+    assert_eq!(result.analysis_policy_id(), disclosure.analysis_policy_id);
+    assert_eq!(
+        result.identity_table_revision(),
+        disclosure.identity_table_revision
+    );
+    assert_eq!(result.product_policy_id(), disclosure.product_policy_id);
+    assert_eq!(result.eligibility_policy_id(), PRACTICE_ELIGIBILITY_POLICY_ID);
+    assert_eq!(result.source_profile(), disclosure.source_profile);
+    assert_eq!(result.source_binding(), &disclosure.source_binding);
+    assert_eq!(
+        result.complete_attack_count(),
+        source.performance.notes.len()
+    );
+    assert_eq!(result.complete_attack_count(), disclosure.attacks.len());
+    let expected_ids: Vec<_> = disclosure
+        .attacks
+        .iter()
+        .filter(|attack| attack.classification == Classification::KnownUnsupported)
+        .map(|attack| attack.note_id.clone())
+        .collect();
+    assert_eq!(result.known_unsupported_source_attack_ids(), expected_ids);
+    assert_eq!(result.parts().len(), disclosure.parts.len());
+    for (actual, expected) in result.parts().iter().zip(&disclosure.parts) {
+        assert_eq!(actual.part_id(), expected.part_id);
+        assert_eq!(actual.attack_count(), expected.attack_count);
+        assert_eq!(actual.supported_count(), expected.supported_count);
+        assert_eq!(
+            actual.known_unsupported_count(),
+            expected.known_unsupported_count
+        );
+        assert_eq!(actual.unresolved_count(), expected.unresolved_count);
+    }
+    result
+}
+
+// Newly authored mechanical MIDI event sequences below are original fixtures
+// offered under CC0-1.0, not songs or private MIDI-derived transcriptions.
+#[test]
+fn eligibility_excludes_only_known_unsupported_attacks_in_a_mixed_part() {
+    let source = convert(&[vec![
+        (0, gm(1)),
+        (0, vec![192, 40]),
+        (1, vec![144, 60, 64]),
+        (1, vec![128, 60, 0]),
+        (0, vec![192, 0]),
+        (1, vec![144, 62, 64]),
+        (1, vec![128, 62, 0]),
+        (0, vec![192, 1]),
+        (1, vec![144, 64, 64]),
+        (1, vec![128, 64, 0]),
+    ]]);
+    let wire = basic_keys::encode_json(&source).unwrap();
+    let rendition = rendition_snapshot(&source);
+    let disclosure = describe_basic(&source).unwrap();
+    let result = assert_eligibility_matches(&source, &disclosure);
+    assert_eq!(disclosure.parts[0].classification, Classification::Unresolved);
+    assert_eq!(result.parts().len(), 1);
+    let part = &result.parts()[0];
+    assert_eq!(part.attack_count(), 3);
+    assert_eq!(part.supported_count(), 1);
+    assert_eq!(part.known_unsupported_count(), 1);
+    assert_eq!(part.unresolved_count(), 1);
+    assert_eq!(
+        result.known_unsupported_source_attack_ids(),
+        &[source.performance.notes[0].note_id.clone()]
+    );
+    assert_eq!(basic_keys::encode_json(&source).unwrap(), wire);
+    assert_eq!(rendition_snapshot(&source), rendition);
+}
+
+#[test]
+fn eligibility_keeps_zero_length_and_held_attack_identity_across_program_changes() {
+    let source = convert(&[vec![
+        (0, gm(1)),
+        (0, vec![192, 40]),
+        (1, vec![144, 60, 64]),
+        (0, vec![128, 60, 0]),
+        (1, vec![144, 62, 64]),
+        (1, vec![192, 0]),
+        (1, vec![144, 64, 64]),
+        (1, vec![128, 62, 0]),
+        (0, vec![128, 64, 0]),
+    ]]);
+    assert_eq!(source.coverage.zero_length_attacks, 1);
+    assert_eq!(source.notation.parts[0].notes.len(), 2);
+    let result = assert_eligibility_matches(&source, &describe_basic(&source).unwrap());
+    assert_eq!(result.complete_attack_count(), 3);
+    assert_eq!(
+        result.known_unsupported_source_attack_ids(),
+        &[
+            source.performance.notes[0].note_id.clone(),
+            source.performance.notes[1].note_id.clone(),
+        ]
+    );
+    // The zero-length attack has no notation projection, but remains excluded.
+    assert!(!source.notation.parts[0]
+        .notes
+        .iter()
+        .any(|note| note.id == result.known_unsupported_source_attack_ids()[0]));
+}
+
+#[test]
+fn eligibility_preserves_raw_compatibility_for_no_gm_unreviewed_and_routing() {
+    for name in [
+        "01_no_gm_program",
+        "14_unknown_variant",
+        "25_port_zero_out_of_scope",
+        "26_device_name_out_of_scope",
+        "28_foreign_program_attack_tie",
+        "29_foreign_reset_attack_tie",
+    ] {
+        let source = fixture(name);
+        let before = basic_keys::encode_json(&source).unwrap();
+        let result = assert_eligibility_matches(&source, &describe_basic(&source).unwrap());
+        assert!(
+            result.known_unsupported_source_attack_ids().is_empty(),
+            "{name}"
+        );
+        assert!(result.complete_attack_count() > 0);
+        assert_eq!(basic_keys::encode_json(&source).unwrap(), before);
+    }
+    for program in [1, 5, 8, 26, 31, 127] {
+        let source = convert(&[vec![
+            (0, gm(1)),
+            (1, vec![192, program]),
+            (1, vec![144, 60, 64]),
+        ]]);
+        let result = analyze_basic_practice(&source).unwrap();
+        assert!(result.known_unsupported_source_attack_ids().is_empty());
+        assert_eq!(result.parts()[0].unresolved_count(), 1);
+    }
+}
+
+#[test]
+fn eligibility_failure_is_unavailable_and_never_partial_or_empty_success() {
+    let source = fixture("31_program_changes_per_attack");
+    let mut invalid = source.clone();
+    invalid.performance.notes[1].note_id.push('x');
+    assert_eq!(
+        analyze_basic_practice(&invalid).unwrap_err().code(),
+        "invalid_basic_source"
+    );
+    invalid = source.clone();
+    invalid.performance.notes.pop();
+    assert_eq!(
+        analyze_basic_practice(&invalid).unwrap_err().code(),
+        "invalid_basic_source"
+    );
+    invalid = source.clone();
+    invalid.performance.profile = "unrecognized".into();
+    assert_eq!(
+        analyze_basic_practice(&invalid).unwrap_err().code(),
+        "non_basic_profile"
+    );
+    let result = analyze_basic_practice(&source).unwrap();
+    assert_eq!(result.complete_attack_count(), 2);
+    assert_eq!(result.known_unsupported_source_attack_ids().len(), 1);
+    let other = analyze_basic_practice(&fixture("07_gm1_violin")).unwrap();
+    assert_ne!(result.source_binding(), other.source_binding());
+}
+
+#[test]
+fn eligibility_is_independent_of_both_optional_disclosure_limits() {
+    // A metadata-only route's repeated copied name can exhaust either optional
+    // evidence budget without making complete source eligibility unavailable.
+    for (name_bytes, ports, message) in [
+        (128 * 1024, 90, "Complete informational output"),
+        (512 * 1024, 70, "Route evidence"),
+    ] {
+        let mut declaration = vec![255, 9];
+        declaration.extend(vlq(name_bytes));
+        declaration.extend(vec![b'A'; name_bytes as usize]);
+        let mut metadata = vec![(0, declaration)];
+        for port in 0..ports {
+            metadata.push((0, vec![255, 33, 1, port]));
+        }
+        let source = convert(&[
+            vec![(0, gm(1)), (1, vec![192, 40]), (1, vec![144, 60, 64])],
+            metadata,
+        ]);
+        let before = basic_keys::encode_json(&source).unwrap();
+        let failure = describe_basic(&source).unwrap_err();
+        assert_eq!(failure.code(), "analysis_limit");
+        assert!(failure.message().starts_with(message));
+        let result = analyze_basic_practice(&source).unwrap();
+        assert_eq!(result.complete_attack_count(), 1);
+        assert!(result.known_unsupported_source_attack_ids().is_empty());
+        assert_eq!(result.parts()[0].unresolved_count(), 1);
+        assert_eq!(
+            result.source_binding().digest,
+            format!("{:x}", Sha256::digest(&before))
+        );
+        assert_eq!(basic_keys::encode_json(&source).unwrap(), before);
+    }
+    let source = fixture("07_gm1_violin");
+    assert_eq!(
+        bounded(describe_basic(&source).unwrap(), 1)
+            .unwrap_err()
+            .code(),
+        "analysis_limit"
+    );
+    assert_eq!(
+        analyze_basic_practice(&source)
+            .unwrap()
+            .known_unsupported_source_attack_ids()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn eligibility_is_complete_at_the_admitted_event_bound() {
+    // Original synthetic CC0 event sequence. Unreleased attacks are still
+    // source attacks; avoid notation projection to exercise the full event cap.
+    let count = crate::midi_events::MAX_EVENTS - 3; // GM On, program, EndOfTrack.
+    let mut events = Vec::with_capacity(count + 2);
+    events.push((0, gm(1)));
+    events.push((0, vec![192, 40]));
+    for _ in 0..count {
+        events.push((0, vec![144, 60, 64]));
+    }
+    let source = convert(&[events]);
+    assert_eq!(source.coverage.source_events, crate::midi_events::MAX_EVENTS);
+    let result = analyze_basic_practice(&source).unwrap();
+    assert_eq!(result.complete_attack_count(), count);
+    assert_eq!(result.known_unsupported_source_attack_ids().len(), count);
+    assert_eq!(result.parts().len(), 1);
+    assert_eq!(result.parts()[0].known_unsupported_count(), count);
+    // Exactly one short generated ID per excluded source attack, without any
+    // size cap that would silently drop IDs or reuse the disclosure envelope.
+    for (actual, expected) in result
+        .known_unsupported_source_attack_ids()
+        .iter()
+        .zip(&source.performance.notes)
+    {
+        assert_eq!(actual, &expected.note_id);
+        assert!(actual.len() <= "midi-t128-e250000".len());
+    }
+    assert_eq!(result.parts()[0].attack_count(), count);
+}
+
+#[test]
+fn eligibility_preserves_complete_counts_for_parts_without_attacks() {
+    let source = convert(&[vec![
+        (0, gm(1)),
+        (0, vec![192, 0]),
+        (0, vec![193, 40]),
+        (1, vec![145, 60, 64]),
+    ]]);
+    let result = assert_eligibility_matches(&source, &describe_basic(&source).unwrap());
+    assert_eq!(result.parts().len(), 2);
+    assert_eq!(result.parts()[0].attack_count(), 0);
+    assert_eq!(result.parts()[0].known_unsupported_count(), 0);
+    assert_eq!(result.parts()[1].attack_count(), 1);
+    assert_eq!(result.parts()[1].known_unsupported_count(), 1);
 }

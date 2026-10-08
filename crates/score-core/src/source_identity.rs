@@ -1,7 +1,8 @@
-//! Optional, read-only GM source identity. This module grants no practice,
-//! adaptation, playback, ownership or scoring capability. Unresolved evidence
-//! leaves existing raw MIDI-key practice unchanged. Product policy is separate
-//! from the reviewed standard identity table, and is deliberately provisional.
+//! Source-bound GM identity analysis. The optional disclosure is informational;
+//! the separate typed practice eligibility result excludes only unequivocally
+//! known-unsupported original attacks. Neither result grants adaptation,
+//! playback, ownership or scoring capability. Unresolved evidence leaves raw
+//! MIDI-key practice compatible. Product policy remains deliberately provisional.
 use crate::{basic_keys, clean_song::Coordinate, practice_source, source_instrument, Beat};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -11,6 +12,10 @@ pub const ANALYSIS_POLICY_ID: &str = "wmc-basic-explicit-gm-identity-v1";
 pub const IDENTITY_TABLE_REVISION: &str = "wmc-reviewed-gm-subset-v1";
 pub const PRODUCT_POLICY_ID: &str = "wmc-provisional-piano-guitar-v1";
 pub const MAX_DISCLOSURE_BYTES: usize = 32 * 1024 * 1024;
+
+mod eligibility;
+pub use eligibility::{PartPracticeEligibility, SourcePracticeEligibility};
+pub const PRACTICE_ELIGIBILITY_POLICY_ID: &str = "wmc-basic-known-unsupported-human-exclusion-v1";
 
 /// Informational, source-bound output; never an accepted input or capability.
 ///
@@ -219,11 +224,17 @@ impl Action {
     }
 }
 struct Diagnostics {
+    detailed: bool,
     values: Vec<Diagnostic>,
     index: BTreeMap<(Reason, Option<Coordinate>), usize>,
 }
 impl Diagnostics {
     fn add(&mut self, code: Reason, coordinate: Option<Coordinate>) -> usize {
+        // The shared state machine needs taint presence, not diagnostic history.
+        // Compact eligibility retains no history or metadata-only coordinates.
+        if !self.detailed {
+            return 0;
+        }
         let key = (code, coordinate);
         if let Some(index) = self.index.get(&key) {
             return *index;
@@ -241,6 +252,32 @@ impl Diagnostics {
 pub fn describe_basic(
     source: &basic_keys::CompleteBasicKeys,
 ) -> Result<SourceIdentityDisclosure, IdentityError> {
+    let binding = validated_binding(source)?;
+    let analysis = analyze(source, binding, true)?;
+    bounded(
+        analysis.disclosure.expect("requested detailed analysis"),
+        MAX_DISCLOSURE_BYTES,
+    )
+}
+
+/// Analyze the original complete Basic source for Human-practice exclusions.
+/// Only unequivocal `KnownUnsupported` attacks are excluded. Supported and
+/// unresolved attacks receive no exclusion; this is not an adaptation decision.
+///
+/// Always retain this original-source result across later note projections.
+/// An error means eligibility is unavailable, never an empty exclusion list.
+/// Unlike the optional disclosure, this result stores no route names, labels,
+/// attack snapshots or diagnostic history and has no disclosure byte budget.
+pub fn analyze_basic_practice(
+    source: &basic_keys::CompleteBasicKeys,
+) -> Result<SourcePracticeEligibility, IdentityError> {
+    let binding = validated_binding(source)?;
+    Ok(analyze(source, binding, false)?.eligibility)
+}
+
+fn validated_binding(
+    source: &basic_keys::CompleteBasicKeys,
+) -> Result<practice_source::PracticeSourceBinding, IdentityError> {
     if source.performance.profile != basic_keys::PROFILE {
         return Err(error(
             "non_basic_profile",
@@ -248,12 +285,11 @@ pub fn describe_basic(
         ));
     }
     let wire = basic_keys::encode_json(source).map_err(|e| error("invalid_basic_source", e))?;
-    let binding = practice_source::PracticeSourceBinding {
+    Ok(practice_source::PracticeSourceBinding {
         domain: "wmc-basic-complete-wire-json".into(),
         serialization_revision: 1,
         digest: format!("{:x}", Sha256::digest(&wire)),
-    };
-    bounded(build(source, binding)?, MAX_DISCLOSURE_BYTES)
+    })
 }
 fn bounded(
     value: SourceIdentityDisclosure,
@@ -276,12 +312,19 @@ fn bounded(
     Ok(value)
 }
 
-fn build(
+struct Analysis {
+    eligibility: SourcePracticeEligibility,
+    disclosure: Option<SourceIdentityDisclosure>,
+}
+
+fn analyze(
     source: &basic_keys::CompleteBasicKeys,
     source_binding: practice_source::PracticeSourceBinding,
-) -> Result<SourceIdentityDisclosure, IdentityError> {
+    detailed: bool,
+) -> Result<Analysis, IdentityError> {
     let perf = &source.performance;
     let mut diagnostics = Diagnostics {
+        detailed,
         values: vec![],
         index: BTreeMap::new(),
     };
@@ -303,37 +346,10 @@ fn build(
             "Attack/event cardinality invariant failed",
         ));
     }
-    let mut routes: Vec<_> = perf
-        .routes
-        .iter()
-        .enumerate()
-        .map(|(i, r)| RouteEvidence {
-            source_route_index: Some(i),
-            port: r.port,
-            device_name_bytes: r.device_name_bytes.clone(),
-            declaration_coordinates: vec![],
-            admission: "sole_implicit_route",
-        })
-        .collect();
-    // Intern names only on actual name declarations. Port changes compare
-    // compact IDs, never a potentially megabyte-long current device name.
-    let mut names = Vec::<Vec<u8>>::new();
-    let mut name_index = BTreeMap::<Vec<u8>, usize>::new();
-    let mut route_index = BTreeMap::new();
-    for (i, route) in perf.routes.iter().enumerate() {
-        let name = route
-            .device_name_bytes
-            .as_deref()
-            .map(|bytes| intern_name(bytes, &mut names, &mut name_index));
-        route_index.insert((route.port, name), i);
-    }
-    // Bound copied route text before building extra metadata-only route states.
-    // A large device name followed by many port changes must not amplify memory
-    // without limit before the final serialized-output budget is checked.
-    let mut route_bytes = routes
-        .iter()
-        .map(|r| r.device_name_bytes.as_ref().map_or(0, Vec::len))
-        .sum::<usize>();
+    let mut eligibility = eligibility::Builder::new(source_binding.clone(), &perf.parts);
+    // Route text is purely optional disclosure evidence. Compact analysis only
+    // remembers whether any routing declaration makes identity unresolved.
+    let mut route_evidence = detailed.then(|| RouteCollector::new(&perf.routes));
     let mut first_route = None;
     let mut events = vec![];
     for track in &perf.tracks {
@@ -346,45 +362,13 @@ fn build(
                 event: index as u32,
             };
             let bytes = record.1.as_slice();
-            // Retain even metadata-only routes; explicit port zero is not implicit.
-            let routing = match bytes {
-                [255, 0x21, port] => {
-                    route.0 = Some(*port);
-                    true
-                }
-                [255, 0x09, name @ ..] => {
-                    route.1 = Some(intern_name(name, &mut names, &mut name_index));
-                    true
-                }
-                _ => false,
-            };
-            if routing {
+            // Retain even metadata-only routing as a global admission boundary;
+            // explicit port zero is not implicit, even after the last attack.
+            if matches!(bytes, [255, 0x21, _] | [255, 0x09, ..]) {
                 first_route.get_or_insert(at);
-                let ri = if let Some(ri) = route_index.get(&route) {
-                    *ri
-                } else {
-                    let added_bytes = route.1.map_or(0, |id| names[id].len());
-                    route_bytes = route_bytes
-                        .checked_add(added_bytes)
-                        .filter(|n| *n <= MAX_DISCLOSURE_BYTES)
-                        .ok_or_else(|| {
-                            error(
-                                "analysis_limit",
-                                "Route evidence exceeds its complete-output budget",
-                            )
-                        })?;
-                    let ri = routes.len();
-                    routes.push(RouteEvidence {
-                        source_route_index: None,
-                        port: route.0,
-                        device_name_bytes: route.1.map(|id| names[id].clone()),
-                        declaration_coordinates: vec![],
-                        admission: "explicit_routing_out_of_scope",
-                    });
-                    route_index.insert(route, ri);
-                    ri
-                };
-                routes[ri].declaration_coordinates.push(at);
+                if let Some(evidence) = &mut route_evidence {
+                    evidence.record(bytes, at, &mut route)?;
+                }
             }
             let action = match bytes {
                 [0xf0, 0x7e, 0x7f, 9, mode @ 1..=3, 0xf7] => Some(Action::Mode(*mode)),
@@ -422,9 +406,11 @@ fn build(
     }
     let route_reason =
         first_route.map(|at| diagnostics.add(Reason::ExplicitRoutingOutOfScope, Some(at)));
-    if route_reason.is_some() {
-        for route in &mut routes {
-            route.admission = "explicit_routing_out_of_scope";
+    if let Some(evidence) = &mut route_evidence {
+        if route_reason.is_some() {
+            for route in &mut evidence.routes {
+                route.admission = "explicit_routing_out_of_scope";
+            }
         }
     }
     events.sort_by_key(|e| (e.tick, e.at));
@@ -434,15 +420,19 @@ fn build(
     let mut off = false;
     // At most one sticky diagnostic per reason, not one per opaque event per attack.
     let mut global_taints = BTreeMap::<Reason, usize>::new();
-    let mut epochs = vec![Epoch {
-        id: 0,
-        namespace,
-        boundary_coordinate: None,
-        tick: 0,
-        boundary_kind: "source_start",
-        taint_reason_indices: vec![],
-    }];
-    let mut attacks = Vec::with_capacity(perf.notes.len());
+    let mut epochs = if detailed {
+        vec![Epoch {
+            id: 0,
+            namespace,
+            boundary_coordinate: None,
+            tick: 0,
+            boundary_kind: "source_start",
+            taint_reason_indices: vec![],
+        }]
+    } else {
+        vec![]
+    };
+    let mut attacks = Vec::with_capacity(if detailed { perf.notes.len() } else { 0 });
     let mut start = 0;
     while start < events.len() {
         let mut end = start + 1;
@@ -466,14 +456,16 @@ fn build(
                         ch.lsb = None;
                         ch.committed = None;
                     }
-                    epochs.push(Epoch {
-                        id: epochs.len(),
-                        namespace,
-                        boundary_coordinate: boundary,
-                        tick: event.tick,
-                        boundary_kind: if off { "gm_off" } else { "gm_on" },
-                        taint_reason_indices: global_taints.values().copied().collect(),
-                    });
+                    if detailed {
+                        epochs.push(Epoch {
+                            id: epochs.len(),
+                            namespace,
+                            boundary_coordinate: boundary,
+                            tick: event.tick,
+                            boundary_kind: if off { "gm_off" } else { "gm_on" },
+                            taint_reason_indices: global_taints.values().copied().collect(),
+                        });
+                    }
                 }
                 Action::Opaque(reason) => {
                     global_taints
@@ -502,10 +494,10 @@ fn build(
                 }
                 Action::Attack(ni, channel) => {
                     let note = &perf.notes[ni];
-                    let part =
-                        &perf.parts[*part_index.get(note.part_id.as_str()).ok_or_else(|| {
-                            error("invalid_basic_source", "Attack has no validated part")
-                        })?];
+                    let pi = *part_index.get(note.part_id.as_str()).ok_or_else(|| {
+                        error("invalid_basic_source", "Attack has no validated part")
+                    })?;
+                    let part = &perf.parts[pi];
                     let ch = &channels[usize::from(channel)];
                     let mut reasons: Vec<_> = global_taints.values().copied().collect();
                     reasons.extend(route_reason);
@@ -529,61 +521,165 @@ fn build(
                     } else {
                         None
                     };
-                    // Track sorting is presentation order, never evidence of a
-                    // winning selection at a cross-track tie. Do not expose an
-                    // arbitrary sorted candidate as the committed snapshot.
-                    let ordering_uncertain = ch.tie.is_some()
-                        || global_taints.contains_key(&Reason::CrossTrackOrderUncertain);
-                    let committed_selection = if ordering_uncertain {
-                        None
-                    } else {
-                        ch.committed.clone()
-                    };
-                    attacks.push(AttackIdentity {
-                        note_id: note.note_id.clone(),
-                        part_id: note.part_id.clone(),
-                        attack_coordinate: note.attack,
-                        tick: note.start.tick,
-                        beat: note.start.beat,
-                        route_index: part.route,
-                        channel,
-                        epoch_index: epochs.len() - 1,
-                        classification: identity.map_or(Classification::Unresolved, |i| {
-                            product_classification(i.key)
-                        }),
-                        identity_key: identity.map(|i| i.key),
-                        label: identity.map(|i| i.label),
-                        committed_selection,
-                        reason_indices: reasons,
+                    let classification = identity.map_or(Classification::Unresolved, |i| {
+                        product_classification(i.key)
                     });
+                    eligibility.record(note, pi, classification);
+                    if detailed {
+                        // Track sorting is presentation order, never evidence of a
+                        // winning selection at a cross-track tie. Do not expose an
+                        // arbitrary sorted candidate as the committed snapshot.
+                        let ordering_uncertain = ch.tie.is_some()
+                            || global_taints.contains_key(&Reason::CrossTrackOrderUncertain);
+                        let committed_selection = if ordering_uncertain {
+                            None
+                        } else {
+                            ch.committed.clone()
+                        };
+                        attacks.push(AttackIdentity {
+                            note_id: note.note_id.clone(),
+                            part_id: note.part_id.clone(),
+                            attack_coordinate: note.attack,
+                            tick: note.start.tick,
+                            beat: note.start.beat,
+                            route_index: part.route,
+                            channel,
+                            epoch_index: epochs.len() - 1,
+                            classification,
+                            identity_key: identity.map(|i| i.key),
+                            label: identity.map(|i| i.label),
+                            committed_selection,
+                            reason_indices: reasons,
+                        });
+                    }
                 }
             }
         }
         start = end;
     }
-    if attacks.len() != perf.notes.len() {
+    let eligibility = eligibility.finish(perf.notes.len())?;
+    if detailed && attacks.len() != perf.notes.len() {
         return Err(error(
             "invalid_basic_source",
             "Disclosure must snapshot every source attack exactly once",
         ));
     }
-    let parts = summarize(&perf.parts, &attacks);
-    Ok(SourceIdentityDisclosure {
-        revision: 1,
-        analysis_policy_id: ANALYSIS_POLICY_ID,
-        identity_table_revision: IDENTITY_TABLE_REVISION,
-        product_policy_id: PRODUCT_POLICY_ID,
-        source_profile: basic_keys::PROFILE,
-        source_binding,
-        original_bytes_verification:
-            source_instrument::OriginalBytesVerification::DeclaredProvenanceOnly,
-        original_midi_sha256: source.source.sha256.clone(),
-        routes,
-        epochs,
-        attacks,
-        parts,
-        diagnostics: diagnostics.values,
+    let disclosure = if let Some(evidence) = route_evidence {
+        let parts = summarize(&perf.parts, &attacks);
+        Some(SourceIdentityDisclosure {
+            revision: 1,
+            analysis_policy_id: ANALYSIS_POLICY_ID,
+            identity_table_revision: IDENTITY_TABLE_REVISION,
+            product_policy_id: PRODUCT_POLICY_ID,
+            source_profile: basic_keys::PROFILE,
+            source_binding,
+            original_bytes_verification:
+                source_instrument::OriginalBytesVerification::DeclaredProvenanceOnly,
+            original_midi_sha256: source.source.sha256.clone(),
+            routes: evidence.routes,
+            epochs,
+            attacks,
+            parts,
+            diagnostics: diagnostics.values,
+        })
+    } else {
+        None
+    };
+    Ok(Analysis {
+        eligibility,
+        disclosure,
     })
+}
+
+/// Optional route evidence shares the routing admission decision with compact
+/// analysis, but its copied names and disclosure-only budget never gate it.
+struct RouteCollector {
+    routes: Vec<RouteEvidence>,
+    names: Vec<Vec<u8>>,
+    name_index: BTreeMap<Vec<u8>, usize>,
+    route_index: BTreeMap<(Option<u8>, Option<usize>), usize>,
+    route_bytes: usize,
+}
+impl RouteCollector {
+    fn new(source_routes: &[basic_keys::Route]) -> Self {
+        let routes: Vec<_> = source_routes
+            .iter()
+            .enumerate()
+            .map(|(i, r)| RouteEvidence {
+                source_route_index: Some(i),
+                port: r.port,
+                device_name_bytes: r.device_name_bytes.clone(),
+                declaration_coordinates: vec![],
+                admission: "sole_implicit_route",
+            })
+            .collect();
+        // Intern names only on actual name declarations. Port changes compare
+        // compact IDs, never a potentially megabyte-long current device name.
+        let mut names = Vec::new();
+        let mut name_index = BTreeMap::new();
+        let mut route_index = BTreeMap::new();
+        for (i, route) in source_routes.iter().enumerate() {
+            let name = route
+                .device_name_bytes
+                .as_deref()
+                .map(|bytes| intern_name(bytes, &mut names, &mut name_index));
+            route_index.insert((route.port, name), i);
+        }
+        let route_bytes = routes
+            .iter()
+            .map(|r| r.device_name_bytes.as_ref().map_or(0, Vec::len))
+            .sum();
+        Self {
+            routes,
+            names,
+            name_index,
+            route_index,
+            route_bytes,
+        }
+    }
+
+    fn record(
+        &mut self,
+        bytes: &[u8],
+        at: Coordinate,
+        route: &mut (Option<u8>, Option<usize>),
+    ) -> Result<(), IdentityError> {
+        match bytes {
+            [255, 0x21, port] => route.0 = Some(*port),
+            [255, 0x09, name @ ..] => {
+                route.1 = Some(intern_name(name, &mut self.names, &mut self.name_index));
+            }
+            _ => unreachable!("routing declaration"),
+        }
+        let ri = if let Some(ri) = self.route_index.get(route) {
+            *ri
+        } else {
+            // Bound copied text before creating metadata-only route states.
+            let added_bytes = route.1.map_or(0, |id| self.names[id].len());
+            self.route_bytes = self
+                .route_bytes
+                .checked_add(added_bytes)
+                .filter(|n| *n <= MAX_DISCLOSURE_BYTES)
+                .ok_or_else(|| {
+                    error(
+                        "analysis_limit",
+                        "Route evidence exceeds its complete-output budget",
+                    )
+                })?;
+            let ri = self.routes.len();
+            self.routes.push(RouteEvidence {
+                source_route_index: None,
+                port: route.0,
+                device_name_bytes: route.1.map(|id| self.names[id].clone()),
+                declaration_coordinates: vec![],
+                admission: "explicit_routing_out_of_scope",
+            });
+            self.route_index.insert(*route, ri);
+            ri
+        };
+        self.routes[ri].declaration_coordinates.push(at);
+        Ok(())
+    }
 }
 
 fn intern_name(
