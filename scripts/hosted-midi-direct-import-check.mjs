@@ -19,39 +19,60 @@ import {validateDirectMidiImport,validateDirectMidiOpened,validateDirectMidiTake
 /** Capture only JSON actually consumed by the app; never fetch a duplicate or
  * clone a response. The hosted native bridge independently retains wire bytes. */
 export function observeHostedBasicAdmissions(){
- const original=globalThis.fetch,evidence={rows:[],errors:[],restored:false},restores=new Set();let stopped=false;
+ const original=globalThis.fetch,evidence={clock:{basis:'performance.now',timeOrigin:performance.timeOrigin},rows:[],clicks:[],boundaries:[],events:0,errors:[],restored:false},restores=new Set();let stopped=false;
  const context=()=>({screen:document.body?.dataset.screen||null,previewId:document.getElementById('song-lobby')?.dataset.previewId||null});
- const error=value=>evidence.errors.push(String(value).slice(0,512));
+ const error=value=>evidence.errors.push(String(value).slice(0,512)),tick=()=>++evidence.events;
+ const startClick=event=>{if(stopped||!event.target?.closest?.('#start-performance'))return;if(evidence.clicks.length>=64){error('Start action evidence bound');return;}evidence.clicks.push({event:tick(),wall:performance.now(),trusted:event.isTrusted===true,...context()});};
+ document.addEventListener('click',startClick,true);
  function fetch(...args){
   const promise=Reflect.apply(original,this,args),path=typeof args[0]==='string'?args[0]:args[0]?.url;
   if(stopped||path!=='/api/library/practice-admission')return promise;
   try{
    if(evidence.rows.length>=128)throw Error('Basic admission evidence bound');
-   const row={path,request:JSON.parse(args[1].body),status:null,response:null,observation:'fetching',started:context(),settled:null};evidence.rows.push(row);
+   const row={path,request:JSON.parse(args[1].body),status:null,response:null,observation:'fetching',startedEvent:tick(),consumedEvent:null,startedWall:performance.now(),consumedWall:null,started:context(),settled:null};evidence.rows.push(row);
    Reflect.apply(Promise.prototype.then,promise,[response=>{
     row.status=response.status;row.observation='awaiting-json';const originalJson=response.json,descriptor=Object.getOwnPropertyDescriptor(response,'json');
     const restore=()=>{if(response.json===json){if(descriptor)Object.defineProperty(response,'json',descriptor);else delete response.json;}restores.delete(restore);};
-    function json(...values){const result=Reflect.apply(originalJson,this,values);if(this===response)Reflect.apply(Promise.prototype.then,result,[body=>{try{if(!stopped){if(new TextEncoder().encode(JSON.stringify(body)).length>256*1024)throw Error('Basic response bound');row.response=structuredClone(body);row.observation='consumed';row.settled=context();}}catch(value){error(value);}finally{restore();}},value=>{row.observation='body-rejected';error(value);restore();}]);return result;}
+    function json(...values){const result=Reflect.apply(originalJson,this,values);if(this===response)Reflect.apply(Promise.prototype.then,result,[body=>{try{if(!stopped){if(new TextEncoder().encode(JSON.stringify(body)).length>256*1024)throw Error('Basic response bound');row.response=structuredClone(body);row.observation='consumed';row.consumedEvent=tick();row.consumedWall=performance.now();row.settled=context();}}catch(value){error(value);}finally{restore();}},value=>{row.observation='body-rejected';error(value);restore();}]);return result;}
     response.json=json;restores.add(restore);
    },value=>{row.observation='fetch-rejected';error(value);}]);
   }catch(value){error(value);}
   return promise;
  }
  globalThis.fetch=fetch;
- globalThis.__hostedBasicAdmissions={evidence,restore(){stopped=true;for(const restore of [...restores])restore();if(globalThis.fetch===fetch)globalThis.fetch=original;evidence.restored=globalThis.fetch===original;return evidence;}};
+ globalThis.__hostedBasicAdmissions={evidence,mark(label){if(stopped||!['before-start','transport-started','take-exported'].includes(label)||evidence.boundaries.some(row=>row.label===label))throw Error('Invalid Human-run boundary');const boundary={label,event:tick(),wall:performance.now(),admissionCount:evidence.rows.length,...context(),mode:document.getElementById('session-mode')?.value||null,renderer:document.getElementById('clean-song-stage')?.dataset.rendererState||null};evidence.boundaries.push(boundary);return structuredClone(boundary);},restore(){stopped=true;document.removeEventListener('click',startClick,true);for(const restore of [...restores])restore();if(globalThis.fetch===fetch)globalThis.fetch=original;evidence.restored=globalThis.fetch===original;return evidence;}};
 }
 export function validateHostedDirectMidiAdmissions(profile,opened,fixture){
  const observed=profile.admissions;assert.equal(observed?.restored,true);assert.deepEqual(observed.errors,[]);assert.ok(observed.rows.length>0&&observed.rows.length<=128);
  const wire=profile.api.filter(row=>row.path==='/api/library/practice-admission');assert.equal(wire.length,observed.rows.length,'Every native admission must also have application-consumption evidence');
- const source=basicAdmissionSource(opened),timeline=basicAdmissionTimeline(opened),current=[];
+ const source=basicAdmissionSource(opened),timeline=basicAdmissionTimeline(opened),current=[],events=[],walls=new Map(),pass=profile.take.value.passes.at(-1),wallStart=pass?.clock_segments?.[0]?.wallStart;
+ assert.equal(observed.clock?.basis,'performance.now');assert.ok(Number.isFinite(observed.clock.timeOrigin)&&observed.clock.timeOrigin>0);
+ assert.equal(profile.take.browserClock?.basis,'performance.now');assert.equal(profile.take.browserClock.timeOrigin,observed.clock.timeOrigin,'Admission and downloaded take must belong to the same browser performance clock');
+ assert.ok(Number.isFinite(wallStart)&&wallStart>=0,'The exact retained Human pass start is required');
+ const event=(value,wall)=>{assert.ok(Number.isSafeInteger(value)&&value>0&&value<=observed.events);assert.ok(Number.isFinite(wall)&&wall>=0);events.push(value);walls.set(value,wall);};
+ assert.ok(Number.isSafeInteger(observed.events)&&observed.events>0&&observed.events<=512);
+ assert.deepEqual(observed.boundaries.map(row=>row.label),['before-start','transport-started','take-exported']);
+ const [before,started,exported]=observed.boundaries;
+ for(const boundary of observed.boundaries){event(boundary.event,boundary.wall);assert.equal(boundary.previewId,`native:${source.key}`);assert.equal(boundary.admissionCount,observed.rows.filter(row=>row.startedEvent<boundary.event).length,'Boundary must retain every prior admission');}
+ assert.ok(before.event<started.event&&started.event<exported.event);assert.equal(before.screen,'library');
+ for(const boundary of [started,exported]){assert.equal(boundary.screen,'stage');assert.equal(boundary.mode,'practice');}
+ assert.equal(started.renderer,'playing');assert.equal(exported.renderer,'ended');
+ assert.ok(Array.isArray(observed.clicks)&&observed.clicks.length>0&&observed.clicks.length<=64);
+ for(const click of observed.clicks)event(click.event,click.wall);
+ const clicks=observed.clicks.filter(click=>click.event>before.event&&click.event<started.event);assert.equal(clicks.length,1,'The Human run must have one observed Start action');const click=clicks[0];assert.equal(click.trusted,true);assert.equal(click.screen,'library');assert.equal(click.previewId,`native:${source.key}`);
+ assert.ok(click.wall<wallStart&&wallStart<exported.wall,'Actual Human pass start must follow its trusted Start and precede export');assert.ok(Number.isFinite(profile.take.browserClock.capturedWall)&&profile.take.browserClock.capturedWall>=wallStart&&profile.take.browserClock.capturedWall<=exported.wall);
+
  for(const [index,row]of observed.rows.entries()){
+  event(row.startedEvent,row.startedWall);event(row.consumedEvent,row.consumedWall);assert.ok(row.startedEvent<row.consumedEvent);if(index)assert.ok(observed.rows[index-1].startedEvent<row.startedEvent);
   assert.equal(row.observation,'consumed');assert.deepEqual(row.started,row.settled);assert.equal(row.started.previewId,`native:${source.key}`);assert.ok(['library','stage'].includes(row.started.screen));
   assert.equal(wire[index].method,'POST');assert.equal(wire[index].status,200);assert.deepEqual(wire[index].request,row.request);assert.deepEqual(wire[index].response,row.response,'Consumed receipt must be the native bridge response');
   const checked=validateBasicPracticeAdmissionEvidence(row,{source,timeline,selection:row.request.selection,eligibilityReceipt:opened.clean_package.runtime.source_eligibility?.receipt});
-  if(row.started.screen==='stage'&&checked.human_targets.target_count===fixture.expectedNotes.length)current.push(checked);
+  if(row.started.screen==='stage'&&row.startedEvent>click.event&&row.consumedEvent<started.event&&row.consumedWall<wallStart&&checked.human_targets.target_count===fixture.expectedNotes.length)current.push(checked);
  }
- assert.ok(observed.rows.some(row=>row.started.screen==='library'),'Saved preview must consume source admission');assert.ok(current.length>0,'Direct transport must consume source admission');
- const pass=profile.take.value.passes.at(-1),checked=current.findLast(value=>isDeepStrictEqual(value.human_targets.timeline,pass.timeline));assert.ok(checked,'Retained take must use the current complete admitted source clock');
+ assert.deepEqual(events.sort((a,b)=>a-b),Array.from({length:observed.events},(_,index)=>index+1),'Admission, action and Human-run boundary event log must be complete');
+ assert.ok(observed.rows.some(row=>row.started.screen==='library'&&row.consumedEvent<before.event),'Saved preview must consume source admission before Start');assert.ok(current.length>0,'Direct Human transport must consume fresh stage admission before its actual retained pass start');
+ for(let index=1;index<events.length;index++)assert.ok(walls.get(events[index-1])<=walls.get(events[index]),'Browser performance times must preserve observed event order');
+ const checked=current.findLast(value=>isDeepStrictEqual(value.human_targets.timeline,pass.timeline));assert.ok(checked,'Retained take must use the current complete admitted source clock');
  assert.deepEqual(profile.take.value.target_plan,checked.human_targets);assert.deepEqual(pass.interpretation.basic_practice_admission,{receipt:checked.receipt,selection_digest:checked.plan.selection_digest});
  return checked;
 }
@@ -126,17 +147,18 @@ export async function runHostedMidiDirectImportCheck(){
   await owned.page.goto(origin);await owned.page.evaluate(async()=>{globalThis.__directMidiAudio=await __directMidiObserveAudio(document);});await owned.page.locator('#home-single-player').click();return owned;
  }
  async function downloadTake(label){
-  const {page}=session;await page.locator('#results-button').click();const promise=page.waitForEvent('download');await page.locator('#export-takes').click();const download=await promise,path=`${label}-take.json`;await download.saveAs(join(output,'downloads',path));await page.locator('#results-dialog [data-close-panel]').click();const value=JSON.parse(await readFile(join(output,'downloads',path)));validateDirectMidiTake(value,fixture);return{path:`downloads/${path}`,sha256:directMidiDigest(JSON.stringify(value)),value};
+  const {page}=session;await page.locator('#results-button').click();const promise=page.waitForEvent('download');await page.locator('#export-takes').click();const download=await promise,path=`${label}-take.json`;await download.saveAs(join(output,'downloads',path));await page.locator('#results-dialog [data-close-panel]').click();const value=JSON.parse(await readFile(join(output,'downloads',path)));validateDirectMidiTake(value,fixture);const browserClock=await page.evaluate(()=>({basis:'performance.now',timeOrigin:performance.timeOrigin,capturedWall:performance.now()}));return{path:`downloads/${path}`,sha256:directMidiDigest(JSON.stringify(value)),value,browserClock};
  }
  async function directStart(phase){
   const {page,profile}=session;
   await page.waitForFunction(()=>document.getElementById('start-performance').disabled===false);
   // No Mod repair, manual package, source conversion screen or hidden action.
+  await page.evaluate(()=>__hostedBasicAdmissions.mark('before-start'));
   await page.locator('#start-performance').click();
-  await page.waitForFunction(()=>document.body.dataset.screen==='stage'&&document.getElementById('clean-song-stage').dataset.rendererState==='playing');
+  await page.waitForFunction(()=>{if(document.body.dataset.screen!=='stage'||document.getElementById('clean-song-stage').dataset.rendererState!=='playing')return false;__hostedBasicAdmissions.mark('transport-started');return true;});
   assert.equal(await page.locator('#session-mode').inputValue(),'practice');
   await page.waitForFunction(()=>{__directMidiAudio.assertHealthy();return document.getElementById('clean-song-stage').dataset.rendererState==='ended'&&__directMidiAudio.quiet();},{},{timeout:20000});
-  profile.take=await downloadTake(phase);await screenshot(`${phase}-direct-start-full-targets`);await page.locator('#back-to-library').click();
+  profile.take=await downloadTake(phase);await page.evaluate(()=>__hostedBasicAdmissions.mark('take-exported'));await screenshot(`${phase}-direct-start-full-targets`);await page.locator('#back-to-library').click();
  }
  try{
   report.asset_server={};assetServer=await startHostedAssetServer({root,sourceSha:head,binary:resolve(root,process.env.WMH_SERVER_BINARY||'target/debug/practice-server'),evidence:report.asset_server});origin=assetServer.origin;report.origin=origin;
