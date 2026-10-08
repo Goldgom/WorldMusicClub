@@ -9,6 +9,20 @@ import {parseHTML} from 'linkedom';
 import {observePianoViewportBudget} from '../web/piano-viewport-budget.js';
 const vsq=await readFile(new URL('../crates/desktop-shell/vsq-song-acceptance.js',import.meta.url),'utf8');
 const canonical=await readFile(new URL('../crates/desktop-shell/canonical-practice-acceptance.js',import.meta.url),'utf8');
+test('VSQ start acknowledgement does not admit reset before the future source anchor advances',async()=>{
+ const startAt=vsq.indexOf('async function start(mode)'),endAt=vsq.indexOf('\n async function reset()',startAt);
+ assert.ok(startAt>=0&&endAt>startAt);
+ const clocks=[{phase:'preparing',positionMs:0},{phase:'playing',positionMs:0},{phase:'playing',positionMs:1}],observed=[];
+ let started=0,current=clocks[0],nodeConnected=true;
+ const start=runInNewContext(`${vsq.slice(startAt,endAt)}\nstart`,{
+  document:{body:{dataset:{screen:'stage'}}},$:id=>id==='play-button'?{disabled:false}:{dataset:{rendererState:'playing'}},
+  receiver:{status:()=>({started,pendingReceivers:0,ownedNodes:[{state:'running',connected:nodeConnected,disposed:false,disposing:false,pendingCommands:0,pendingStarts:0}]})},
+  mod:{start:async()=>{started++;}},__wmhReadPlaybackClock:()=>current,
+  until:async condition=>{for(const clock of clocks){current=clock;observed.push(condition());}assert.deepEqual(observed,[false,false,nodeConnected]);if(!observed.at(-1))throw Error('No admitted source clock');}
+ });
+ await start('listen');
+ observed.length=0;nodeConnected=false;await assert.rejects(start('practice'),/No admitted source clock/);
+});
 async function harness({afterPrepared,onPost,afterDown,emit=true,emitDown=emit,emitClick=emit,trusted=true,range=false,expireAfterPrepare=false,failResultSnapshot=false}={}){
  const {document}=parseHTML('<html><body data-screen="stage"><main id="workspace" class="piano-workspace" data-score-state="session"><div class="piano-lanes-shared"></div><div class="piano-keybed-shared"></div><div class="piano-transport"><button id="play-button">Play</button><input id="progress" type="range"></div><section id="practice-gate" hidden></section></main></body></html>');
  const root=document.getElementById('workspace'),lane=root.querySelector('.piano-lanes-shared'),transport=root.querySelector('.piano-transport'),keyboard=root.querySelector('.piano-keybed-shared'),node=document.getElementById(range?'progress':'play-button'),frames=new Map(),values=new Map(),listeners=new Set(),report={controlActions:[]},posted=[];

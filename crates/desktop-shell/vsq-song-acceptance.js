@@ -243,7 +243,9 @@ function requireVsqPointerDown(control) {
  async function select(entry){await until(()=>$('catalog').querySelector(`[data-library-key="native:${entry.key}"]`),'stored nonplayable song row');await native('click',$('catalog').querySelector(`[data-library-key="native:${entry.key}"]`));await until(()=>$('song-lobby').dataset.previewStatus==='choice','explicit interpretation choice');const state=choiceState();assert(state.startDisabled&&state.modDisabled&&state.fullVocalDisabled&&state.fullVocalVisible&&state.choiceVisible&&state.limits===8&&state.tracks.length===2,'VSQ choice UI incomplete');return state;}
  async function start(mode){
   const started=receiver.status().started;await mod.start(mode==='listen'?'none':['vsq-track-1'],{layout:'solo',muted:{'vsq-track-1':false,'vsq-track-2':false}});
-  await until(()=>{const audio=receiver.status();return document.body.dataset.screen==='stage'&&!$('play-button').disabled&&$('clean-song-stage').dataset.rendererState==='playing'&&audio.started===started+1&&audio.pendingReceivers===0&&audio.ownedNodes.some(node=>node.state==='running'&&node.connected&&!node.disposed&&!node.disposing&&node.pendingCommands===0&&node.pendingStarts===0);},`${mode} audio-thread stage admission`,10000);
+  // A start ACK admits a future anchor. Reset only after the source clock and
+  // playing status are published, so the initial cue cannot move its target.
+  await until(()=>{const audio=receiver.status(),clock=globalThis.__wmhReadPlaybackClock(document);return document.body.dataset.screen==='stage'&&!$('play-button').disabled&&$('clean-song-stage').dataset.rendererState==='playing'&&clock.phase==='playing'&&clock.positionMs>0&&audio.started===started+1&&audio.pendingReceivers===0&&audio.ownedNodes.some(node=>node.state==='running'&&node.connected&&!node.disposed&&!node.disposing&&node.pendingCommands===0&&node.pendingStarts===0);},`${mode} audio-thread stage admission`,10000);
  }
  async function reset(){await native('click',$('reset-button'));await until(()=>globalThis.__wmhReadPlaybackClock(document).positionMs===0&&!$('play-button').disabled,'transport reset');}
  addEventListener('DOMContentLoaded',async()=>{
