@@ -94,8 +94,8 @@
    and push the input buttons beyond a narrow viewport. Both modes keep the
    same slots, including the reserved options row in free practice. */
 @media(max-width:650px){
- .piano-workspace{--piano-toolbar-height:98px}
- .game-shell .piano-stage-shared .piano-stage-toolbar{grid-template-columns:repeat(12,minmax(0,1fr));grid-template-rows:40px 32px;min-height:98px;column-gap:4px;row-gap:8px}
+ .piano-workspace{--piano-toolbar-height:86px}
+ .game-shell .piano-stage-shared .piano-stage-toolbar{grid-template-columns:repeat(12,minmax(0,1fr));grid-template-rows:40px 32px;min-height:86px;column-gap:4px;row-gap:8px}
  .game-shell .piano-stage-shared .piano-stage-title{grid-column:1/span 2;grid-row:1;min-width:0;font-size:12px;letter-spacing:0}
  .game-shell .piano-stage-shared .piano-stage-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-column:3/-1;grid-row:1;min-width:0;gap:5px;margin:0;align-items:stretch}
  .game-shell .piano-stage-toolbar .button{font-size:10px;min-height:32px;padding:5px}
@@ -106,7 +106,7 @@
  .notation-overlay-options input[type=range]{width:52px}
  .game-shell .piano-stage-toolbar .notation-tools{grid-column:10/-1;grid-row:2;justify-self:stretch;min-width:0}
  .game-shell .piano-stage-toolbar .notation-tools>summary{min-height:32px;max-width:100%;white-space:normal;padding:5px}
- .game-shell .piano-workspace .performance-overlay{top:98px}
+ .game-shell .piano-workspace .performance-overlay{top:var(--piano-toolbar-height)}
 }
 
 
@@ -293,6 +293,8 @@
 
 /* Laptop transport reuses the existing pan/fingering controls instead of a second permanent row. */
 @media(min-height:601px) and (max-height:800px) and (min-width:651px){
+ /* Leave room for the lane when platform fonts make the status cue taller. */
+ .game-shell #workspace.piano-workspace .play-panel>.performance-status{padding-top:4px;padding-bottom:4px}
  .game-shell #workspace.piano-workspace .piano-compact-transport{position:relative;display:grid;grid-template-columns:auto auto minmax(70px,1fr) minmax(96px,210px) minmax(90px,150px);align-items:center;gap:6px;min-height:44px;padding:4px 8px}
  .game-shell .piano-compact-transport>#reset-button{grid-column:1;grid-row:1;width:34px;min-width:34px}
  .game-shell .piano-compact-transport>#play-button{grid-column:2;grid-row:1;min-width:105px}
@@ -343,6 +345,8 @@
 
 @media(max-width:650px){
  .game-shell #workspace.piano-workspace .play-panel>.performance-status{padding-top:4px;padding-bottom:4px}
+ /* Two toolbar rows keep their full targets; their outer space yields to notes. */
+ .game-shell .piano-stage-shared .piano-stage-toolbar{padding-top:4px;padding-bottom:4px;row-gap:4px}
  /* Scope text previously squeezed into an 18px remainder and painted across
     both toolbar rows. Use the spare space below the title, before the lane. */
  .game-shell .piano-stage-shared .piano-stage-title{align-self:start;line-height:14px}
