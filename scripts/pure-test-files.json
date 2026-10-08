@@ -265,5 +265,9 @@
   "tests/part-activity-browser-navigation.test.js",
   "tests/complete-practice-muted-reset.test.js",
   "tests/part-activity-labels.test.js",
-  "tests/part-activity-lifecycle.test.js"
+  "tests/part-activity-lifecycle.test.js",
+  "tests/source-identity-loader.test.js",
+  "tests/source-identity-details-view.test.js",
+  "tests/frontend-source-identity.test.js",
+  "tests/source-identity-proof.test.js"
 ]

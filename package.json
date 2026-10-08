@@ -46,7 +46,9 @@
     "test:pitch-mod": "node --test tests/frontend-pitch-mod.test.js tests/pitch-mod-receipts.test.js tests/pitch-mod-preview.test.js tests/native-pitch-mod-evidence.test.js tests/native-pitch-sources-proof.test.js tests/native-pitch-sources-evidence.test.js tests/pitch-mod-errors.test.js tests/native-pitch-review.test.js",
     "test:pitch-mod-browser": "node --test tests/pitch-mod-app-browser.test.js",
     "test:direct-midi": "node --test tests/frontend-direct-midi-import.test.js tests/direct-midi-fixtures.test.js tests/direct-midi-proof.test.js",
-    "test:direct-midi-hosted": "node scripts/hosted-midi-direct-import-check.mjs"
+    "test:direct-midi-hosted": "node scripts/hosted-midi-direct-import-check.mjs",
+    "test:source-identity-proof": "node --test tests/source-identity-proof.test.js",
+    "test:source-identity-hosted": "node scripts/hosted-source-identity-check.mjs"
   },
   "devDependencies": {
     "ajv": "^8.20.0",

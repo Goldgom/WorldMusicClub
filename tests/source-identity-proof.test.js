@@ -1,0 +1,49 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {fileURLToPath} from 'node:url';
+import {identityDigest,readIdentityFixtures,scanIdentityFixture,validateIdentityOpened,validateIdentityDisclosure,validateIdentityUi} from '../scripts/source-identity-proof.mjs';
+
+const root=fileURLToPath(new URL('../',import.meta.url)),fixtures=await readIdentityFixtures(root);
+// Deliberately authored validator inputs only. Never genuine Rust responses,
+// native, browser, playback, pitch or analyzer execution evidence.
+function input(fixture){
+ const source={format:'midi',bytes:fixture.bytes.length,sha256:fixture.sha256},coverage={source_events:fixture.events.length,represented_events:fixture.events.length,key_attacks:fixture.notes.length},score_json=JSON.stringify({source,coverage,performance:{ppq:fixture.ppq,tracks:[{events:fixture.events}]}}),metadata={format:'worldmusichub-song',version:2,id:`midi-basic-${fixture.sha256}`,title:fixture.filename,score:{path:'score.json',bytes:Buffer.byteLength(score_json),sha256:identityDigest(score_json)},sources:[source],rights:{status:'user_supplied_unverified',attribution:'User-supplied MIDI; source rights are unverified',license:null},media:[]},content_sha256=identityDigest(JSON.stringify(metadata));
+ const opened={entry:{key:`song-${content_sha256}`},clean_package:{profile:'wmh-basic-keys-midi1-v1',content_sha256,score_json,metadata_json:JSON.stringify(metadata),runtime:{profile:'wmh-basic-key-practice-v2',source_sha256:fixture.sha256,rendition:{policy_id:'wmh-basic-key-rendition-fifo-v1',coverage:{source_attacks:fixture.notes.length}},compilation:{timeline:{notes:fixture.notes.map(note=>[note.id,'p1',note.midi,note.velocity,note.start_ms,note.duration_ms])}}}}};
+ return opened;
+}
+function disclosure(fixture,source){
+ const attacks=fixture.notes.map((note,index)=>({note_id:note.id,part_id:'p1',attack_coordinate:note.coordinate,tick:note.tick,beat:{numerator:note.tick,denominator:fixture.ppq},channel:note.channel,classification:fixture.classes[index],label:fixture.labels[index]||null,identity_key:fixture.labels[index]?`test:${index}`:null,reason_indices:fixture.labels[index]?[]:[0]}));
+ return {source,details:{revision:1,source_profile:source.profile,analysis_policy_id:'wmc-basic-explicit-gm-identity-v1',identity_table_revision:'wmc-reviewed-gm-subset-v1',product_policy_id:'wmc-provisional-piano-guitar-v1',original_bytes_verification:'declared_provenance_only',original_midi_sha256:fixture.sha256,source_binding:{domain:'wmc-basic-complete-wire-json',serialization_revision:1,digest:'1'.repeat(64)},attacks,parts:[{part_id:'p1',attack_count:attacks.length,supported_count:fixture.counts[0],known_unsupported_count:fixture.counts[1],unresolved_count:fixture.counts[2],mixed:fixture.mixed,classification:fixture.mixed?'unresolved':fixture.classes[0],identity_counts:fixture.labels.map((_,index)=>({identity_key:`test:${index}`,count:1}))}],diagnostics:fixture.reasons.map(code=>({code,coordinate:null}))}};
+}
+function ui(fixture,{fault=false}={}){
+ const counts=`${fixture.counts[0]} supported · ${fixture.counts[1]} known unsupported · ${fixture.counts[2]} unresolved`,pages=[[['MIDI channel (1–16)','1'],['Source note attacks / notated notes',`${fixture.notes.length} / ${fixture.notes.length}`],['MIDI program / bank','0 / Unknown'],['Identity analysis scope','Informational only: these classifications do not decide practice support or change playback, assignment or scoring.']]];
+ if(fault)pages[0].push(['Identity analysis','Identity analysis could not be loaded.']);else{pages[0].push(['Identity analysis classification',fixture.mixed?'Mixed · Unresolved':fixture.classes[0]],['Attack classification counts',counts]);for(const label of fixture.labels)pages[0].push(['Analyzed original identity',`${label} · 1 source attacks`]);if(!fixture.labels.length)pages[0].push(['Unresolved identity reason',fixture.id==='01_no_gm_program'?'No admitted General MIDI declaration':'Program/bank combination is outside the reviewed identity subset']);}
+ return {parts:[{collapsed:true,collapsedBodyRows:0,summary:fault?'Original instrument: not identified · Source details':`Analyzed original instrument: ${fixture.labels.join(' · ')||'not identified'}${fixture.mixed?' · Mixed':''} · ${counts} · Informational only`,pages}],startDisabled:false,configureDisabled:false};
+}
+
+test('source identity proof uses existing digest-bound public original CC0 MIDI, not user songs or captured responses',()=>{
+ assert.deepEqual(fixtures.map(f=>f.id),['04_gm1_piano','01_no_gm_program','14_unknown_variant','31_program_changes_per_attack']);
+ for(const f of fixtures){assert.equal(f.rights.license,'CC0-1.0');assert.equal(identityDigest(f.bytes),f.sha256);assert.equal(f.notes.length,f.classes.length);assert.ok(f.notes.every(note=>note.midi===60&&note.duration_ms>0));assert.throws(()=>scanIdentityFixture(f.bytes.subarray(0,-1)));}
+ assert.deepEqual(fixtures[0].events[0],[0,[240,126,127,9,1,247]]);assert.deepEqual(fixtures[2].events.slice(0,4).map(e=>e[1]),[[240,126,127,9,3,247],[176,0,121],[176,32,127],[192,24]]);
+});
+test('original package/runtime oracle rejects omitted events, forged identities and altered pitches or time',()=>{
+ for(const fixture of fixtures){const value=input(fixture);validateIdentityOpened(value,fixture);for(const mutate of [x=>x.clean_package.content_sha256='a'.repeat(64),x=>x.clean_package.runtime.compilation.timeline.notes[0][2]++,x=>x.clean_package.runtime.compilation.timeline.notes[0][4]++,x=>x.clean_package.runtime.compilation.timeline.notes.pop(),x=>x.clean_package.runtime.rendition.coverage.source_attacks++,x=>{const score=JSON.parse(x.clean_package.score_json);score.performance.tracks[0].events.pop();x.clean_package.score_json=JSON.stringify(score);}]){const changed=structuredClone(value);mutate(changed);assert.throws(()=>validateIdentityOpened(changed,fixture));}}
+});
+test('Rust disclosure oracle requires correct known/missing/unreviewed/mixed facts and separate binding domains',()=>{
+ for(const fixture of fixtures){const source=validateIdentityOpened(input(fixture),fixture),value=disclosure(fixture,source);validateIdentityDisclosure(value,fixture,source);for(const mutate of [x=>x.source.key='wrong',x=>x.details.source_binding.digest=source.content_sha256,x=>x.details.original_midi_sha256='0'.repeat(64),x=>x.details.attacks[0].label='Guessed guitar',x=>x.details.attacks[0].attack_coordinate.event++,x=>x.details.attacks.pop(),x=>x.details.parts[0].supported_count++,x=>x.details.parts[0].mixed=!fixture.mixed]){const changed=structuredClone(value);mutate(changed);assert.throws(()=>validateIdentityDisclosure(changed,fixture,source));}}
+});
+test('UI proof rejects hidden-only identities, guessed unresolved names, wrong counts and new practice blocks',()=>{
+ for(const fixture of fixtures){const value=ui(fixture);validateIdentityUi(value,fixture);for(const mutate of [x=>x.parts[0].collapsed=false,x=>x.parts[0].collapsedBodyRows=1,x=>x.startDisabled=true,x=>x.parts[0].summary='Original instrument: unknown',x=>x.parts[0].pages=[]]){const changed=structuredClone(value);mutate(changed);assert.throws(()=>validateIdentityUi(changed,fixture));}}
+ for(const status of [404,413])validateIdentityUi(ui(fixtures[1],{fault:true}),fixtures[1],{faultStatus:status});
+});
+test('hosted real-native proof is CI gated, exact-source bound, isolated and honest about injected optional failures',async()=>{
+ const text=await readFile(new URL('../scripts/hosted-source-identity-check.mjs',import.meta.url),'utf8');
+ for(const gate of ["assert.equal(process.env.GITHUB_ACTIONS,'true'","assert.equal(process.env.WMH_HOSTED_BROWSER,'1')"])assert.ok(text.indexOf(gate)<text.indexOf('await startHostedAssetServer('));
+ for(const evidence of ['createHostedNativeBridge','await owned.driver.fetcher','compiled.source_sha','compiled.source_tree','compiled.source_status','native.executable_sha256','native.process_id','request_sha256','/api/source-identity/basic','synthetic-transport-failure-only','native_identity_response:false','original_files_unchanged','readSongModDraft','native-restart','source-identity-failure'])assert.ok(text.includes(evidence),evidence);
+ assert.match(text,/await\(await chooser\)\.setFiles\(fixtures\.map/);assert.match(text,/for\(const status of \[404,413\]\)/);assert.match(text,/getByRole\('button',\{name:'Next details',exact:true\}\)/);assert.match(text,/assert\.ok\(\[720,900\]\.includes\(height\)\)/);assert.doesNotMatch(text,/setInputFiles|dispatchEvent\(|fixtures\/.*native-open|execFileSync\('cargo'/);
+ assert.match(text,/native_window:false/);assert.match(text,/physical_audio:false/);assert.match(text,/verification_status='passed'/);assert.match(text,/verification_status='failed'/);
+});
+test('full acceptance registers both source-identity viewport profiles and preserves exact-source report artifacts',async()=>{
+ const pkg=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8')),workflow=await readFile(new URL('../.github/workflows/check.yml',import.meta.url),'utf8');assert.equal(pkg.scripts['test:source-identity-hosted'],'node scripts/hosted-source-identity-check.mjs');const job=workflow.slice(workflow.indexOf('\n  source-identity:'));assert.ok(job.length>100);assert.match(job,/height: \[720, 900\]/);assert.match(job,/WMH_SOURCE_SHA: \$\{\{ github.sha \}\}/);assert.match(job,/cargo build -p worldmusichub-desktop --example native_import_driver --locked/);assert.match(job,/cargo build -p practice-server --locked/);assert.match(job,/WMH_VIEWPORT_HEIGHT: \$\{\{ matrix.height \}\}/);assert.match(job,/node scripts\/hosted-source-identity-check.mjs/);assert.match(job,/if: always\(\)/);assert.match(job,/name: source-identity-\$\{\{ matrix.height \}\}-\$\{\{ github.sha \}\}/);
+});
