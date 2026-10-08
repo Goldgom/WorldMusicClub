@@ -1,7 +1,7 @@
 import {readFileSync} from 'node:fs';
 import {parseHTML} from 'linkedom';
 import test from 'node:test';import assert from 'node:assert/strict';import {createHash} from 'node:crypto';
-import {partActivityMidi} from './part-activity-browser-fixture.js';import {assertPartActivityGeometry,assertPartActivitySourceEvidence,partActivityMinimumKeyHeight} from './part-activity-browser-proof.js';
+import {partActivityMidi} from './part-activity-browser-fixture.js';import {assertPartActivityGeometry,assertPartActivitySourceEvidence,partActivityMinimumKeyHeight,PART_ACTIVITY_LOOP,partActivityLoopTargets} from './part-activity-browser-proof.js';
 const rect=(x,y,width,height)=>({x,y,width,height}),base=()=>({width:1280,height:720,documentWidth:1280,documentHeight:720,host:rect(0,650,1280,56),strip:rect(0,650,1280,56),row:rect(160,654,1100,44),controls:{'#play-button':rect(0,600,80,40),'#reset-button':rect(90,600,40,40),'#keyboard':rect(0,400,1280,180),'#piano-scroll':rect(0,400,1280,180)},reachable:{'#play-button':true,'#reset-button':true},notes:0,keyboardInput:'off',live:'off',pageLive:'polite'});
 test('original fixture is deterministic MIDI with running rests and bounded bilingual labels',()=>{const a=partActivityMidi();assert.deepEqual(a,partActivityMidi());assert.equal(a.bytes.subarray(0,4).toString(),'MThd');assert.equal(a.bytes.readUInt16BE(10),3);assert.equal(a.rights.license,'CC0-1.0');assert.deepEqual(a.gateWindows.silent,[5000,7000]);assert.equal(a.durationMs,20000);assert.ok(a.names[1].length>80&&a.names[1].length<160);});
 test('strip geometry rejects overlap, clipping, notes, unreachable controls and vertical overflow',()=>{assertPartActivityGeometry(base(),{visible:true});for(const mutate of [s=>s.controls['#keyboard'].height=260,s=>s.strip.y=700,s=>s.notes=1,s=>s.host=null,s=>s.live='polite',s=>s.documentHeight=722,s=>s.reachable['#play-button']=false]){const s=base();mutate(s);assert.throws(()=>assertPartActivityGeometry(s,{visible:true}));}});
@@ -32,4 +32,16 @@ test('compact activity accepts the established keybed, but rejects undersize, no
  assertPartActivityGeometry(compact,{visible:false});
  for(const change of [{height:77.99},{height:0},{height:NaN},{height:Infinity},{width:0},{width:NaN},{x:Infinity}]){const value=structuredClone(compact);Object.assign(value.controls['#keyboard'],change);assert.throws(()=>assertPartActivityGeometry(value,{visible:false}),/Keyboard/);}
  for(const [width,height]of [[390,844],[1280,720],[1920,1080]]){const value=base();Object.assign(value,{width,height,documentWidth:width,documentHeight:height});value.host=value.strip=value.row=null;value.controls={'#play-button':rect(0,300,80,40),'#reset-button':rect(90,300,40,40),'#piano-scroll':rect(0,100,width,180),'#keyboard':rect(0,100,width,110)};assertPartActivityGeometry(value,{visible:false});value.controls['#keyboard'].height=109.99;assert.throws(()=>assertPartActivityGeometry(value,{visible:false}),/accepted piano keybed height/);}
+});
+
+test('activity loop includes an original human attack and rejects the machine-only interval',()=>{
+ const human='original-human',notes=[{part_id:human,start_ms:0,duration_ms:1000,midi:60},{part_id:human,start_ms:19000,duration_ms:1000,midi:64}];
+ assert.deepEqual(PART_ACTIVITY_LOOP,{fromBeat:'0',toBeat:'10',startMs:0,endMs:10000});assert.deepEqual(partActivityLoopTargets(notes,human),[notes[0]]);
+ assert.throws(()=>partActivityLoopTargets(notes,human,{startMs:2000,endMs:10000}),/original human note-on/);
+ assert.throws(()=>partActivityLoopTargets([{...notes[0],part_id:'machine'}],human),/original human ownership/);
+ for(const range of [{startMs:0,endMs:0},{startMs:NaN,endMs:10000},{startMs:0,endMs:Infinity}])assert.throws(()=>partActivityLoopTargets(notes,human,range),/ordered finite bounds/);
+ const source=readFileSync(new URL('./part-activity-browser-regression.js',import.meta.url),'utf8'),loop=source.slice(source.indexOf('const loopTargets='),source.indexOf('report.audio='));
+ assert.match(loop,/partActivityLoopTargets\(positive.target_plan.timeline.notes,human\)/);assert.match(loop,/fill\(PART_ACTIVITY_LOOP.fromBeat\)/);assert.match(loop,/fill\(PART_ACTIVITY_LOOP.toBeat\)/);
+ assert.equal((loop.match(/ui\('#loop-apply'\)\.click\(\)/g)||[]).length,1,'One visible Apply enables the loop; uncheck alone disables it');assert.doesNotMatch(loop,/loop-enabled'\)\.check\(/);
+ for(const guard of ["waitState('silent',[5000,7000])","waitState('playing',[8500,9500])","waitState('playing',[2000,3000])",'assert.deepEqual(loopTake.target_plan.timeline.notes,loopTargets','c.rangeStartMs===startMs&&c.rangeEndMs===endMs','c.rangeEndMs===c.durationMs'])assert.ok(loop.includes(guard),guard);
 });

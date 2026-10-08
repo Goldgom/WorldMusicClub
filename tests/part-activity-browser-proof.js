@@ -3,6 +3,14 @@ import {createHash} from 'node:crypto';
 import {partActivityMidi} from './part-activity-browser-fixture.js';
 export const PART_ACTIVITY_BROWSER_CASE='real machine activity follows admitted source gates without human input or display coupling';
 export const PART_ACTIVITY_VIEWPORTS=Object.freeze([[1280,720],[1920,1080],[844,390],[390,844]]);
+export const PART_ACTIVITY_LOOP=Object.freeze({fromBeat:'0',toBeat:'10',startMs:0,endMs:10000});
+export function partActivityLoopTargets(notes,human,range=PART_ACTIVITY_LOOP){
+ assert.ok(Number.isFinite(range.startMs)&&Number.isFinite(range.endMs)&&range.startMs>=0&&range.endMs>range.startMs,'Activity loop needs ordered finite bounds');
+ assert.ok(notes.length&&notes.every(note=>note.part_id===human),'Activity loop must retain original human ownership');
+ const targets=notes.filter(note=>note.start_ms>=range.startMs&&note.start_ms<range.endMs);
+ assert.ok(targets.length,'Activity Practice loop must contain an original human note-on target');
+ return targets;
+}
 export function readPartActivityGeometry(){
  const visible=node=>Boolean(node&&node.getClientRects().length&&getComputedStyle(node).visibility!=='hidden');
  const box=node=>{if(!visible(node))return null;const r=node.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height};};
