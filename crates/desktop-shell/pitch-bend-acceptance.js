@@ -96,7 +96,27 @@ function observePitchBendAudio(Receiver,Mixer,root=globalThis) {
  async function select(entry){await until(()=>$('catalog').querySelector(`[data-library-key="native:${entry.key}"]`),'stored complete performance row');await native('click',$('catalog').querySelector(`[data-library-key="native:${entry.key}"]`));await until(()=>$('song-lobby').dataset.previewStatus==='performance'&&$('song-lobby').dataset.previewId===`native:${entry.key}`&&$('complete-performance-counts').dataset.trackCount===String(entry.clean_package.coverage.performance.source_tracks),'null-notation preview');const value=choiceState();assert(!value.accepted&&value.playDisabled&&value.listenDisabled&&value.practiceDisabled,'Performance interpretation or graded mode was implicitly enabled');return value;}
  async function play(){await native('click',$('complete-performance-play'));await until(()=>$('complete-performance-status').dataset.state==='playing','actual reference transport started');}
  async function stop(){await native('click',$('complete-performance-stop'));await until(()=>$('complete-performance-status').dataset.state==='stopped','reference stopped');await silence('stop cleanup');}
- async function fullRun(mutedTrack){observe();try{const started=performance.now();await play();if(mutedTrack===null){await until(()=>audio().activeSources>0,'live original pitch sources');const capture={before:audio()};report.screenshots.playing=await native('click',$('complete-performance-title'));capture.after=audio();assert(capture.before.activeSources>0&&capture.after.activeSources>0,'Pitch screenshot missed sounding gates');report.variants.at(-1).liveCapture=capture;}await until(()=>$('complete-performance-status').dataset.state==='ended','complete pitch event end',9000);return{mutedTracks:mutedTrack===null?[]:[mutedTrack],elapsedMs:performance.now()-started,clock:$('complete-performance-clock').textContent,audio:await silence('source end cleanup')};}finally{finish();}}
+ async function fullRun(mutedTrack){
+  observe();const started=performance.now();
+  try{
+   await play();
+   if(mutedTrack===null){
+    await until(()=>audio().activeSources>0,'live original pitch sources');
+    // Retain observations before asserting: failure must expose actual gates
+    // and receiver cutoffs rather than lose them when the observer restores.
+    const capture={before:audio()};report.variants.at(-1).liveCapture=capture;
+    report.screenshots.playing=await native('click',$('complete-performance-title'));
+    capture.after=audio();
+    assert(capture.before.activeSources>0&&capture.after.activeSources>0,'Pitch screenshot missed sounding gates');
+   }
+   await until(()=>$('complete-performance-status').dataset.state==='ended','complete pitch event end',9000);
+   return{mutedTracks:mutedTrack===null?[]:[mutedTrack],elapsedMs:performance.now()-started,clock:$('complete-performance-clock').textContent,audio:await silence('source end cleanup')};
+  }catch(error){
+   report.failedRun={mutedTracks:mutedTrack===null?[]:[mutedTrack],elapsedMs:performance.now()-started,state:$('complete-performance-status').dataset.state,clock:$('complete-performance-clock').textContent,problems:$('complete-performance-problems').textContent,audio:audio()};
+   throw error;
+  }finally{finish();}
+ }
+
  const chineseChoice=()=>({coverage:$('complete-performance-coverage').textContent,policy:$('complete-performance-policy-label').textContent,routing:{hidden:$('complete-performance-policy-routing').hidden,text:$('complete-performance-policy-routing').textContent},pitch:{hidden:$('complete-performance-policy-pitch').hidden,text:$('complete-performance-policy-pitch').textContent}});
  addEventListener('DOMContentLoaded',async()=>{
   try{await prepareNativePlaybackClock({document,until});

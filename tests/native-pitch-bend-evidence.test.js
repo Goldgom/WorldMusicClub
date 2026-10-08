@@ -206,3 +206,22 @@ test('final release gate independently consumes real Node pitch proof and keeps 
 test('pitch-bend requires distinct phase profiles and matching fresh host records in the hashed proof',async t=>{
  const f=await syntheticEvidence(t);await assertNativeProfileEvidence({directory:f.directory,native:f.native,save:f.save,verify:verifyNativePitchBendEvidence,nativeFile:'native-pitch-bend.json'});
 });
+
+// Execute the actual acceptance control flow, including its failure cleanup.
+// Synthetic snapshots prove diagnostic retention only, not browser acceptance.
+test('failed live pitch capture retains receiver evidence before restoring the observer',async()=>{
+ const source=renderer.slice(renderer.indexOf(' async function fullRun('),renderer.indexOf('\n const chineseChoice'));
+ for(const hostFails of [false,true]){
+  const before={activeSources:2,receiver:{schedules:[{start:.8,end:4.55}],silences:[]}},after={activeSources:0,receiver:{schedules:before.receiver.schedules,silences:[{currentTime:1.2}]}};
+  const report={variants:[{}],screenshots:{}};let captured=false,restored=false;
+  const failure=Error(hostFails?'host screenshot failed':'Pitch screenshot missed sounding gates');
+  const scope={report,performance:{now:()=>1234},observe(){},play:async()=>{},until:async predicate=>assert.ok(await predicate()),audio:()=>{assert.equal(restored,false);return structuredClone(captured?after:before);},native:async()=>{captured=true;if(hostFails)throw failure;return 21;},$:id=>({dataset:{state:'error'},textContent:id.endsWith('problems')?'late_scheduler':'0:01.2 / 0:05.0'}),assert:(value,message)=>{if(!value)throw Error(message);},finish:()=>{restored=true;}};
+  vm.createContext(scope);vm.runInContext(source,scope);
+  await assert.rejects(vm.runInContext('fullRun(null)',scope),new RegExp(failure.message));
+  assert.equal(restored,true);
+  assert.deepEqual(copy(report.variants[0].liveCapture.before),before);
+  if(!hostFails)assert.deepEqual(copy(report.variants[0].liveCapture.after),after);
+  assert.deepEqual(copy(report.failedRun.audio),after);
+  assert.equal(report.failedRun.state,'error');assert.equal(report.failedRun.problems,'late_scheduler');
+ }
+});
