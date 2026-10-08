@@ -207,6 +207,7 @@ fn invalid_projection_is_rejected_and_valid_wire_change_rebinds() {
 fn original_hash_is_declared_provenance_and_not_an_original_byte_verification() {
     let mut source = fixture("04_gm1_piano");
     source.source.sha256 = "a".repeat(64);
+    source.notation.id = format!("midi-basic-{}", source.source.sha256);
     let details = describe_basic(&source).unwrap();
     assert_eq!(details.original_bytes_verification,
         source_instrument::OriginalBytesVerification::DeclaredProvenanceOnly);
@@ -251,6 +252,7 @@ fn large_foreign_ties_do_not_enumerate_interleavings_or_forget_taint() {
     for i in 0..2 {
         assert_eq!(details.attacks[i].classification, Classification::Unresolved);
         assert!(codes(&details, i).contains(&Reason::CrossTrackOrderUncertain));
+        assert!(details.attacks[i].committed_selection.is_none());
     }
     assert!(details.diagnostics.len() <= 2);
 }

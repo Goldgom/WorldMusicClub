@@ -298,7 +298,17 @@ fn build(source: &basic_keys::CompleteBasicKeys, source_binding: practice_source
                             Err(reason) => { reasons.push(diagnostics.add(reason, ch.committed.as_ref().map(|s| s.program_coordinate).or(boundary))); None }
                         }
                     } else { None };
-                    attacks.push(AttackIdentity { note_id: note.note_id.clone(), part_id: note.part_id.clone(), attack_coordinate: note.attack, tick: note.start.tick, beat: note.start.beat, route_index: part.route, channel, epoch_index: epochs.len() - 1, classification: identity.map_or(Classification::Unresolved, |i| product_classification(i.key)), identity_key: identity.map(|i| i.key), label: identity.map(|i| i.label), committed_selection: ch.committed.clone(), reason_indices: reasons });
+                    // Track sorting is presentation order, never evidence of a
+                    // winning selection at a cross-track tie. Do not expose an
+                    // arbitrary sorted candidate as the committed snapshot.
+                    let ordering_uncertain = ch.tie.is_some()
+                        || global_taints.contains_key(&Reason::CrossTrackOrderUncertain);
+                    let committed_selection = if ordering_uncertain {
+                        None
+                    } else {
+                        ch.committed.clone()
+                    };
+                    attacks.push(AttackIdentity { note_id: note.note_id.clone(), part_id: note.part_id.clone(), attack_coordinate: note.attack, tick: note.start.tick, beat: note.start.beat, route_index: part.route, channel, epoch_index: epochs.len() - 1, classification: identity.map_or(Classification::Unresolved, |i| product_classification(i.key)), identity_key: identity.map(|i| i.key), label: identity.map(|i| i.label), committed_selection, reason_indices: reasons });
                 }
             }
         }
