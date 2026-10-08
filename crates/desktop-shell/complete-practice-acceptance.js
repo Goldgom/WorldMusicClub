@@ -55,7 +55,15 @@ function observeCompletePracticeActivity(Player,{getAudioCount=()=>0}={}){
 }
 // Record actual production DOM, including zero-height hidden/collapsed hosts.
 function captureCompletePracticeStrip({document,root=globalThis,clock,admission,audio}){
- const find=selector=>document.querySelector(selector),box=node=>{if(!node)return null;const r=node.getBoundingClientRect(),s=root.getComputedStyle(node);return{hidden:node.hidden===true,visible:r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden',display:s.display,visibility:s.visibility,position:s.position,rect:{x:r.x,y:r.y,width:r.width,height:r.height}};};
+ const find=selector=>document.querySelector(selector),painted=node=>{
+  for(let ancestor=node;ancestor;ancestor=ancestor.parentElement){const style=root.getComputedStyle(ancestor);if(ancestor.hidden||style.display==='none'||['hidden','collapse'].includes(style.visibility)||style.contentVisibility==='hidden'||Number(style.opacity)===0)return false;
+   if(ancestor.tagName==='DETAILS'&&!ancestor.hasAttribute('open')){const summary=[...ancestor.children].find(child=>child.tagName==='SUMMARY');if(!summary?.contains(node))return false;}
+  }return true;
+ },box=node=>{if(!node)return null;const r=node.getBoundingClientRect(),s=root.getComputedStyle(node);return{hidden:node.hidden===true,visible:r.width>0&&r.height>0&&painted(node),display:s.display,visibility:s.visibility,position:s.position,rect:{x:r.x,y:r.y,width:r.width,height:r.height}};};
+ // Piano score paint lives in the lane viewport. The old .notation-panel is
+ // only controls inside closed Score options and can retain an offscreen rect.
+ const notation=find('#notation-lane-overlay'),notationBox=box(notation),overlap=(a,b)=>Math.min(a.x+a.width,b.x+b.width)>Math.max(a.x,b.x)&&Math.min(a.y+a.height,b.y+b.height)>Math.max(a.y,b.y);
+ const notationSurface=notation?{...notationBox,id:notation.id,visibleSvgCount:[...notation.querySelectorAll('svg')].filter(svg=>{const b=box(svg);return notationBox.visible&&b.visible&&overlap(b.rect,notationBox.rect);}).length}:null;
  const host=find('.part-activity-host'),strip=find('.part-activity-strip');if(!host||!strip||!host.contains(strip))throw Error('Production activity host is missing');
  const surface=selector=>box(find(selector)),label=selector=>find(selector)?.textContent??null,run=audio.at(-1),button=selector=>{const node=find(selector);return{...box(node),disabled:node.disabled,label:node.getAttribute('aria-label'),focused:document.activeElement===node,focusVisible:node.matches(':focus-visible')};};
  return{version:2,clock:structuredClone(clock),screen:document.body.dataset.screen,mode:document.getElementById('session-mode').value,rendererState:document.getElementById('clean-song-stage').dataset.rendererState,admission,
@@ -64,7 +72,7 @@ function captureCompletePracticeStrip({document,root=globalThis,clock,admission,
   ariaLabel:strip.getAttribute('aria-label'),ariaLive:strip.getAttribute('aria-live'),keyboardInput:strip.dataset.keyboardInput,liveRegions:[...strip.querySelectorAll('[aria-live]')].map(node=>({className:node.className,value:node.getAttribute('aria-live')})),forbiddenSurfaces:strip.querySelectorAll('canvas,svg,[data-midi],.score-note,.falling-note').length,
   rows:[...strip.querySelectorAll('.part-activity-row')].map(node=>({...box(node),state:node.dataset.state,stateText:node.querySelector('.part-activity-state')?.textContent,label:node.querySelector('.part-activity-name')?.textContent,labelTitle:node.querySelector('.part-activity-name')?.title,source:node.querySelector('.part-activity-source')?.textContent,machine:node.querySelector('.part-activity-machine')?.textContent,subsetHidden:node.querySelector('.part-activity-subset')?.hidden})),
   navigation:{...surface('.part-activity-pages'),page:label('.part-activity-page-label'),previous:button('.part-activity-previous'),next:button('.part-activity-next')},
-  surfaces:{transport:surface('.transport'),humanHud:surface('.performance-status'),stageHud:surface('.stage-hud'),instrument:surface('#piano-scroll'),keyboard:surface('#keyboard'),firstKey:surface('#keyboard [data-midi]'),notation:surface('.notation-panel'),play:surface('#play-button'),reset:surface('#reset-button')}
+  surfaces:{transport:surface('.transport'),humanHud:surface('.performance-status'),stageHud:surface('.stage-hud'),instrument:surface('#piano-scroll'),keyboard:surface('#keyboard'),firstKey:surface('#keyboard [data-midi]'),notation:notationSurface,play:surface('#play-button'),reset:surface('#reset-button')}
  };
 }
 (() => {
