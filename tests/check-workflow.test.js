@@ -69,6 +69,14 @@ test('both Rust platforms remain mandatory while a failed peer cannot cancel the
 
 function validateRustTestGate(document) {
   const rust = document.jobs.rust;
+  const crtFlags = "${{ matrix.os == 'windows-latest' && '-C target-feature=+crt-static' || '' }}";
+  assert.equal(rust.env?.RUSTFLAGS, crtFlags, 'Windows compiler must select the static CRT');
+  assert.equal(rust.env?.RUSTDOCFLAGS, crtFlags, 'Windows rustdoc must select the same CRT');
+  for (const row of rust.steps) {
+    for (const key of ['RUSTFLAGS', 'RUSTDOCFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'CARGO_ENCODED_RUSTDOCFLAGS']) {
+      assert.equal(row.env?.[key], undefined, `Step must not override the shared CRT policy: ${key}`);
+    }
+  }
   assert.deepEqual(rust.strategy.matrix.os, ['ubuntu-latest', 'windows-latest']);
   assert.equal(rust['runs-on'], '${{ matrix.os }}');
   assert.equal(rust.if, undefined);
@@ -118,6 +126,22 @@ test('Verify explicitly runs workspace doctests on both Rust platforms without r
     doc => { step(doc, 'rust', 'cargo test --workspace --doc --locked').run = 'cargo test --workspace --lib --locked'; },
     doc => { step(doc, 'rust', 'cargo test --workspace --doc --locked').run = 'cargo test -p score-core --doc --locked'; },
     doc => { step(doc, 'rust', 'cargo test --workspace --doc --locked').run = 'cargo test --workspace --doc'; },
+  ]) {
+    const changed = structuredClone(workflow);
+    mutate(changed);
+    assert.throws(() => validateRustTestGate(changed));
+  }
+});
+
+test('Verify keeps compiler and rustdoc CRT selection aligned without changing Linux or skipping doctests', () => {
+  validateRustTestGate(workflow);
+  for (const mutate of [
+    doc => { delete doc.jobs.rust.env.RUSTFLAGS; },
+    doc => { delete doc.jobs.rust.env.RUSTDOCFLAGS; },
+    doc => { doc.jobs.rust.env.RUSTDOCFLAGS = '-C target-feature=-crt-static'; },
+    doc => { doc.jobs.rust.env.RUSTDOCFLAGS = '-C target-feature=+crt-static'; },
+    doc => { step(doc, 'rust', 'cargo test --workspace --doc --locked').env = {RUSTDOCFLAGS: ''}; },
+    doc => { step(doc, 'rust', 'cargo test --workspace --doc --locked').env = {CARGO_ENCODED_RUSTDOCFLAGS: ''}; },
   ]) {
     const changed = structuredClone(workflow);
     mutate(changed);
