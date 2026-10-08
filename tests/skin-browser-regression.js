@@ -9,6 +9,7 @@ import {liveToneNavigationBootstrap} from './live-tone-navigation-browser-regres
 import {installCanonicalPreviewAudio} from './browser-canonical-preview-audio.js';
 import {selectLegacyEnglish} from './browser-input-fixtures.js';
 import {waitForPlaybackClock, waitForPlaybackClockAdvance} from './browser-playback-clock.js';
+import {readPlaybackClock} from '../web/playback-clock-view.js';
 import {settlePianoViewportBudget} from './browser-piano-budget.js';
 import {validateSkinInteractionReport, validateSkinPersistenceReport, SKIN_BROWSER_CASES} from './skin-browser-proof.js';
 
@@ -54,15 +55,17 @@ async function readSettings(page) {
     theme: localStorage.getItem('worldmusichub.theme'), presentation: Object.fromEntries(['--skin-human-fill','--skin-machine-fill','--skin-key-white','--skin-background-image'].map(key => [key, document.documentElement.style.getPropertyValue(key)]))}));
 }
 async function stageGeometry(page, retain = false) {
-  return page.evaluate(retain => {
+  const clock=await page.evaluate(readPlaybackClock);
+  return page.evaluate(({retain,clock}) => {
     const nodes = [...document.querySelectorAll('#keyboard .piano-key')];
     if (retain) globalThis.__skinOriginalKeys = nodes;
     const rect = node => { const r = node.getBoundingClientRect();return {x: r.x, y: r.y, width: r.width, height: r.height}; };
-    return {viewport: {width: innerWidth, height: innerHeight}, canvas: rect(document.querySelector('#falling-notes')),
+    const host=document.querySelector('.part-activity-host'),activity=host&&!host.hidden&&host.getBoundingClientRect().height>0?rect(host):null;
+    return {clock,activity,activityRows:activity?[...host.querySelectorAll('.part-activity-row')].map(node=>({partId:node.dataset.partId,state:node.dataset.state})):[],viewport: {width: innerWidth, height: innerHeight}, canvas: rect(document.querySelector('#falling-notes')),
       keyboard: rect(document.querySelector('#keyboard')), transport: rect(document.querySelector('.transport')),
       keys: nodes.map(node => ({midi: node.dataset.midi, rect: rect(node)})),
       sameKeyNodes: nodes.length === globalThis.__skinOriginalKeys?.length && nodes.every((node, i) => node === globalThis.__skinOriginalKeys[i])};
-  }, retain);
+  }, {retain,clock});
 }
 async function readStagePaint(page) {
   return page.evaluate(() => {
@@ -118,9 +121,9 @@ export function registerSkinBrowserRegressions({test, getPage, getOrigin, ui, st
       if (await page.locator('#notice-dismiss').isVisible()) await page.locator('#notice-dismiss').click();
       await page.waitForFunction(() => document.querySelector('#falling-notes').clientHeight > 100);
       report.scoreBefore = await exportScore();await closeShellPanels();await page.evaluate(() => document.fonts.ready);await page.evaluate(settlePianoViewportBudget);
-      report.geometryBefore = await stageGeometry(page, true);report.themeBefore = await page.evaluate(() => localStorage.getItem('worldmusichub.theme'));
-      report.screenshots.push(await screenshot(page, artifactDirectory, 'worldmusichub-skin-stage-builtin.png'));
+      report.readyGeometryBefore = await stageGeometry(page, true);report.themeBefore = await page.evaluate(() => localStorage.getItem('worldmusichub.theme'));
       await importSkin(page, skin);assert.equal((await readSettings(page)).active, skin.manifest.id);await closeShellPanels();
+      await page.evaluate(settlePianoViewportBudget);report.readyGeometryAfter = await stageGeometry(page);
       await page.locator('#play-button').click();await waitForPlaybackClockAdvance(page);await page.locator('#stage-title').click();
       assert.equal(await page.locator('#sound-button').getAttribute('aria-pressed'), 'false');
       await page.evaluate(() => __wmhLiveNavigation.begin());await page.keyboard.down('r');await page.waitForTimeout(40);
@@ -132,6 +135,12 @@ export function registerSkinBrowserRegressions({test, getPage, getOrigin, ui, st
       await page.waitForFunction(() => document.querySelector('.performance-status').dataset.phase !== 'grace');
       report.pausedBefore = await pausedTakeSnapshot();report.takeBefore = await exportTakeData();
       const requestIndex = getRequests().length;
+      // Initial READY has no admitted activity rows; paused playback retains
+      // its admitted machine rows. Compare skins within each state, never
+      // READY geometry against a later paused stage with additional chrome.
+      await selectSkin(page, 'default');await closeShellPanels();await page.evaluate(settlePianoViewportBudget);
+      report.geometryBefore = await stageGeometry(page);
+      report.screenshots.push(await screenshot(page, artifactDirectory, 'worldmusichub-skin-stage-builtin.png'));
       await importSkin(page, skin);report.imported = await readSettings(page);report.storedImported = await readStoredSkin(page);
       await page.locator('#skin-settings').scrollIntoViewIfNeeded();report.screenshots.push(await screenshot(page, artifactDirectory, 'worldmusichub-skin-settings-en.png'));
       await importSkin(page, skin, Buffer.from('{"version":2}'));report.invalid = await readSettings(page);report.storedAfterInvalid = await readStoredSkin(page);

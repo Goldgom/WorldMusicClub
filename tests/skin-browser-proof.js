@@ -55,7 +55,16 @@ export function assertSkinPresentation(report) {
   assert.equal(report.themeBefore, report.themeAfter);assert.equal(JSON.parse(report.themeBefore).mode, 'custom');
   for (const key of ['imported','invalid','storageFailure','reset','reselected','chinese']) assert.equal(report[key].theme, report.themeBefore);
   assert.deepEqual(report.skinRequests, [], 'Skin controls and locale must not recompile, import, or replay the source');
+  assert.deepEqual(report.readyGeometryAfter, report.readyGeometryBefore);assert.equal(report.readyGeometryAfter.sameKeyNodes, true);
+  assert.equal(report.readyGeometryBefore.activity, null, 'Before first Play there is no admitted activity slot');
+  assert.deepEqual(report.readyGeometryBefore.activityRows, []);
+  for(const [geometry,phase]of [[report.readyGeometryBefore,'ready'],[report.geometryBefore,'paused']]){
+    assert.equal(geometry.clock.phase,phase);assert.equal(geometry.clock.running,false);assert.equal(geometry.clock.completed,false);assert.equal(geometry.clock.available,true);
+    assert.ok(Number.isFinite(geometry.clock.positionMs));assert.ok(phase==='ready'?geometry.clock.positionMs===0:geometry.clock.positionMs>0);
+  }
+  assert.ok(report.geometryBefore.activityRows.length>0);assert.ok(report.geometryBefore.activityRows.every(row=>typeof row.partId==='string'&&row.partId.length>0&&row.state==='paused'));
   assert.deepEqual(report.geometryAfter, report.geometryBefore);assert.equal(report.geometryAfter.sameKeyNodes, true);
+  const activity=report.geometryBefore.activity;assert.ok(activity&&activity.width>0&&activity.height>0&&activity.x>=0&&activity.y>=0&&activity.x+activity.width<=1281&&activity.y+activity.height<=721, 'Paused admitted activity remains visible for both skins');
   assert.deepEqual(report.geometryAfter.viewport, {width: 1280, height: 720});assert.ok(report.geometryAfter.keys.length >= 49);
   for (const name of ['canvas','keyboard','transport']) { const r = report.geometryAfter[name];assert.ok(r.width > 0 && r.height > 0 && r.x >= -1 && r.y >= -1 && r.x+r.width <= 1281 && r.y+r.height <= 721, `${name} must remain visible`); }
   const paint = report.paint;assert.equal(paint.skin, skin.manifest.id);assert.equal(paint.labels, 'true');

@@ -20,11 +20,11 @@ function settings(selected = 'imported', locale = 'en') { return {locale,selecte
 const decoration = () => ({image:true,width:16,height:16,opacity:'0.2',pointerEvents:'none',ariaHidden:'true'});
 const screenshots = names => names.map(name => ({name,bytes:2000,sha256:'a'.repeat(64),width:1280,height:720}));
 function presentation() {
-  const rect = {x:0,y:0,width:800,height:120}, geometry = {viewport:{width:1280,height:720},canvas:{...rect},keyboard:{...rect},transport:{...rect},keys:Array.from({length:61},(_,i)=>({midi:String(i+36),rect:{x:i*10,y:200,width:10,height:100}})),sameKeyNodes:true};
+  const rect = {x:0,y:0,width:800,height:120}, geometry = {clock:{phase:'paused',running:false,completed:false,available:true,positionMs:100},activityRows:[{partId:'machine',state:'paused'}],activity:{x:0,y:640,width:800,height:56},viewport:{width:1280,height:720},canvas:{...rect},keyboard:{...rect},transport:{...rect},keys:Array.from({length:61},(_,i)=>({midi:String(i+36),rect:{x:i*10,y:200,width:10,height:100}})),sameKeyNodes:true};
   const marker = midi => { const pixels = [];for(let y=-3;y<=3;y++)for(let x=-3;x<=3;x++)pixels.push({x,y,color:midi === 60 || Math.abs(x)<=Math.floor((y+3)/2) ? '#111111' : '#67e8f9',alpha:255});return {midi,pixels,foregroundPixels:pixels.filter(pixel=>pixel.color==='#111111').length}; };
   const replacement=originalBrowserSkin({replacement:true});
   return {fixture:{id:fixture.manifest.id,manifestSha256:fixture.jsonSha256,pngSha256:fixture.pngSha256},attemptedReplacement:{id:replacement.manifest.id,manifestSha256:replacement.jsonSha256,pngSha256:replacement.pngSha256},imported:settings(),invalid:{...settings(),status:'The skin was not changed. Check the JSON.'},storageFailure:{...settings(),status:'The skin was not changed because local storage is unavailable.'},
-    fault:{method:'native-indexeddb-write-transaction-abort',aborted:1},storedImported:stored(),storedAfterInvalid:stored(),storedAfterFailure:stored(),reset:{...settings('default'),status:'Your imported skin is still available.'},storedReset:stored('default'),reselected:settings(),chinese:settings('imported','zh-CN'),themeBefore:theme,themeAfter:theme,skinRequests:[],geometryBefore:geometry,geometryAfter:structuredClone(geometry),
+    fault:{method:'native-indexeddb-write-transaction-abort',aborted:1},storedImported:stored(),storedAfterInvalid:stored(),storedAfterFailure:stored(),reset:{...settings('default'),status:'Your imported skin is still available.'},storedReset:stored('default'),reselected:settings(),chinese:settings('imported','zh-CN'),themeBefore:theme,themeAfter:theme,skinRequests:[],geometryBefore:geometry,geometryAfter:structuredClone(geometry),readyGeometryBefore:{...structuredClone(geometry),clock:{phase:'ready',running:false,completed:false,available:true,positionMs:0},activityRows:[],activity:null},readyGeometryAfter:{...structuredClone(geometry),clock:{phase:'ready',running:false,completed:false,available:true,positionMs:0},activityRows:[],activity:null},
     paint:{skin:fixture.manifest.id,humanIds:['human'],machineIds:['machine'],labels:'true',fillPixels:{'#fbbf24':500,'#67e8f9':500},keys:[{midi:62,background:'rgb(248, 250, 252)'},{midi:61,background:'rgb(17, 17, 17)'}],markers:[marker(60),marker(67)],laneBackground:'none',homeImage:'url("blob:contract-input")',homeAriaHidden:'true'},pressed:{pressed:'true',background:'rgb(37, 99, 235)'},homeDecoration:decoration(),screenshots:screenshots(SKIN_SCREENSHOTS.slice(0,4))};
 }
 function persistence() {
@@ -55,7 +55,7 @@ test('retained skin record rejects changed original bytes, wrong selection and a
 test('presentation oracle rejects lost roles, erased markers, geometric/input/theme changes and concealed failures', () => {
   assertSkinPresentation(presentation());
   const mutations = [r=>r.paint.fillPixels['#fbbf24']=0,r=>r.paint.machineIds=[],r=>r.paint.markers[1]=structuredClone(r.paint.markers[0]),r=>r.paint.markers[0].pixels[24].color='#fbbf24',
-    r=>r.paint.laneBackground='url("blob:unsupported")',r=>r.paint.keys[0].background='rgb(255, 255, 255)',r=>r.pressed.pressed='false',r=>r.geometryAfter.keys[0].rect.x++,r=>r.geometryAfter.sameKeyNodes=false,
+    r=>r.paint.laneBackground='url("blob:unsupported")',r=>r.paint.keys[0].background='rgb(255, 255, 255)',r=>r.pressed.pressed='false',r=>r.geometryAfter.keys[0].rect.x++,r=>r.geometryAfter.sameKeyNodes=false,r=>r.readyGeometryAfter.canvas.height++,r=>r.readyGeometryAfter.keys[0].rect.y++,r=>r.readyGeometryAfter.sameKeyNodes=false,r=>r.geometryAfter.clock.positionMs++,r=>{r.geometryBefore.clock.phase='ready';r.geometryAfter.clock.phase='ready';},r=>{r.geometryBefore.activityRows[0].state='playing';r.geometryAfter.activityRows[0].state='playing';},r=>{r.geometryBefore.activity=null;r.geometryAfter.activity=null;},r=>{r.readyGeometryBefore.activity=r.geometryBefore.activity;r.readyGeometryAfter.activity=r.geometryBefore.activity;},
     r=>r.skinRequests.push({path:'/api/compile'}),r=>r.themeAfter='{}',r=>r.invalid.active=null,r=>r.storageFailure.status='Saved',r=>r.fault.aborted=0,r=>r.storedAfterFailure.selected='default',
     r=>r.reset.importedDisabled=true,r=>r.chinese.locale='en',r=>r.imported.scope='Full stage background supported',r=>r.homeDecoration.pointerEvents='auto',r=>r.screenshots.pop(),
     r=>r.attemptedReplacement=r.fixture,r=>r.storageFailure.presentation['--skin-human-fill']='#67E8F9',r=>r.storageFailure.presentation['--skin-background-image']='url("blob:replacement")'];
@@ -101,4 +101,21 @@ test('skin registration reaches aggregate, focused and hosted preview gates whil
   for (const route of ['settings','authoring']) for (const release of ['keyup','navigation']) assert.ok(expression.test(`real unmuted live worklet verifies finite silence through ${route} after ${release}`));
   const {scripts} = JSON.parse(packageText);
   for (const files of [readPureTestFiles(),scripts['test:skin'].split(/\s+/)]) assert.equal(files.filter(path=>path==='tests/skin-browser-proof.test.js').length,1);
+});
+
+test('skin geometry pairs READY with READY and paused admission with paused admission',async()=>{
+  const report=presentation();
+  for(const key of ['readyGeometryBefore','readyGeometryAfter'])report[key].canvas.height+=24;
+  assertSkinPresentation(report);
+  for(const mutate of [
+    row=>{row.geometryAfter=structuredClone(row.readyGeometryBefore);},
+    row=>{row.readyGeometryAfter=structuredClone(row.geometryBefore);},
+    row=>{row.geometryAfter.canvas.height--;},
+    row=>{row.geometryAfter.activity.height--;},
+    row=>{row.geometryAfter.activityRows[0].partId='replacement';},
+  ]){const changed=structuredClone(report);mutate(changed);assert.throws(()=>assertSkinPresentation(changed));}
+  const source=await readFile(new URL('./skin-browser-regression.js',import.meta.url),'utf8');
+  const readyBefore=source.indexOf('report.readyGeometryBefore ='),readyAfter=source.indexOf('report.readyGeometryAfter ='),play=source.indexOf("await page.locator('#play-button').click()"),paused=source.indexOf('report.pausedBefore ='),baseline=source.indexOf("await selectSkin(page, 'default');await closeShellPanels()"),before=source.indexOf('report.geometryBefore ='),after=source.indexOf('report.geometryAfter =');
+  assert.ok(readyBefore<readyAfter&&readyAfter<play&&play<paused&&paused<baseline&&baseline<before&&before<after);
+  assert.equal((source.match(/stageGeometry\(page, true\)/g)||[]).length,1,'Keep original human key identity across both comparisons');
 });
