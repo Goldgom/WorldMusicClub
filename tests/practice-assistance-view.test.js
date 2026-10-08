@@ -29,7 +29,12 @@ function fixture({appStore=false,stage=false,hasTakes=stage,guitar=false,api,sto
 }
 
 test('one Start, numeric assistance in Mod, bilingual noncolor legend, actual counts and separate same-part timbres',async()=>{
- const f=fixture();assert.deepEqual([...f.document.querySelectorAll('.preview-actions button')].map(n=>n.id),['start-performance','configure-song-mod']);assert.equal(f.$('falling-note-labels').checked,false);
+ const f=fixture(),actions=[...f.document.querySelectorAll('.preview-actions button')];
+ assert.deepEqual(actions.map(n=>n.id),['start-performance','preview-range-repair','configure-song-mod']);
+ assert.equal(f.$('preview-range-repair').hidden,true,'A ready assignment has no range-repair action');
+ assert.deepEqual(actions.filter(n=>!n.hidden).map(n=>n.id),['start-performance','configure-song-mod']);
+ assert.deepEqual(actions.filter(n=>n.classList.contains('primary')).map(n=>n.id),['start-performance'],'There is still exactly one Start');
+ f.$('preview-range-repair').click();assert.equal(f.starts,0);assert.equal(f.applies,0);assert.equal(f.$('falling-note-labels').checked,false);
  assert.equal(f.$('song-mod-assistance-limits').hidden,true);f.change('song-mod-assistance-mode','automatic');assert.equal(f.$('song-mod-assistance-limits').hidden,false);
  assert.equal(f.$('song-mod-assistance-max_targets_per_onset').value,'2');assert.equal(f.$('song-mod-assistance-min_onset_interval_ms').value,'250');assert.equal(f.$('song-mod-assistance-max_simultaneous_keys').value,'3');assert.equal(f.$('song-mod-assistance-max_held_span_semitones').value,'7');
  assert.match(f.$('song-mod-assistance-legend').textContent,/● Human.*◆ Machine/);assert.match(f.$('song-mod-assistance').textContent,/semitones/);
