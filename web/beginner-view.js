@@ -87,6 +87,7 @@ export function setupBeginnerView({document, i18n, getContext, onNumberedMode}) 
     for(const [item,home,target]of [[stageControl,stageHome,heading],[freeControl,freeHome,freeHeading]]){
       const compact=Boolean(shortLandscape?.matches&&target),{panel,reference,body,details}=item;
       panel.classList.toggle('beginner-controls-compact',compact);
+      target?.classList.toggle('has-beginner-controls',compact);
       if(compact){if(panel.parentElement!==target)target.append(panel);if(reference.parentElement!==body)body.prepend(reference);}
       else{if(home.parentNode&&panel.previousSibling!==home)home.after(panel);if(reference.parentElement!==panel)panel.insertBefore(reference,details);}
     }
@@ -131,6 +132,7 @@ export function setupBeginnerView({document, i18n, getContext, onNumberedMode}) 
     if (disposed) return;
     disposed = true; unsubscribe(); shortLandscape?.removeEventListener('change', arrangeControls); stageHome.remove();freeHome.remove();
     for (const {root, labels} of surfaces) {labels.dispose(); root.classList.remove('beginner-labels-enabled');}
+    heading?.classList.remove('has-beginner-controls');freeHeading?.classList.remove('has-beginner-controls');
     for (const {panel} of controls) panel.remove();
   }};
 }

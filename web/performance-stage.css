@@ -109,7 +109,7 @@
 /* When a blocking notice or source details consume the short field, keep every
    section reachable inside the instrument while transport remains outside. */
 .performance-layout .play-panel:has(#practice-gate:not([hidden])) .guitar-stage,.performance-layout .guitar-stage:has(.guitar-details[open]){overflow:auto;overscroll-behavior:contain}
-.performance-layout .play-panel:has(#practice-gate:not([hidden])) .guitar-scroll,.performance-layout .guitar-stage:has(.guitar-details[open]) .guitar-scroll{flex:none;height:35dvh;min-height:100px;max-height:250px}
+.performance-layout .play-panel:has(#practice-gate:not([hidden])) .guitar-scroll,.performance-layout .guitar-stage:has(.guitar-details[open]) .guitar-scroll{flex:none;height:calc(35 * var(--wmc-viewport-unit,1vh));min-height:100px;max-height:250px}
 @media(max-height:600px) and (min-width:651px){
   .performance-layout .play-panel[data-instrument=guitar] .onset-counter{min-width:0}
   .performance-layout .play-panel[data-instrument=guitar] .onset-counter small{max-width:none;white-space:nowrap}
@@ -179,7 +179,7 @@
 .fret-button.pitch-option span{outline:2px dashed #9ab8d4;outline-offset:1px}
 .fret-button.playing::after{content:attr(data-fingers);position:absolute;right:1px;bottom:0;z-index:2;font-size:10px;line-height:12px;color:#12291c;background:#d1fff4;border-radius:3px;padding:0 2px;pointer-events:none}
 .performance-layout .guitar-stage:has(#guitar-plan-controls[open]){overflow:auto;overscroll-behavior:contain}
-.performance-layout .guitar-stage:has(#guitar-plan-controls[open]) .guitar-scroll{flex:none;height:35dvh;min-height:100px;max-height:250px}
+.performance-layout .guitar-stage:has(#guitar-plan-controls[open]) .guitar-scroll{flex:none;height:calc(35 * var(--wmc-viewport-unit,1vh));min-height:100px;max-height:250px}
 @media(max-height:600px) and (min-width:651px){.performance-layout #workspace.with-notation #guitar-planning{max-height:100px;overflow:auto;overscroll-behavior:contain}#guitar-plan-controls{font-size:11px}.performance-layout #guitar-plan-status{font-size:11px}}
 /* Keep a complete first string row reachable even with the longer route cards.
    Route editing follows the board, so collapsed controls cannot cover its top. */
@@ -209,7 +209,7 @@
   .performance-layout .guitar-details{grid-column:2;min-width:0}
   .performance-layout #guitar-plan-controls>summary,.performance-layout .guitar-details>summary{font-size:11px;line-height:1.4;overflow-wrap:anywhere}
   .performance-layout .guitar-stage:has(#guitar-plan-controls[open]) #guitar-planning,.performance-layout .guitar-stage:has(.guitar-details[open]) .guitar-details{grid-column:1/-1;max-height:none}
-  /* Expanded tools give the board an explicit 35dvh height. Its grid track must
+  /* Expanded tools give the board an explicit calc(35 * var(--wmc-viewport-unit,1vh)) height. Its grid track must
      grow with that height: a 56px flexible track would let frets cover the next
      row's disclosure and intercept its close click. The stage owns overflow. */
   .performance-layout .guitar-stage:has(#guitar-plan-controls[open]),.performance-layout .guitar-stage:has(.guitar-details[open]),.performance-layout .play-panel:has(#practice-gate:not([hidden])) .guitar-stage{grid-template-rows:max-content max-content max-content;grid-auto-rows:max-content}

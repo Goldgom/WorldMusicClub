@@ -36,8 +36,8 @@
 @media(max-width:650px){.beginner-controls{gap:4px 9px;padding:4px 9px}.performance-layout #workspace.with-notation .beginner-controls{display:none}}
 /* Share the existing HUD title line in short landscape. The original keyboard
    range badge keeps its own subtitle line; opening help costs no playfield row. */
-.stage-heading:has(>.beginner-controls-compact){position:relative}
-.performance-layout .stage-heading:has(>.beginner-controls-compact) h1{padding-right:80px}
+.stage-heading.has-beginner-controls{position:relative}
+.performance-layout .stage-heading.has-beginner-controls h1{padding-right:80px}
 :is(#beginner-controls,#free-beginner-controls).beginner-controls-compact{position:absolute;top:0;right:0;z-index:6;flex-wrap:nowrap;gap:4px;margin:0;padding:0;border:0;background:transparent;line-height:20px}
 .beginner-controls-compact .beginner-toggle-label{gap:3px;white-space:nowrap}
 .beginner-controls-compact .beginner-short-label{display:inline;font-size:11px}
@@ -45,7 +45,7 @@
 .beginner-controls-compact details[open]{flex-basis:auto;max-height:none;overflow:visible}
 .beginner-controls-compact summary{display:block;min-height:20px;width:20px;text-align:center;border:1px solid var(--border);border-radius:4px;background:var(--paper);line-height:18px;list-style:none}
 .beginner-controls-compact summary::-webkit-details-marker{display:none}
-.beginner-controls-compact .beginner-help-body{position:fixed;left:10px;top:60px;width:min(390px,calc(100vw - 20px));max-height:calc(100dvh - 80px);overflow:auto;overscroll-behavior:contain;padding:12px;border:1px solid var(--border);border-radius:7px;background:var(--paper);box-shadow:0 5px 20px #0003}
+.beginner-controls-compact .beginner-help-body{position:fixed;left:10px;top:60px;width:min(390px,calc(100vw - 20px));max-height:calc(calc(100 * var(--wmc-viewport-unit,1vh)) - 80px);overflow:auto;overscroll-behavior:contain;padding:12px;border:1px solid var(--border);border-radius:7px;background:var(--paper);box-shadow:0 5px 20px #0003}
 .performance-layout .stage-heading .beginner-help-body p{white-space:normal;overflow:visible;letter-spacing:normal;color:inherit}
 @media(max-height:600px) and (min-width:651px){
   /* Reserve readable pitch, shortcut and fingering slots only while enabled.

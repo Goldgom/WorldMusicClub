@@ -62,6 +62,10 @@ the Android import/export dialogs.
 
 ## Current limits and acceptance
 
+- Older tablet WebViews use a `vh` fallback for screen and dialog heights,
+  prefixed SVG masks for compact toolbar icons, and explicit heading classes.
+  Newer engines retain `dvh` sizing. Notation scales its SVG viewport rather
+  than CSS zoom so painted notes and measured reveal bounds agree on both.
 - The shared responsive UI is reused; Android USB/Bluetooth MIDI is not
   implemented. Browser Web MIDI availability must not be interpreted as native
   Android MIDI support. Physical keyboard availability depends on the device.

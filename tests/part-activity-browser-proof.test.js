@@ -23,7 +23,7 @@ test('activity key-height floors match the existing shared piano CSS media polic
  const keyHeight=items=>items.filter(rule=>rule.selectorText==='.piano-workspace'&&rule.style?.getPropertyValue('--piano-key-height')).at(-1)?.style.getPropertyValue('--piano-key-height');
  const compact=rules.filter(rule=>rule.media?.mediaText==='(max-height:600px) and (min-width:651px)').flatMap(rule=>[...rule.cssRules]);
  const portrait=rules.filter(rule=>rule.media?.mediaText==='(max-width:650px)').flatMap(rule=>[...rule.cssRules]);
- assert.equal(keyHeight(compact),'78px');assert.equal(keyHeight(portrait),'110px');assert.equal(keyHeight(rules),'clamp(110px,17dvh,170px)');
+ assert.equal(keyHeight(compact),'78px');assert.equal(keyHeight(portrait),'110px');assert.equal(keyHeight(rules),'clamp(110px,calc(17 * var(--wmc-viewport-unit,1vh)),170px)');
  for(const [width,height,minimum]of [[844,390,78],[651,600,78],[650,600,110],[651,601,110],[390,844,110],[1280,720,110],[1920,1080,110]])assert.equal(partActivityMinimumKeyHeight({width,height}),minimum);
 });
 test('compact activity accepts the established keybed, but rejects undersize, nonfinite and zero-width keys',()=>{

@@ -98,6 +98,7 @@ for (const initiallyCompact of [true, false]) test(`real shell/input/performance
       assert.equal(panel.closest('dialog'),null,'Guide never inherits the footer Settings host');
       assert.equal(panel.parentElement,compact?$('stage-title').parentElement:document.querySelector('.play-panel'));
       assert.equal(panel.classList.contains('beginner-controls-compact'),compact);
+      assert.equal($('stage-title').parentElement.classList.contains('has-beginner-controls'),compact,'Heading layout works without relational CSS selectors');
       assert.equal(reference.parentElement,compact?panel.querySelector('.beginner-help-body'):panel);
       assert.equal(footer.closest('dialog')?.id,compact?'settings-dialog':undefined);
       assert.equal(badge.hidden,!compact);assert.equal(badge.previousElementSibling.id,'stage-subtitle');

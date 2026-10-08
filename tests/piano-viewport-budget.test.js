@@ -75,7 +75,7 @@ test('measured compact chrome leaves room for the complete extreme keybed, live 
   const fullSeekAndLabel=38.84375,transportHeight=Math.max(parseFloat(transport['min-height']),fullSeekAndLabel+parseFloat(transport['padding-top'])+parseFloat(transport['padding-bottom'])+2);
   const chrome=notice+parseFloat(workspace['padding-top'])+headingHeight+parseFloat(workspace.gap)+liveStatus+parseFloat(toolbar['min-height'])+4+104+2+transportHeight+parseFloat(workspace['padding-bottom']);
   assert.ok(chrome+100<=390,'Even the 22px live counter, 104px glyph keybed and complete seek target fit beside the unchanged 100px lane');
-  assert.equal(style('.piano-workspace')['--piano-lane-height'],'max(100px,var(--piano-available-lane-height,calc(32dvh + 1px)))','Remaining space must keep the transport anchored across live HUD changes instead of stopping at a viewport-percentage cap');
+  assert.equal(style('.piano-workspace')['--piano-lane-height'],'max(100px,var(--piano-available-lane-height,calc(calc(32 * var(--wmc-viewport-unit,1vh)) + 1px)))','Remaining space must keep the transport anchored across live HUD changes instead of stopping at a viewport-percentage cap');
   const available=pianoViewportBudget({viewportBottom:390,laneHeight:100,transportBottom:chrome+100-parseFloat(workspace['padding-bottom']),bottomPadding:parseFloat(workspace['padding-bottom'])});
   assert.ok(available.height>=100);assert.equal(available.deficit,0);
   const reveal=pianoViewportBudget({viewportBottom:390,laneHeight:100,transportBottom:chrome+100-26-2,bottomPadding:2});
@@ -88,7 +88,7 @@ test('measured compact chrome leaves room for the complete extreme keybed, live 
 test('wider compact header reserves separate title, guide, mapping and navigation targets',async()=>{
   const css=await readFile(new URL('../web/piano-stage.css',import.meta.url),'utf8'),{document}=parseHTML(`<style>${css}</style>`),all=[...document.querySelector('style').sheet.cssRules];
   const rules=[...all.find(rule=>rule.media?.mediaText==='(max-height:600px) and (min-width:801px) and (max-width:1000px)').cssRules];
-  const heading=rules.find(rule=>rule.selectorText.endsWith('.stage-heading:has(>.beginner-controls-compact)')).style,meta=rules.find(rule=>rule.selectorText.endsWith(' .keyboard-stage-meta')).style;
+  const heading=rules.find(rule=>rule.selectorText.endsWith('.stage-heading.has-beginner-controls')).style,meta=rules.find(rule=>rule.selectorText.endsWith(' .keyboard-stage-meta')).style;
   assert.equal(heading['grid-template-columns'],'minmax(64px,1fr) max-content auto');assert.equal(meta['grid-column'],'3');assert.equal(meta['grid-row'],'1');
   // Existing measured guide 70.6875px and mapping target 81.671875px retain
   // their native sizes beside a 64px title and 54px mode text minimum.

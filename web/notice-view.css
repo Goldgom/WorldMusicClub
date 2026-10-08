@@ -1,7 +1,7 @@
 /* The message stays readable until dismissal or existing score preparation.
    Only long text scrolls; the explicit dismissal control always remains visible. */
 .game-shell #notice{display:flex;align-items:flex-start;gap:12px;padding:8px 12px;max-height:none;overflow:visible}
-#notice-message{flex:1;min-width:0;margin:0;max-height:min(24dvh,128px);overflow:auto;overscroll-behavior:contain;overflow-wrap:anywhere;white-space:pre-wrap;line-height:1.6}
+#notice-message{flex:1;min-width:0;margin:0;max-height:min(calc(24 * var(--wmc-viewport-unit,1vh)),128px);overflow:auto;overscroll-behavior:contain;overflow-wrap:anywhere;white-space:pre-wrap;line-height:1.6}
 #notice-dismiss{flex:none;max-width:155px;min-height:34px;margin:0;padding:6px 9px;font-size:12px;white-space:normal}
 #notice-message:focus-visible{outline:2px solid currentColor;outline-offset:2px}
 #notice-history{margin-top:22px;border-top:1px solid var(--border);padding-top:16px;font-size:13px;line-height:1.6;color:var(--ink)}

@@ -262,10 +262,10 @@ test('compact rhythm title and guide reserve separate real hit boxes without hid
   const css = await readFile(new URL('../web/rhythm-shell.css', import.meta.url), 'utf8');
   const {document} = parseHTML(`<style>${css}</style>`);
   const rules = [...document.querySelector('style').sheet.cssRules];
-  const heading = rules.find(rule => rule.selectorText === '.rhythm-shell.performance-layout .stage-heading:has(>.beginner-controls-compact)');
-  const title = rules.find(rule => rule.selectorText === '.rhythm-shell.performance-layout .stage-heading:has(>.beginner-controls-compact)>:is(#stage-title,#free-practice-title)');
+  const heading = rules.find(rule => rule.selectorText === '.rhythm-shell.performance-layout .stage-heading.has-beginner-controls');
+  const title = rules.find(rule => rule.selectorText === '.rhythm-shell.performance-layout .stage-heading.has-beginner-controls>:is(#stage-title,#free-practice-title)');
   const guide = rules.find(rule => rule.selectorText === '.rhythm-shell :is(#beginner-controls,#free-beginner-controls).beginner-controls-compact');
-  const metadata = rules.find(rule => rule.selectorText === '.rhythm-shell .stage-heading:has(>.beginner-controls-compact)>.keyboard-stage-meta');
+  const metadata = rules.find(rule => rule.selectorText === '.rhythm-shell .stage-heading.has-beginner-controls>.keyboard-stage-meta');
   assert.equal(heading.style.display, 'grid');
   assert.equal(heading.style['grid-template-columns'], 'minmax(64px,1fr) max-content', 'Title retains a useful minimum width beside the guide intrinsic width');
   assert.ok(parseFloat(heading.style['min-width']) >= 150);
@@ -283,10 +283,10 @@ test('compact rhythm title and guide reserve separate real hit boxes without hid
   const stageCss=await readFile(new URL('../web/piano-stage.css',import.meta.url),'utf8');
   const stageDocument=parseHTML(`<style>${stageCss}</style>`).document;
   const compactRules=[...stageDocument.querySelector('style').sheet.cssRules].filter(rule=>rule.media?.mediaText==='(max-height:600px) and (min-width:651px)').flatMap(rule=>[...rule.cssRules]);
-  const intrinsic=compactRules.findLast(rule=>rule.selectorText==='.game-shell :is(.piano-workspace,:where(#workspace)) .piano-workspace-heading .stage-heading:has(>.beginner-controls-compact)');
+  const intrinsic=compactRules.findLast(rule=>rule.selectorText==='.game-shell :is(.piano-workspace,:where(#workspace)) .piano-workspace-heading .stage-heading.has-beginner-controls');
   assert.equal(intrinsic.style['min-width'],'min-content','The heading cannot shrink below its 64px title plus the real guide label and help widths');
   const portraitRules=[...stageDocument.querySelector('style').sheet.cssRules].filter(rule=>rule.media?.mediaText==='(max-width:650px)').flatMap(rule=>[...rule.cssRules]);
-  const portraitIntrinsic=portraitRules.findLast(rule=>rule.selectorText==='.game-shell .piano-workspace .piano-workspace-heading .stage-heading:has(>.beginner-controls-compact)');
+  const portraitIntrinsic=portraitRules.findLast(rule=>rule.selectorText==='.game-shell .piano-workspace .piano-workspace-heading .stage-heading.has-beginner-controls');
   assert.equal(portraitIntrinsic?.style['min-width'],'min-content','The same title plus full guide minimum must protect 390px English and Chinese headers');
   const spacing=portraitRules.findLast(rule=>rule.selectorText==='.game-shell .piano-workspace .piano-workspace-heading');
   assert.ok(parseFloat(spacing.style.gap)<=6,'Compact row gaps leave the intrinsic title/guide track room beside all three normal-mode actions');

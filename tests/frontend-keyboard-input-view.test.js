@@ -180,7 +180,7 @@ test('compact footer CSS reserves one toolbar row and expands mapping only when 
   assert.equal(style('.keyboard-compact-status')['white-space'],'nowrap');
   const compact=rules.find(rule=>/max-height:\s*600px/.test(rule.media?.mediaText||''));
   const footer=[...compact.cssRules].find(rule=>rule.selectorText==='.keyboard-footer.keyboard-input-footer').style;
-  assert.equal(footer.padding,'3px 10px');assert.equal(footer['max-height'],'min(180px, 40dvh)');
+  assert.equal(footer.padding,'3px 10px');assert.equal(footer['max-height'],'min(180px, calc(40 * var(--wmc-viewport-unit,1vh)))');
   const meta=[...compact.cssRules].find(rule=>rule.selectorText==='.keyboard-stage-meta').style;
   assert.equal(meta.display,'flex');assert.equal(meta['flex-wrap'],undefined,'The live range shares the subtitle row without wrapping into another stage row');
 });

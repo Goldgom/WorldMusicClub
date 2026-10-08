@@ -44,6 +44,7 @@ try {
   assert.ok(page,'Actual bundled WebView target is missing');
   page.on('pageerror',error=>errors.push(error.message));
   await page.waitForFunction(()=>document.querySelector('#catalog')?.querySelector('button'),{},{timeout:30000});
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   const report=await page.evaluate(async()=>{
     const get=async path=>{const r=await fetch(path);if(!r.ok)throw new Error(`${path}: ${r.status}`);return r.json();};
     const health=await get('/api/health'),build=await get('/api/diagnostics/build'),catalog=await get('/api/catalog');
@@ -61,7 +62,9 @@ try {
     finally { URL.revokeObjectURL(blobUrl); }
     return {origin:location.origin,health,build,catalogCount:catalog.length,compileStatus:response.status,
       compiled,invalidStatus:denied.status,storage,workletStatus:worklet.status,workletModuleLoaded:true,blobBytes,
-      renderedCatalogButtons:document.querySelectorAll('#catalog button').length};
+      renderedCatalogButtons:document.querySelectorAll('#catalog button').length,
+      layout:{viewport:{width:innerWidth,height:innerHeight},shell:document.querySelector('.app-shell').getBoundingClientRect().toJSON(),
+        supports:{dynamicViewport:CSS.supports('height','100dvh'),relationalSelectors:CSS.supports('selector(:has(*))')}}};
   });
   assert.equal(report.health.engine,'rust');
   assert.equal(report.health.network,'native-protocol-no-listener');
@@ -71,6 +74,7 @@ try {
   assert.deepEqual(report.blobBytes,[0,128,255]);
   assert.ok(report.catalogCount>0);
   assert.ok(report.renderedCatalogButtons>0);
+  assert.ok(report.layout.shell.height>=report.layout.viewport.height-2,'Visible application shell collapsed below the viewport; inspect the actual screenshot');
   assert.equal(report.build.compiled.source_sha,packageInfo.source_sha);
   assert.equal(report.build.compiled.source_tree,packageInfo.source_tree);
   assert.equal(report.build.compiled.source_status,packageInfo.source_dirty?'dirty':'clean');

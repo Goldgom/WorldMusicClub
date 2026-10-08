@@ -1,7 +1,7 @@
 @import url('./notation-fit.css');
 /* One piano presentation for score practice and free playing. Fixed stage ink
    is intentionally independent of the surrounding light/dark/custom theme. */
-.piano-workspace{--piano-toolbar-height:56px;--piano-lane-height:max(100px,min(clamp(300px,50dvh,580px),var(--piano-available-lane-height,10000px)));--piano-key-height:clamp(110px,17dvh,170px);--piano-field:#142333;--piano-field-end:#1d3b4b;--piano-ink:#e0effc;--piano-pressed:#7bced7;--piano-pressed-black:#64598e}
+.piano-workspace{--piano-toolbar-height:56px;--piano-lane-height:max(100px,min(clamp(300px,calc(50 * var(--wmc-viewport-unit,1vh)),580px),var(--piano-available-lane-height,10000px)));--piano-key-height:clamp(110px,calc(17 * var(--wmc-viewport-unit,1vh)),170px);--piano-field:#142333;--piano-field-end:#1d3b4b;--piano-ink:#e0effc;--piano-pressed:#7bced7;--piano-pressed-black:#64598e}
 .game-shell #workspace.piano-workspace,.game-shell #free-practice-screen.piano-workspace{display:flex;flex-direction:column;align-items:stretch;gap:10px;max-width:none;width:100%;margin:0;padding:12px 18px 16px;overflow:auto;min-height:0;flex:1}
 .game-shell .piano-workspace>*{flex:none;min-width:0}
 .game-shell .piano-workspace .piano-workspace-heading{position:relative;display:flex;align-items:center;gap:12px;min-height:46px;margin:0;padding:0;flex-wrap:nowrap}
@@ -72,7 +72,7 @@
 .notation-overlay-options input[type=range]{width:76px;min-height:24px;margin:0;accent-color:#a1ffea}
 .notation-overlay-options output{min-width:31px;font-variant-numeric:tabular-nums}
 .notation-tools{position:relative;flex:none}.notation-tools>summary{cursor:pointer;list-style:none}.notation-tools[open]>summary{outline:2px solid #a1ffea;outline-offset:1px}
-.game-shell #workspace.notation-on-lanes #notation-dock{position:absolute;top:calc(100% + 10px);right:0;z-index:8;display:block;width:min(520px,calc(100vw - 42px));max-height:min(65dvh,520px);margin:0;overflow:auto;box-shadow:0 10px 30px #0005;border:1px solid var(--border);border-radius:12px;background:var(--paper);color:var(--ink)}
+.game-shell #workspace.notation-on-lanes #notation-dock{position:absolute;top:calc(100% + 10px);right:0;z-index:8;display:block;width:min(520px,calc(100vw - 42px));max-height:min(calc(65 * var(--wmc-viewport-unit,1vh)),520px);margin:0;overflow:auto;box-shadow:0 10px 30px #0005;border:1px solid var(--border);border-radius:12px;background:var(--paper);color:var(--ink)}
 .game-shell #workspace.notation-on-lanes #notation-dock[hidden]{display:none}
 .game-shell #workspace.notation-on-lanes #notation-dock .notation-panel{display:flex;flex-direction:column;overflow:visible}
 .game-shell #workspace.notation-on-lanes #notation-dock .notation-panel>*{flex:none;min-width:0}
@@ -83,7 +83,7 @@
 .notation-pan-controls{display:flex;gap:6px;padding:6px 12px}.notation-pan-controls .button{min-width:36px}
 .game-shell .piano-stage-toolbar :is(input,button,summary):focus-visible{outline:3px solid #ffd78c;outline-offset:2px;box-shadow:none}
 @media(max-width:1050px){.game-shell .piano-workspace .piano-workspace-heading{flex-wrap:wrap!important}.game-shell .piano-workspace .piano-workspace-heading nav{flex-wrap:wrap;justify-content:flex-end}.game-shell .piano-stage-toolbar .notation-overlay-options{order:3}.game-shell .piano-stage-toolbar .notation-tools{order:4}}
-@media(max-width:650px){.piano-workspace{--piano-lane-height:max(100px,min(calc(32dvh + 1px),var(--piano-available-lane-height,10000px)));--piano-key-height:110px}.game-shell #workspace.piano-workspace,.game-shell #free-practice-screen.piano-workspace{padding:8px;gap:8px}.game-shell .piano-workspace .piano-workspace-heading h1{font-size:18px}.game-shell .piano-workspace .piano-workspace-heading nav{flex-basis:100%;justify-content:flex-start}.game-shell .piano-workspace .piano-workspace-heading .button{font-size:11px;padding:7px 8px;min-height:36px}.game-shell .piano-stage-shared .piano-stage-toolbar{gap:7px;padding:8px 10px}.game-shell .piano-stage-shared .piano-stage-actions{gap:5px}.game-shell .piano-stage-toolbar .button{font-size:11px;padding:6px 8px}.game-shell #workspace.notation-on-lanes .performance-status,.game-shell #workspace.notation-on-lanes .keyboard-pan:not([hidden]){display:flex!important}.game-shell #workspace.notation-on-lanes .keyboard-input-footer{display:flex}.game-shell #workspace.notation-on-lanes .beginner-controls{display:flex}.game-shell .piano-workspace .performance-status{position:absolute;top:calc(var(--piano-toolbar-height) + 8px);padding:0;min-height:0}.game-shell .piano-workspace .piano-transport{min-height:56px;grid-row:auto;grid-column:auto}.game-shell .piano-workspace .performance-overlay{top:98px}}
+@media(max-width:650px){.piano-workspace{--piano-lane-height:max(100px,min(calc(calc(32 * var(--wmc-viewport-unit,1vh)) + 1px),var(--piano-available-lane-height,10000px)));--piano-key-height:110px}.game-shell #workspace.piano-workspace,.game-shell #free-practice-screen.piano-workspace{padding:8px;gap:8px}.game-shell .piano-workspace .piano-workspace-heading h1{font-size:18px}.game-shell .piano-workspace .piano-workspace-heading nav{flex-basis:100%;justify-content:flex-start}.game-shell .piano-workspace .piano-workspace-heading .button{font-size:11px;padding:7px 8px;min-height:36px}.game-shell .piano-stage-shared .piano-stage-toolbar{gap:7px;padding:8px 10px}.game-shell .piano-stage-shared .piano-stage-actions{gap:5px}.game-shell .piano-stage-toolbar .button{font-size:11px;padding:6px 8px}.game-shell #workspace.notation-on-lanes .performance-status,.game-shell #workspace.notation-on-lanes .keyboard-pan:not([hidden]){display:flex!important}.game-shell #workspace.notation-on-lanes .keyboard-input-footer{display:flex}.game-shell #workspace.notation-on-lanes .beginner-controls{display:flex}.game-shell .piano-workspace .performance-status{position:absolute;top:calc(var(--piano-toolbar-height) + 8px);padding:0;min-height:0}.game-shell .piano-workspace .piano-transport{min-height:56px;grid-row:auto;grid-column:auto}.game-shell .piano-workspace .performance-overlay{top:98px}}
 @media(max-height:600px) and (min-width:651px){.piano-workspace{--piano-lane-height:140px;--piano-key-height:88px}.game-shell #workspace.piano-workspace,.game-shell #free-practice-screen.piano-workspace{padding:6px 10px 8px;gap:6px}.game-shell .piano-workspace .piano-workspace-heading{min-height:38px}.game-shell .piano-workspace .piano-workspace-heading h1{font-size:17px}.game-shell .piano-workspace .piano-workspace-heading .button{min-height:34px;padding:6px 8px}}
 @media(prefers-reduced-motion:reduce){.piano-workspace *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 @media(forced-colors:active){.piano-stage-shared .piano-key{forced-color-adjust:none}.piano-stage-toolbar,.notation-lane-overlay{forced-color-adjust:none}}
@@ -131,7 +131,7 @@
  .game-shell .free-performance-panel>.free-stage-footer{padding:4px 10px;min-height:26px}
  .game-shell .free-stage-footer #free-mapping-status{font-size:11px;line-height:1.4}
  .game-shell .piano-workspace #free-beginner-controls{margin:0}
- .game-shell .piano-workspace .stage-heading:has(>.beginner-controls-compact){display:grid;grid-template-columns:minmax(64px,1fr) max-content;column-gap:6px;align-items:center}
+ .game-shell .piano-workspace .stage-heading.has-beginner-controls{display:grid;grid-template-columns:minmax(64px,1fr) max-content;column-gap:6px;align-items:center}
 }
 
 /* Score ink belongs to the fixed dark lane palette, across all shell themes.
@@ -151,14 +151,14 @@
 .game-shell .piano-workspace .stage-heading>.keyboard-compact-status{grid-column:1/-1;justify-self:start}
 /* Anchor the disclosure below the complete heading, including its metadata.
    A viewport-fixed top can cover the opener when a notice moves the heading. */
-.game-shell .piano-workspace .stage-heading:has(>.beginner-controls-compact){position:static}
-.game-shell .piano-workspace .beginner-controls-compact .beginner-help-body{position:absolute;left:0;top:calc(100% + 4px);max-height:50dvh}
+.game-shell .piano-workspace .stage-heading.has-beginner-controls{position:static}
+.game-shell .piano-workspace .beginner-controls-compact .beginner-help-body{position:absolute;left:0;top:calc(100% + 4px);max-height:calc(50 * var(--wmc-viewport-unit,1vh))}
 @media(max-width:650px){
  /* The inner grid needs its 64px title plus the complete guide. A 100px flex
     minimum lets the help button overflow into Close score in English. Spend
     horizontal chrome spacing instead, preserving text and control heights. */
  .game-shell .piano-workspace .piano-workspace-heading{gap:6px}
- .game-shell .piano-workspace .piano-workspace-heading .stage-heading:has(>.beginner-controls-compact){min-width:min-content}
+ .game-shell .piano-workspace .piano-workspace-heading .stage-heading.has-beginner-controls{min-width:min-content}
  .game-shell .piano-workspace .piano-workspace-heading>.button{padding-left:4px;padding-right:4px}
  /* Give Mod one row, with its summary using the remaining width. Its original
     button retains the full description and tooltip when that text is longer. */
@@ -182,7 +182,7 @@
     :where preserves the fixed library button's existing specificity priority. */
  .game-shell :is(.piano-workspace,:where(#workspace)) .piano-workspace-heading{flex-wrap:nowrap!important;gap:6px}
  .game-shell :is(.piano-workspace,:where(#workspace)) .piano-workspace-heading .stage-heading{min-width:140px}
- .game-shell :is(.piano-workspace,:where(#workspace)) .piano-workspace-heading .stage-heading:has(>.beginner-controls-compact){min-width:min-content}
+ .game-shell :is(.piano-workspace,:where(#workspace)) .piano-workspace-heading .stage-heading.has-beginner-controls{min-width:min-content}
  .game-shell :is(.piano-workspace,:where(#workspace)) .piano-workspace-heading nav{flex:1 1 310px;flex-wrap:nowrap;gap:3px}
  .game-shell :is(.piano-workspace,:where(#workspace)) .piano-workspace-heading nav .button{flex:1;min-width:0;white-space:normal;font-size:11px;padding-left:5px;padding-right:5px}
  .game-shell :is(.piano-workspace,:where(#workspace)) #rhythm-stage-free{max-width:80px;font-size:11px}
@@ -202,7 +202,7 @@
  .game-shell :is(.piano-workspace,:where(#workspace)) .piano-workspace-heading{gap:4px}
  .game-shell :is(.piano-workspace,:where(#workspace)) .piano-workspace-heading nav{flex:0 0 auto;gap:3px}
  .game-shell .piano-workspace-heading nav :is(#library-button,#import-tools-button,#score-tools-button,#settings-button,#results-button),.game-shell .piano-workspace-heading>#back-to-library{position:relative;flex:0 0 34px;width:34px;min-width:34px;max-width:34px;height:34px;min-height:34px;padding:0;overflow:hidden;text-indent:-9999px;white-space:nowrap}
- .game-shell .piano-workspace-heading nav :is(#library-button,#import-tools-button,#score-tools-button,#settings-button,#results-button)::before,.game-shell .piano-workspace-heading>#back-to-library::before{content:'';position:absolute;inset:7px;background:currentColor;mask:var(--stage-tool-icon) center/contain no-repeat;pointer-events:none}
+ .game-shell .piano-workspace-heading nav :is(#library-button,#import-tools-button,#score-tools-button,#settings-button,#results-button)::before,.game-shell .piano-workspace-heading>#back-to-library::before{content:'';position:absolute;inset:7px;background:currentColor;-webkit-mask:var(--stage-tool-icon) center/contain no-repeat;mask:var(--stage-tool-icon) center/contain no-repeat;pointer-events:none}
  .game-shell .piano-workspace-heading #library-button{--stage-tool-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M3 7V5h7l2 3h9v12H3z'/%3E%3Cpath d='M3 11h18'/%3E%3C/svg%3E")}
  .game-shell .piano-workspace-heading #import-tools-button{--stage-tool-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v12m-4-4 4 4 4-4M4 15v6h16v-6'/%3E%3C/svg%3E")}
  .game-shell .piano-workspace-heading #score-tools-button{--stage-tool-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M5 3h10l4 4v14H5zM14 3v5h5M8 12h8M8 16h8'/%3E%3C/svg%3E")}
@@ -217,7 +217,7 @@
    spill into the original score-background checkbox. The row stays 32px. */
 @media(max-height:600px) and (min-width:651px) and (max-width:800px){
  .game-shell .piano-stage-shared .piano-stage-toolbar .piano-stage-actions>.button{position:relative;flex:0 0 36px;width:36px;min-width:36px;max-width:36px;height:32px;min-height:32px;padding:0;overflow:hidden;text-indent:-9999px;white-space:nowrap}
- .game-shell .piano-stage-toolbar .piano-stage-actions>.button::before{content:'';position:absolute;inset:6px 8px;background:currentColor;mask:var(--piano-action-icon) center/contain no-repeat;pointer-events:none}
+ .game-shell .piano-stage-toolbar .piano-stage-actions>.button::before{content:'';position:absolute;inset:6px 8px;background:currentColor;-webkit-mask:var(--piano-action-icon) center/contain no-repeat;mask:var(--piano-action-icon) center/contain no-repeat;pointer-events:none}
  .game-shell .piano-stage-toolbar :is(#piano-connect-midi,#free-connect-midi){--piano-action-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 3v5m10-5v5M5 8h14v4a7 7 0 0 1-14 0zM12 19v3'/%3E%3C/svg%3E")}
  .game-shell .piano-stage-toolbar :is(#piano-keyboard-settings,#free-keyboard-settings){--piano-action-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='5' width='20' height='14' rx='2'/%3E%3Cpath d='M6 9h1m4 0h1m4 0h1M6 13h1m4 0h1m4 0h1M7 16h10'/%3E%3C/svg%3E")}
  .game-shell .piano-stage-toolbar :is(#sound-button,#free-sound){min-width:36px;--piano-action-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 9h4l5-5v16l-5-5H3zM16 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14'/%3E%3C/svg%3E")}
@@ -237,7 +237,7 @@
 /* Short landscape spends one row on mode controls. Move the original controls
    here without cloning their handlers, and keep expanded guidance above it. */
 @media(max-height:600px) and (min-width:651px){
- .piano-workspace{--piano-toolbar-height:36px;--piano-lane-height:max(100px,var(--piano-available-lane-height,calc(32dvh + 1px)))}
+ .piano-workspace{--piano-toolbar-height:36px;--piano-lane-height:max(100px,var(--piano-available-lane-height,calc(calc(32 * var(--wmc-viewport-unit,1vh)) + 1px)))}
  .game-shell #workspace.piano-workspace,.game-shell #free-practice-screen.piano-workspace{padding-top:4px;padding-bottom:6px;gap:4px}
  /* Retain the notice and its 34px dismissal target without spending 18px on
     padding and a gap above it. The lane and extreme guide keybed keep their size. */
@@ -262,7 +262,7 @@
 }
 
 @media(min-height:601px) and (max-width:1279px){
- .piano-workspace{--piano-lane-height:max(100px,min(calc(32dvh + 1px),var(--piano-available-lane-height,10000px)))}
+ .piano-workspace{--piano-lane-height:max(100px,min(calc(calc(32 * var(--wmc-viewport-unit,1vh)) + 1px),var(--piano-available-lane-height,10000px)))}
 }
 
 /* The optional guide reserves the same complete glyph box in both keybeds. */
@@ -335,7 +335,7 @@
 @media(max-height:600px) and (min-width:801px) and (max-width:1000px){
  .game-shell #workspace .piano-workspace-heading{min-height:34px}
  .game-shell #workspace .piano-workspace-heading>:is(#notation-toggle,#rhythm-stage-free){font-size:11px;line-height:12px;padding-top:4px;padding-bottom:4px;min-height:34px}
- .game-shell #workspace .piano-workspace-heading .stage-heading:has(>.beginner-controls-compact){grid-template-columns:minmax(64px,1fr) max-content auto;min-width:287px}
+ .game-shell #workspace .piano-workspace-heading .stage-heading.has-beginner-controls{grid-template-columns:minmax(64px,1fr) max-content auto;min-width:287px}
  .game-shell #workspace .piano-workspace-heading .keyboard-stage-meta{grid-column:3;grid-row:1;margin-top:0;gap:4px}
  .game-shell #workspace .piano-workspace-heading .keyboard-stage-meta #stage-subtitle{min-width:54px;max-width:90px}
  .game-shell #workspace #edit-song-mod{max-width:none;white-space:nowrap;font-size:11px;padding-left:5px;padding-right:5px}
@@ -362,4 +362,16 @@
  .game-shell #workspace.piano-workspace #practice-gate>div{display:contents}
  .game-shell #workspace.piano-workspace #practice-gate>div>span{grid-column:2;grid-row:1}
  .game-shell #workspace.piano-workspace #practice-gate #practice-gate-retry{grid-column:3;grid-row:1/3;align-self:center}
+}
+
+/* Legacy tablet engines need a second heading row for the song actions. Keep
+   the title, guide and navigation together instead of squeezing the title to
+   a few characters. Modern layouts keep their existing measured budget. */
+@supports not (height:100dvh){
+ @media(max-height:600px) and (min-width:651px) and (max-width:1000px){
+  .game-shell.performance-layout #workspace>.piano-workspace-heading{flex-wrap:wrap!important}
+  .game-shell.performance-layout #workspace>.piano-workspace-heading>nav{flex:0 0 auto;order:0}
+  .game-shell #workspace .piano-workspace-heading .stage-heading.has-beginner-controls{flex:1 1 calc(100% - 280px);min-width:0}
+  .game-shell #workspace .piano-workspace-heading>:is(#notation-toggle,#rhythm-stage-free,#song-mod-stage,#song-parts-tools){order:1}
+ }
 }
