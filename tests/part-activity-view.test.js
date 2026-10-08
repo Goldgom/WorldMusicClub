@@ -32,6 +32,17 @@ test('activity is display-only and restricted to complete practice machine rows'
   view.update({rows:[]},context); assert.equal(view.root.hidden,true);
 });
 
+test('initially hidden strip has localized accessible name and unchanged hidden frames do not write DOM', async () => {
+  const {view,i18n,window}=setup();assert.equal(view.root.hidden,true);assert.equal(view.root.getAttribute('aria-label'),partActivityText('en','title'));
+  const writes=[],observer=new window.MutationObserver(records=>writes.push(...records));observer.observe(view.root,{attributes:true,childList:true,characterData:true,subtree:true});
+  for(let index=0;index<20;index++)view.update(null,{...context,layout:'solo'});
+  await Promise.resolve();assert.equal(writes.length,0,'Initial hidden renders must be no-op writes');
+  i18n.locale='zh-CN';view.update(null,{...context,mode:'listen'});await Promise.resolve();assert.equal(view.root.hidden,true);assert.equal(view.root.getAttribute('aria-label'),partActivityText('zh-CN','title'));assert.deepEqual(writes.map(record=>record.attributeName),['aria-label']);writes.length=0;
+  for(let index=0;index<20;index++)view.update({rows:[]},context);
+  await Promise.resolve();assert.equal(writes.length,0,'Unchanged locale and hidden frames must not write');
+  i18n.locale='en';view.update({rows:[]},context);await Promise.resolve();assert.equal(view.root.getAttribute('aria-label'),partActivityText('en','title'));assert.deepEqual(writes.map(record=>record.attributeName),['aria-label']);observer.disconnect();view.destroy();
+});
+
 test('one-row paging reaches every admitted part in source order and clamps shrink', () => {
   const {view} = setup(); const rows = Array.from({length:130},(_,index)=>machine(index));
   view.update({rows},context);

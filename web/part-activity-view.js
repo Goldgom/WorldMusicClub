@@ -54,6 +54,8 @@ export function createPartActivityView({document, parent, i18n}) {
   }
   function paint() {
     if (disposed) return;
+    const t = (key, values) => partActivityText(i18n?.locale || 'en', key, values);
+    setAttribute(root, 'aria-label', t('title'));
     const rows = [], seen = new Set();
     const supplied = Array.isArray(snapshot?.rows) ? snapshot.rows : [];
     for (let index = 0; index < Math.min(supplied.length, PART_ACTIVITY_VIEW_LIMIT); index++) {
@@ -66,9 +68,9 @@ export function createPartActivityView({document, parent, i18n}) {
     setHidden(root, !visible);
     if (!visible) { page = 0; return; }
     page = Math.min(page, rows.length - 1);
-    const selected = rows[page], t = (key, values) => partActivityText(i18n?.locale || 'en', key, values);
+    const selected = rows[page];
     const state = PART_ACTIVITY_STATES.includes(selected.state) ? selected.state : 'unavailable';
-    setText(title, t('title')); setAttribute(root, 'aria-label', t('title'));
+    setText(title, t('title'));
     setText(label, cached(selected.label, 160) || cached(selected.partId, 160) || t('part', {number: page + 1}));
     setText(machine, t('machine')); setAttribute(label, 'title', label.textContent);
     setText(summary, cached(selected.sourceInstrumentSummary, 300) || t('unidentified'));
@@ -112,6 +114,7 @@ export function createPartActivityView({document, parent, i18n}) {
   };
   previous.addEventListener('click', back); next.addEventListener('click', forward);
   pages.addEventListener('keydown', keydown); pages.addEventListener('keyup', keyup);
+  paint();
   return {
     root, element: root,
     update(value, nextContext = context) { snapshot = value; context = nextContext; paint(); },
