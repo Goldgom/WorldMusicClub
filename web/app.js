@@ -69,6 +69,8 @@ import {setupScoreLibrary} from './library-view.js';
 import {validateTargetPlan, mappedSourceIds} from './physical-targets.js';
 import {PracticeRecorder} from './practice-recorder.js';
 import {setupResultsSummary} from './results-summary.js';
+import {notationMeasuresPerRow} from './notation-row-window.js';
+import {setupCompleteScoreReader} from './complete-score-reader.js';
 import {setupEngravedView} from './engraved-view.js';
 import {setupWrittenCursor} from './written-cursor.js';
 import {setupJianpuEditor} from './jianpu-editor.js';
@@ -171,7 +173,7 @@ let metronome = null;
 let adaptationView = null;
 let transpositionView = null;
 let externalOmrView = null;
-let notationFollowing = null;
+let notationFollowing = null, completeScoreReader = null;
 let writtenCursor = null, writtenCursorStatus = null, writtenCursorRetry = null;
 let sourceArchiveView=null,referenceListening=null,performanceListening=null,lobbyPreview=null,scoreStorage=null,scoreStorageView=null,bulkImportView=null,songAuthoringView=null,libraryManagement=null,fileSelectionVersion=0;
 let pendingScoreSaveOwner=null,scoreSaveNavigation=0,noticeRevision=0;
@@ -465,7 +467,7 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     state.notationPage = 0; state.notationPart = hasBasicKeyRendition(cleanSong)?state.practicePart:cleanSong ? null : state.practicePart || state.score.parts[0].id;
     if (!preserveTempo) $('tempo').value = String(displayOpeningTempo(state.score,cleanSong));
     clearNotice();
-    notationFollowing?.scoreChanged();
+    notationFollowing?.scoreChanged();completeScoreReader?.scoreChanged();
     resetPlayback();
     renderScore(); sourceArchiveView?.scoreChanged(); libraryView.scoreChanged(); scoreStorageView?.render(); adaptationView?.scoreChanged(); transpositionView?.scoreChanged(); renderCatalog(); updateRangeWarning();
     bindText($('catalog-status'), () => t('app.currentSession', {title:state.score.title}));
@@ -803,9 +805,14 @@ function renderNotationPage() {
   if(hasBasicKeyRendition(state.cleanSong)&&!engravedView.sourceInspection()){
     const pages=engravedView.basicPages(),page=pages[0],host=$('notation');host.replaceChildren();$('basic-notation-note').removeAttribute('data-i18n');bindText($('basic-notation-note'),()=>i18n.locale==='en'?'Basic interpretation v1: all interpreted targets share playback IDs and timing. Positive gates use this pitch/numbered view; synthetic onsets and percussion selectors stay explicitly labeled above. Original source notation is unchanged.':'基础解释 v1：全部解释目标与播放共用标识和时间。正时长门限显示在此音高／简谱视图，合成起音与打击乐选择键在上方明确标记。原始源记谱保持不变。');
     if(page?.view_version===2&&page.source_sha256===state.cleanSong.score.source.sha256){
-      for(const displayed of pages){const mount=document.createElement('section');mount.dataset.notationPartId=displayed.part_id;const heading=document.createElement('p');heading.className='notation-part-title';heading.textContent=state.score.parts.find(part=>part.id===displayed.part_id)?.name||displayed.part_id;mount.append(heading);const body=document.createElement('div'),rendered=renderBasicKeyPage(displayed,state.notation,{width:Math.max(240,host.clientWidth-36),numberedMode:state.numberedMode,i18n});body.innerHTML=rendered.html;if(!rendered.html&&!rendered.fallback.length)body.textContent=(displayed.interpreted_notes||[]).length?t(displayed.status==='percussion_selectors'?'notationRuntime.basicSelectorPage':'notationRuntime.basicOnsetPage'):t('notation.empty');mount.append(body);
-        if(rendered.fallback.length){const list=document.createElement('ul');for(const item of rendered.fallback){const row=document.createElement('li');row.className='score-note';row.dataset.noteId=item.note_id;row.textContent=i18n.locale==='en'?`MIDI key ${item.key} · interpreted gate · ${item.note_id}`:`MIDI 键 ${item.key} · 解释门限 · ${item.note_id}`;list.append(row);}mount.append(list);}host.append(mount);
-      }
+      const backgroundRows=$('workspace').classList.contains('notation-on-lanes'),rowSpan=Math.max(1,Math.min(notationMeasuresPerRow(host.clientWidth),Math.floor(page.measure_count/2)));
+      const batches=backgroundRows?engravedView.basicRowBatches():[{pages,firstMeasure:page.first_measure}];
+      const ranges=batches.flatMap(batch=>backgroundRows?Array.from({length:Math.ceil(batch.pages[0].measure_count/rowSpan)},(_,index)=>({measureFrom:index*rowSpan,measureTo:Math.min(batch.pages[0].measure_count,(index+1)*rowSpan),pages:batch.pages,firstMeasure:batch.firstMeasure})):[null]);
+      for(const range of ranges){const rowHost=range?document.createElement('section'):host;if(range){rowHost.className='notation-system-row';rowHost.dataset.notationNativeRow=String(range.firstMeasure+range.measureFrom);rowHost.dataset.notationMeasureCount=String(range.measureTo-range.measureFrom);host.append(rowHost);}
+      for(const displayed of range?.pages||pages){const mount=document.createElement('section');mount.dataset.notationPartId=displayed.part_id;const heading=document.createElement('p');heading.className='notation-part-title';heading.textContent=state.score.parts.find(part=>part.id===displayed.part_id)?.name||displayed.part_id;mount.append(heading);const body=document.createElement('div'),rendered=renderBasicKeyPage(displayed,state.notation,{...range,width:Math.max(240,host.clientWidth-36),numberedMode:state.numberedMode,i18n});body.innerHTML=rendered.html;if(!rendered.html&&!rendered.fallback.length)body.textContent=(displayed.interpreted_notes||[]).length?t(displayed.status==='percussion_selectors'?'notationRuntime.basicSelectorPage':'notationRuntime.basicOnsetPage'):t('notation.empty');mount.append(body);
+        if(rendered.fallback.length){const list=document.createElement('ul');for(const item of rendered.fallback){const row=document.createElement('li');row.className='score-note';row.dataset.noteId=item.note_id;row.textContent=i18n.locale==='en'?`MIDI key ${item.key} · interpreted gate · ${item.note_id}`:`MIDI 键 ${item.key} · 解释门限 · ${item.note_id}`;list.append(row);}mount.append(list);}rowHost.append(mount);
+      }}
+      if(backgroundRows&&!state.engravingActive){const rows=[...host.querySelectorAll('[data-notation-native-row]')].slice(0,2),height=rows.reduce((sum,row)=>sum+row.getBoundingClientRect().height,0);$('workspace').style.setProperty('--notation-row-height',`${Math.ceil(height+24)}px`);$('notation-lane-overlay').dataset.notationRows=String(rows.length);}
       if(!state.engravingActive)engravedView.reportPaint(pages.filter(item=>(['ready','rendering_unavailable','onset_page','percussion_selectors'].includes(item.status)||item.status==='empty_page'&&item.measures?.length>0&&item.follow_end_ms>item.source_start_ms)).map(item=>item.part_id),engravedView.basicBatch()?.status||'ready');
       bindText($('notation-page'),()=>i18n.locale==='en'?`Rendition measures ${page.first_measure+1}–${page.first_measure+page.measure_count} / ${page.total_measures}`:`解释小节 ${page.first_measure+1}～${page.first_measure+page.measure_count} / ${page.total_measures}`);$('notation-prev').disabled=page.first_measure===0;$('notation-next').disabled=page.next_measure===null;
     }else{const status=shell.notationVisible()?engravedView.followPosition(Math.max(0,playbackPosition(performance.now()))):null;bindText($('notation-page'),()=>status?.status==='unavailable'?(i18n.locale==='en'?'The native rendition page is unavailable. Reopen Staff to retry.':'本机解释页面不可用。请重新打开五线谱重试。'):(i18n.locale==='en'?'Preparing the shared rendition page…':'正在准备共用解释页面…'));$('notation-prev').disabled=$('notation-next').disabled=true;}
@@ -816,15 +823,17 @@ function renderNotationPage() {
   if (layout.spanBeats !== state.notationSpan) { state.notationSpan = layout.spanBeats; state.notationPage = Math.floor(previousBeat / state.notationSpan); }
   $('basic-notation-note').removeAttribute('data-i18n');bindText($('basic-notation-note'),()=>hasBasicKeyRendition(state.cleanSong)?(i18n.locale==='en'?'Source-only pitch/numbered projection: this view preserves the original proved-note subset. Choose Staff for the complete interpreted gates, onset markers and percussion selectors used by playback and scoring.':'仅源数据的音高／简谱投影：此视图保留原始已确定音符子集。请选择五线谱，查看与播放、评分一致的完整解释门限、起音标记及打击乐选择键。'):t('ui.basic-notation-note'));
   const count = notationPageCount(state.score, state.notationSpan);
-  state.notationPage = Math.max(0, Math.min(count - 1, state.notationPage));
+  const rowMode=$('workspace').classList.contains('notation-on-lanes'),lastPage=Math.max(0,count-(rowMode?2:1));
+  state.notationPage = Math.max(0, Math.min(lastPage, state.notationPage));
   const visibleParts=new Set(engravedView.displayedPartIds()),displayScore={...state.score,parts:state.score.parts.filter(part=>visibleParts.has(part.id))};
-  $('notation').innerHTML = renderNotation(displayScore, state.notation, {startBeat: state.notationPage * state.notationSpan, spanBeats: state.notationSpan, width: layout.width, partId: state.notationPart, allParts: state.notationPart===null, numberedMode: state.numberedMode,i18n});
+  $('notation').innerHTML = Array.from({length:rowMode?Math.min(2,count):1},(_,offset)=>`<section class="notation-system-row" data-notation-row="${state.notationPage+offset}">${renderNotation(displayScore, state.notation, {startBeat: (state.notationPage+offset) * state.notationSpan, spanBeats: state.notationSpan, width: layout.width, partId: state.notationPart, allParts: state.notationPart===null, numberedMode: state.numberedMode,i18n})}</section>`).join('');
+  if(rowMode&&!state.engravingActive){const height=$('notation').getBoundingClientRect().height;$('workspace').style.setProperty('--notation-row-height',`${Math.ceil(height+24)}px`);$('notation-lane-overlay').dataset.notationRows=String(Math.min(2,count));}
   if(!state.engravingActive)engravedView.reportPaint(displayScore.parts.map(part=>part.id));
   const tonic = keyTonic(keyAt(state.score, state.notationPage * state.notationSpan));
   if (!state.engravingActive) bindText($('score-key'), () => basicMeterLabel()||(state.notation === 'jianpu' && state.numberedMode === 'movable' ? (tonic ? t('app.tonicNumbering', {tonic:`${tonic.name}${tonic.octave}`}) : t('app.unknownKey')) : t('app.notationMeter', {numerator:state.score.meters[0]?.numerator||4,denominator:state.score.meters[0]?.denominator||4})));
   bindText($('notation-page'), () => t('app.notationPage', {page:state.notationPage+1,count}));
   $('notation-prev').disabled = state.notationPage <= 0;
-  $('notation-next').disabled = state.notationPage >= count - 1;
+  $('notation-next').disabled = state.notationPage >= lastPage;
   state.lastHighlight = '';markNotationRoles();
 }
 function updateRangeWarning() {
@@ -1537,7 +1546,7 @@ function drawFrame(displayOnly = false) {
   if(displayOnly!==true&&shell.notationVisible())notationFollowing?.tick(position < segmentStart ? -1 : position,transport.running,{...written,entries:displayedWritten,pageAnchor:writtenCursor?.pageAnchor(position,displayedPartId())});
   const signature = JSON.stringify([i18n.revision,written?.occurrence?.id || null,currentWritten.map(entry=>entry.sourceNoteId),displayedWritten.map(entry=>entry.sourceNoteId)]);
   if (signature !== state.lastHighlight) {
-    updateWrittenNoteHighlights(document,displayedWritten.filter(entry=>state.mode!=='practice'||isHumanWritten(entry)).map(entry=>entry.sourceNoteId));
+    updateWrittenNoteHighlights(document,displayedWritten.filter(entry=>state.mode!=='practice'||isHumanWritten(entry)).map(entry=>entry.sourceNoteId),written?.occurrence?.source_measure_index);
     state.lastHighlight = signature;
     if((writtenCursor?.state().status==='ready'||isBasicKeysSong(state.cleanSong)&&written?.occurrence)&&writtenCursorStatus){
       if(isBasicKeysSong(state.cleanSong)){writtenCursorStatus.dataset.status='ready';writtenCursorRetry.hidden=true;}
@@ -2064,6 +2073,8 @@ const engravedView = setupEngravedView({getExportScore:()=>originalPitchContext(
   if(active){bindText($('score-key'), () => t('app.generatedStaff'));for(const id of ['staff-button','jianpu-button']){$(id).classList.remove('selected');$(id).setAttribute('aria-pressed','false')}$('engraved-button').classList.add('selected');$('engraved-button').setAttribute('aria-pressed','true')}
 },onFallback:()=>selectBasicNotation('staff',{remember:false}),onManualNavigation:()=>notationFollowing?.suspend()});
 $('workspace').addEventListener('notationscopechange',event=>{engravedView.setScope(event.detail);const scope=engravedView.scopeInfo();state.notationPart=scope.scope==='all'?null:scope.partId;$('notation-part').value=state.notationPart||'';renderNotationPage();});
+completeScoreReader=setupCompleteScoreReader({document,i18n,getScore:()=>state.score,getExportScore:()=>originalPitchContext(state).score,getCleanSong:()=>state.cleanSong,onVisibility:open=>{if(!open)notationFollowing?.viewportChanged();}});
+const completeScoreButton=document.createElement('button');completeScoreButton.id='complete-score-button';completeScoreButton.className='button secondary';completeScoreButton.type='button';completeScoreButton.setAttribute('aria-haspopup','dialog');bindText(completeScoreButton,()=>i18n.locale==='en'?'Complete score':'完整乐谱');$('notation-toggle').after(completeScoreButton);completeScoreButton.addEventListener('click',()=>completeScoreReader.open());
 const basicNotationReveal=createBasicNotationReveal({container:$('notation'),dock:$('notation-dock')});
 $('notation-dock').addEventListener('toggle',()=>basicNotationReveal.reset(),true);
 $('workspace').addEventListener('notationviewportchange',()=>notationFollowing?.viewportChanged());
@@ -2083,10 +2094,12 @@ const followingView={
   followMeasure(index,occurrence,written){
     if(state.engravingActive)return engravedView.followMeasure(index);
     if(hasBasicKeyRendition(state.cleanSong))return false;
-    const page=basicNotationPage(occurrence,written?.entries,state.notationPart,state.notationSpan,written?.pageAnchor);
+    let page=basicNotationPage(occurrence,written?.entries,state.notationPart,state.notationSpan,written?.pageAnchor);
+    if(page!==null&&$('workspace').classList.contains('notation-on-lanes'))page=Math.min(page,Math.max(0,notationPageCount(state.score,state.notationSpan)-2));
     if(page!==null&&page!==state.notationPage){state.notationPage=page;renderNotationPage()}
   },
   revealExpectedWrittenNotes(occurrenceId,index,written){
+    if(!state.engravingActive&&$('workspace').classList.contains('notation-on-lanes'))return basicNotationReveal.reveal(occurrenceId,(written?.entries||[]).map(entry=>entry.sourceNoteId),index);
     return state.engravingActive?engravedView.revealExpectedWrittenNotes(occurrenceId,index):engravedView.revealRenditionEvents(written?.entries?.map(entry=>entry.sourceNoteId))||basicNotationReveal.reveal(occurrenceId,(written?.entries||[]).filter(entry=>state.notationPart===null||entry.partId===state.notationPart).map(entry=>entry.sourceNoteId));
   },
 };

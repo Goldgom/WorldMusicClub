@@ -1,3 +1,4 @@
+import {revealNotationRows} from './notation-row-window.js';
 import {isVsqNavigationIndex} from './vsq-navigation.js';
 import {planEngravingReveal} from './engraving-reveal.js';
 import {getAppI18n} from './app-locale.js';
@@ -71,10 +72,17 @@ export function notationRevealViewport(dock,container) {
 export function createBasicNotationReveal({container,dock}) {
   let last='',root=null,result={status:'unavailable'};
   const reset=()=>{last='';root=null};
-  function reveal(occurrenceId,sourceNoteIds) {
+  function reveal(occurrenceId,sourceNoteIds,sourceMeasureIndex) {
     const key=JSON.stringify([occurrenceId,[...sourceNoteIds].sort()]);
     if(last===key&&root===container.firstElementChild)return result;
     last=key;root=container.firstElementChild;result={status:'unavailable'};
+    const nativeRows=container.querySelectorAll?.('[data-notation-native-row]');
+    if(nativeRows?.length&&Number.isInteger(sourceMeasureIndex)){
+      const systems=[...nativeRows].map((node,index)=>({index,sourceMeasureIndices:Array.from({length:Number(node.dataset.notationMeasureCount)},(_,offset)=>Number(node.dataset.notationNativeRow)+offset),rect:node.getBoundingClientRect()}));
+      const plan=revealNotationRows({systems,sourceMeasureIndex,viewport:notationScrollViewport(dock),stage:container.ownerDocument.getElementById('workspace')});if(plan)return result={status:plan.status};
+    }
+    const rows=container.querySelectorAll?.('[data-notation-row]');
+    if(rows?.length&&notationScrollViewport(dock)!==dock){const viewport=notationScrollViewport(dock);if(viewport.scrollTop)viewport.scrollTo?.({top:0,left:0,behavior:'instant'});return result={status:'ready'};}
     if(!sourceNoteIds.length)return result;
     try {
       const ids=new Set(sourceNoteIds),nodes=[...container.querySelectorAll('.score-note')].filter(node=>ids.has(node.dataset.noteId));

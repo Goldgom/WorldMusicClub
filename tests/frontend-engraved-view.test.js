@@ -421,3 +421,34 @@ test('engraved view forwards the current receipt and filters same-part machine f
   i18n.setLocale('zh-CN');assert.match(env.elements.get('engraving-status').textContent,/完整五线谱仍然显示/);assert.match(env.elements.get('engraving-status').textContent,/机器下落音符和简谱提示已隐藏/);
  }finally{env.close();}
 });
+
+test('background row following overlaps adjacent systems instead of replacing a two-row page',async()=>{
+ const calls=[];let env;
+ const adapter={disposeEngravedStaff(){},async renderEngravedStaff(container,xml,options){calls.push(options);const start=options.fromMeasure-1,end=options.toMeasure;return {ok:true,metadata:{fromMeasure:options.fromMeasure,toMeasure:options.toMeasure},dispose(){},systemLayout(){return{status:'ready',systems:Array.from({length:Math.ceil((end-start)/2)},(_,index)=>({sourceMeasureIndices:Array.from({length:Math.min(2,end-start-index*2)},(_,offset)=>start+index*2+offset),staffCount:2,rect:{left:0,right:800,top:20+index*180-(env.elements.get('notation-dock').scrollTop||0),bottom:180+index*180-(env.elements.get('notation-dock').scrollTop||0)}}))};}};}};
+ env=environment({loadAdapter:async()=>adapter});
+ try{
+  const stage=document.getElementById('workspace');stage.classList={contains:value=>value==='notation-on-lanes'};stage.style={setProperty(){},removeProperty(){}};
+  env.elements.get('engraved-staff').clientWidth=800;
+  const dock=env.elements.get('notation-dock');dock.dataset={};dock.scrollTop=0;dock.scrollLeft=0;dock.getBoundingClientRect=()=>({top:0});dock.scrollTo=({top})=>{dock.scrollTop=top;};
+  const score=structuredClone(fixture);score.measures=Array.from({length:10},(_,index)=>({number:index+1,at:{numerator:index*4,denominator:1},length:{numerator:4,denominator:1}}));
+  env.setScore(score);env.calls[0].resolve({ok:true,json:async()=>({xml:'<score-partwise/>',part_id_map:{piano:'P1'},diagnostics:[]})});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(calls[0].measuresPerRow,2);assert.equal(calls[0].toMeasure,8);assert.equal(dock.dataset.notationRows,'2');
+  env.view.followMeasure(1);assert.equal(calls.length,1);
+  env.view.followMeasure(2);assert.equal(calls.length,1,'An adjacent mounted row needs no re-render');assert.equal(dock.dataset.notationRow,'1');
+  env.view.followMeasure(6);await new Promise(resolve=>setImmediate(resolve));assert.equal(calls.length,2);assert.equal(calls[1].fromMeasure,7);assert.equal(calls[1].toMeasure,10);
+  env.view.followMeasure(8);assert.equal(calls.length,2,'Final row retains the preceding row');
+  env.view.followMeasure(0);await new Promise(resolve=>setImmediate(resolve));assert.equal(calls[2].fromMeasure,1,'A loop or backward seek restores the first pair');
+  env.elements.get('engraving-next').listeners.get('click')();await new Promise(resolve=>setImmediate(resolve));assert.equal(calls.at(-1).fromMeasure,3,'Manual next advances a single temporal row');
+  for(let index=0;index<8;index++){env.elements.get('engraving-next').listeners.get('click')();await new Promise(resolve=>setImmediate(resolve));}
+  assert.equal(calls.at(-1).fromMeasure,7,'Manual final range retains the previous row');assert.equal(calls.at(-1).toMeasure,10);assert.equal(dock.dataset.notationRows,'2');
+  assert.equal(env.pauses,0);
+ }finally{env.close();}
+});
+
+test('background row mode retains an explicit native missing-meter choice instead of painting an empty ready range',async()=>{
+ const open=JSON.parse(readFileSync(new URL('./fixtures/basic-keys-native-open.json',import.meta.url),'utf8')),data=JSON.parse(readFileSync(new URL('./fixtures/basic-keys-notation-page.json',import.meta.url),'utf8'));
+ const song=prepareCleanSong(`native:song-${open.clean_package.content_sha256}`,open.clean_package,null);let loads=0;
+ const env=environment({getCleanSong:()=>song,loadAdapter:async()=>{loads++;throw Error('A missing meter has no engraving to load');}});
+ try{const stage=document.getElementById('workspace');stage.classList={contains:value=>value==='notation-on-lanes'};stage.style={removeProperty(){}};env.setScore(song.notation);env.calls[0].resolve({ok:true,json:async()=>data.missing});await new Promise(resolve=>setImmediate(resolve));assert.equal(loads,0);assert.match(env.elements.get('engraving-status').textContent,/no unambiguous opening meter/);assert.equal(env.view.followPosition(0).status,'choice');assert.equal(env.view.isActive(),true);}
+ finally{env.close();}
+});

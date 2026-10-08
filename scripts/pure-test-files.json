@@ -275,5 +275,8 @@
   "tests/basic-human-admission-fixtures.test.js",
   "tests/basic-practice-admission.test.js",
   "tests/source-human-admission-proof.test.js",
-  "tests/frontend-basic-human-admission.test.js"
+  "tests/frontend-basic-human-admission.test.js",
+  "tests/engraving-systems.test.js",
+  "tests/notation-row-window.test.js",
+  "tests/complete-score-reader.test.js"
 ]

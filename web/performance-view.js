@@ -11,10 +11,11 @@ export const FIELD_COLORS=Object.freeze({background:'#142333',backgroundEnd:'#1d
 
 /** Presentation changes only. Unchanged attributes can still invalidate style
  * on a dense SVG page, so never rewrite them for another playback frame. */
-export function updateWrittenNoteHighlights(root,sourceNoteIds){
+export function updateWrittenNoteHighlights(root,sourceNoteIds,sourceMeasureIndex=null){
   const activeIds=new Set(sourceNoteIds);
   for(const node of root.querySelectorAll('.score-note')){
-    const active=activeIds.has(node.dataset.noteId)&&!['machine','unavailable'].includes(node.dataset.practiceRole)&&!node.classList.contains('practice-machine-hidden'),text=String(active);
+    const row=node.closest?.('[data-notation-native-row]'),from=Number(row?.dataset.notationNativeRow),count=Number(row?.dataset.notationMeasureCount),inRow=!row||Number.isInteger(sourceMeasureIndex)&&sourceMeasureIndex>=from&&sourceMeasureIndex<from+count;
+    const active=inRow&&activeIds.has(node.dataset.noteId)&&!['machine','unavailable'].includes(node.dataset.practiceRole)&&!node.classList.contains('practice-machine-hidden'),text=String(active);
     if(node.classList.contains('active')!==active)node.classList.toggle('active',active);
     if(node.getAttribute('aria-current')!==text)node.setAttribute('aria-current',text);
   }

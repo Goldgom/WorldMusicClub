@@ -44,8 +44,9 @@ export function setupNotationFit({viewport,getSurface,getReservedHeight=()=>0,on
     // Part headings, wrapper margins and quiet-part text stay at normal size.
     // Deduct their measured height instead of pretending it scales with SVGs.
     const unscaledHeight=Math.max(0,surfaceRect.height-paddingY-paintedHeight),reservedHeight=Math.max(0,getReservedHeight())+unscaledHeight;
-    const plan=planNotationFit({width:Math.max(0,Math.min(rect.width,surfaceRect.width)-paddingX),height:Math.max(1,rect.height-paddingY-reservedHeight),
+    let plan=planNotationFit({width:Math.max(0,Math.min(rect.width,surfaceRect.width)-paddingX),height:Math.max(1,rect.height-paddingY-reservedHeight),
       contentWidth:Math.max(...widths),contentHeight:heights.reduce((sum,height)=>sum+height,0),glyphSize:glyphs.length?Math.min(...glyphs):mode==='jianpu'?25:10,mode});
+    if(viewport.dataset.notationRows)plan={...plan,scale:1,status:'rows',glyphSize:glyphs.length?Math.min(...glyphs):mode==='jianpu'?25:10};
     for(const node of paint){const scale=String(plan.scale);if(node.style.zoom!==scale){node.style.zoom=scale;paintChanged=true;}}
     viewport.dataset.notationFit=plan.status;viewport.dataset.notationScale=String(plan.scale);
     // A new page can have the same dimensions as its predecessor. Its separate
