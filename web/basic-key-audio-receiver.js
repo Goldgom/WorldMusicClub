@@ -1,4 +1,5 @@
 import {BASIC_KEY_AUDIO_PROTOCOL, BASIC_KEY_AUDIO_LIMITS as LIMITS, BasicKeyAudioError, createBasicKeyAudioTransfer, validateBasicKeyAudioPlan} from './basic-key-audio-plan.js';
+import {MAX_AUDIO_START_LEAD_SECONDS} from './audio-start-lead.js';
 
 export {BasicKeyAudioError, BASIC_KEY_AUDIO_LIMITS, buildBasicKeyAudioPlan} from './basic-key-audio-plan.js';
 const modules = new WeakMap();
@@ -152,7 +153,7 @@ export class BasicKeyAudioReceiver {
     this.requireOpen();
     if (this.state !== 'ready' || this.context.state !== 'running') return Promise.reject(error('clean_audio_unavailable', 'Only a ready plan and running audio device can start.'));
     const anchorFrame = Math.ceil(anchorTime * this.context.sampleRate), now = Math.floor(this.context.currentTime * this.context.sampleRate);
-    if (!Number.isSafeInteger(anchorFrame) || anchorFrame <= now || anchorFrame - now > Math.ceil(this.context.sampleRate * .1)) return Promise.reject(error('clean_late_start', 'The audio start anchor must be in the future and within the declared 100 ms lead.'));
+    if (!Number.isSafeInteger(anchorFrame) || anchorFrame <= now || anchorFrame - now > Math.ceil(this.context.sampleRate * MAX_AUDIO_START_LEAD_SECONDS)) return Promise.reject(error('clean_late_start', 'The audio start anchor must be in the future and within the bounded 500 ms acknowledgement window.'));
     if (!this.connected) { this.node.connect(this.outputGate); this.connected = true; }
     this.outputGate.gain.setValueAtTime(1, anchorFrame / this.context.sampleRate);
     this.state = 'starting';

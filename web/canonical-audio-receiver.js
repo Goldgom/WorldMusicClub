@@ -1,4 +1,5 @@
 import {BasicKeyAudioReceiver} from './basic-key-audio-receiver.js';
+import {MAX_AUDIO_START_LEAD_SECONDS} from './audio-start-lead.js';
 import {BasicKeyAudioError} from './basic-key-audio-plan.js';
 import {CANONICAL_AUDIO_PROTOCOL,CANONICAL_AUDIO_LIMITS as LIMITS,validateCanonicalAudioPlan,createCanonicalAudioTransfer,canonicalIdentity} from './canonical-audio-plan.js';
 const error=(code,message)=>new BasicKeyAudioError(code,message);
@@ -26,7 +27,7 @@ export class CanonicalAudioReceiver extends BasicKeyAudioReceiver {
   resume({anchorTime=this.context.currentTime+.05}={}){
     this.requireOpen();if(this.state!=='paused'||this.context.state!=='running')return Promise.reject(error('clean_audio_unavailable','Only paused canonical playback on a running device can resume.'));
     const anchorFrame=Math.ceil(anchorTime*this.context.sampleRate),now=Math.floor(this.context.currentTime*this.context.sampleRate);
-    if(!Number.isSafeInteger(anchorFrame)||anchorFrame<=now||anchorFrame-now>Math.ceil(this.context.sampleRate*.1))return Promise.reject(error('clean_late_start','Canonical resume requires a future anchor within 100 ms.'));
+    if(!Number.isSafeInteger(anchorFrame)||anchorFrame<=now||anchorFrame-now>Math.ceil(this.context.sampleRate*MAX_AUDIO_START_LEAD_SECONDS))return Promise.reject(error('clean_late_start','Canonical resume requires a future anchor within the bounded 500 ms acknowledgement window.'));
     this.outputGate.gain.setValueAtTime(1,anchorFrame/this.context.sampleRate);this.state='resuming';return this.request('resume',{anchorFrame});
   }
   sourcePositionMs(){return this.sourceClockAtTime()?.positionMs??null;}

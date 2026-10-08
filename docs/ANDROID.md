@@ -71,6 +71,11 @@ the Android import/export dialogs.
 - The bridge forwards request headers, including encoded song-pack filenames,
   conflict choices and selected song indices. Header JSON is limited to 8 KiB
   and 32 entries; Rust validates header names, values and the request origin.
+- Audio starts and resumes reserve 250 ms for the Android WebView worklet
+  acknowledgement. The sample anchor still controls playback and input timing;
+  an acknowledgement arriving after that anchor cancels playback.
+  Notation response parsing, validation and publication wait while audio owns
+  startup admission, including when a seek requests a new score page.
 - Debug package compilation/signature checks and device startup checks are
   separate from full browser, audio, import/export and Windows/native acceptance.
   A successful build does not accept the exact source checkpoint or promote it

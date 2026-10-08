@@ -96,6 +96,20 @@ test('an accepted audio ACK delayed before the player continuation cannot backda
  try{await assert.rejects(h.start(),{code:'clean_late_start'});assert.equal(h.player.basicKeys.running,false);assert.equal(h.nodes.at(-1).connected,false);}finally{BasicKeyAudioReceiver.prototype.start=original;h.close();}
 });
 
+test('Android start lead tolerates a delayed UI acknowledgement while admitting before any source audio',async()=>{
+ const {audioStartLeadSeconds}=await import('../web/audio-start-lead.js');
+ assert.equal(audioStartLeadSeconds(undefined),.05);
+ const h=harness(),original=BasicKeyAudioReceiver.prototype.start;
+ BasicKeyAudioReceiver.prototype.start=function(options){return original.call(this,options).then(anchor=>{h.renderTo(.1);return anchor;});};
+ try{
+  await h.player.prepare({context:h.context,output:h.output,acceptedPolicyId:BASIC_KEY_RENDITION});
+  const anchor=await h.player.startPrepared({anchorTime:h.context.currentTime+audioStartLeadSeconds({request(){}})});
+  assert.ok(anchor.anchorTime>h.context.currentTime);
+  assert.equal(core(h).startedCount,0);
+  h.renderTo(anchor.anchorTime+.01);assert.ok(core(h).startedCount>0);
+ }finally{BasicKeyAudioReceiver.prototype.start=original;h.close();}
+});
+
 
 test('canceling between preparation and the convenience start continuation fences that start',async()=>{
  const h=harness(),basic=h.player.basicKeys,prepare=basic.prepare.bind(basic);

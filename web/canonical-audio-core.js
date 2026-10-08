@@ -1,4 +1,5 @@
 import {BasicKeyAudioCore} from './basic-key-audio-core.js';
+import {MAX_AUDIO_START_LEAD_SECONDS} from './audio-start-lead.js';
 import {BasicKeyAudioError} from './basic-key-audio-plan.js';
 import {CANONICAL_AUDIO_LIMITS as LIMITS,CANONICAL_SYNTHETIC_INSTRUMENTS,openCanonicalAudioTransfer,canonicalPlanHasher} from './canonical-audio-plan.js';
 const int=(n,a,b)=>Number.isSafeInteger(n)&&n>=a&&n<=b;
@@ -93,7 +94,7 @@ export class CanonicalAudioCore extends BasicKeyAudioCore {
         }
         if(this.state!=='paused')reject('invalid_audio_command','Only paused canonical playback can resume.');
         const anchor=message.anchorFrame;
-        if(!int(anchor,frame+1,Math.min(LIMITS.maxFrame,frame+Math.ceil(this.sampleRate*.1))))reject('clean_late_start','Canonical resume requires a future anchor within 100 ms.');
+        if(!int(anchor,frame+1,Math.min(LIMITS.maxFrame,frame+Math.ceil(this.sampleRate*MAX_AUDIO_START_LEAD_SECONDS))))reject('clean_late_start','Canonical resume requires a future anchor within the bounded 500 ms acknowledgement window.');
         const shift=anchor-this.pauseFrame;
         if(!int(this.anchorFrame+shift+this.plan.durationFrames-this.positionFrame,0,LIMITS.maxFrame))reject('invalid_audio_command','Resumed source exceeds the frame budget.');
         if(this.plan.rangeMode&&!int(this.anchorFrame+shift+rangeDuration(this.plan),0,LIMITS.maxFrame))reject('invalid_audio_command','The resumed complete loop exceeds the frame budget.');

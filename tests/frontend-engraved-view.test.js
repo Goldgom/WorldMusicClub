@@ -55,6 +55,21 @@ test('Jianpu surface entry owns one native page request while Follow is off and 
   env.calls[1].resolve({ok:true,json:async()=>third.response});await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(painted,[part]);assert.equal(env.view.scopeInfo().status,'ready');assert.equal(env.view.basicPage().part_id,part);env.view.surfaceChanged();assert.equal(env.calls.length,2,'A ready retained page does not export again');assert.equal(adapterLoads,0);assert.equal(env.pauses,0);assert.deepEqual(env.failures,[]);
  }finally{env.close();}
 });
+test('a native notation reply defers parsing, validation and publication while audio owns admission',async()=>{
+ const data=JSON.parse(readFileSync(new URL('./fixtures/basic-key-rendition-notation-page.json',import.meta.url),'utf8')),descriptor=data.open.clean_package;
+ const song=prepareCleanSong(`native:song-${descriptor.content_sha256}`,descriptor,null),part=song.notation.parts[0].id,painted=[];
+ let shown=false,parsed=0,audio;
+ const env=environment({isVisible:()=>shown,getCleanSong:()=>song,getPracticePart:()=>part,getMode:()=> 'practice',onBasicPage:page=>painted.push(page?.part_id)});
+ try{
+  env.setScore(song.notation);env.view.hide({remember:true});shown=true;env.view.surfaceChanged();
+  audio=await notationAudioAdmission(globalThis).acquireAudio();
+  env.calls[0].resolve({ok:true,json:async()=>{parsed++;return data.melodic.response;}});
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(parsed,0);assert.deepEqual(painted,[]);
+  audio.release();audio=null;await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(parsed,1);assert.deepEqual(painted,[part]);assert.equal(env.view.basicPage().part_id,part);assert.deepEqual(env.failures,[]);
+ }finally{audio?.release();env.close();}
+});
+
 test('surface notifications preserve an in-flight renderer and its latest exact queued source identities',async()=>{
  const ready=deferred(),mount={tagName:'svg'},received=[];let renders=0,signal;
  const env=environment({loadAdapter:async()=>({disposeEngravedStaff(){},async renderEngravedStaff(container,xml,options,pendingSignal){

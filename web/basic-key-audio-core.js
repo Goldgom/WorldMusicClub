@@ -1,5 +1,6 @@
 import {BASIC_KEY_AUDIO_LIMITS as LIMITS, BASIC_KEY_TIMBRE_PROFILE, BASIC_KEY_SYNTHETIC_INSTRUMENTS, BasicKeyAudioError, basicKeySampleRate, openBasicKeyAudioTransfer, VSQ_AUDIO_IDENTITY, VSQ_TRIANGLE_SIZE, audioTransferIdentity, compareAudioTransferIdentity, basicKeyTimbreHasher, hashBasicKeyTimbreRow, basicKeyAssistanceHasher, hashBasicKeyAssistanceRow} from './basic-key-audio-plan.js';
 
+import {MAX_AUDIO_START_LEAD_SECONDS} from './audio-start-lead.js';
 const integer = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
 const reject = (code, message, details) => { throw new BasicKeyAudioError(code, message, details); };
 const TAU = 2 * Math.PI;
@@ -96,7 +97,7 @@ export class BasicKeyAudioCore {
       if (message.type === 'start') {
         if (this.state !== 'ready') reject('invalid_audio_command', 'Only a ready audio generation can start.');
         validateTimbreCommand(message, this.plan);
-        if (!integer(message.anchorFrame, frame + 1, Math.min(this.limits.maxFrame, frame + Math.ceil(this.sampleRate * .1)))) reject('clean_late_start', 'The start anchor must be in the future and within the declared 100 ms lead.');
+        if (!integer(message.anchorFrame, frame + 1, Math.min(this.limits.maxFrame, frame + Math.ceil(this.sampleRate * MAX_AUDIO_START_LEAD_SECONDS)))) reject('clean_late_start', 'The start anchor must be in the future and within the bounded 500 ms acknowledgement window.');
         if (!integer(message.anchorFrame + this.plan.durationFrames - this.positionFrame, 0, this.limits.maxFrame)) reject('invalid_audio_command', 'The anchored rendition exceeds the exact audio frame range.');
         this.anchorFrame = message.anchorFrame; this.expectedFrame = null; this.state = 'running';
         this.previousBlockFrame = null; this.previousBlockLength = 0; this.successfulBlocks = 0;

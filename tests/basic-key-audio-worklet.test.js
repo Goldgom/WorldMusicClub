@@ -279,6 +279,19 @@ test('a delayed start acknowledgement fails the promise before transport can rep
   h.deliverCore(); h.deliverMain(); assert.equal(h.nodes[0].core.activeCount, 0); receiver.dispose(); h.deliverCore(); h.deliverMain();
 });
 
+test('receiver and audio core reject an anchor beyond the bounded acknowledgement window',async()=>{
+ const h=basicKeyAudioHarness(),errors=[];
+ const receiver=await BasicKeyAudioReceiver.create(h.context,h.output,{nodeFactory:h.nodeFactory,onError:error=>errors.push(error)});
+ try{
+  await receiver.prepare(plan([[0,10000,60,80,0]]));
+  await assert.rejects(receiver.start({anchorTime:h.context.currentTime+.501}),{code:'clean_late_start'});
+  const core=h.nodes[0].core;
+  core.handleMessage({type:'start',generation:receiver.generation,requestId:999,anchorFrame:h.frame+Math.ceil(.501*sampleRate)},h.frame);
+  h.deliverMain();assert.equal(core.startedCount,0);assert.equal(core.state,'error');
+  assert.equal(errors.at(-1).code,'clean_late_start');
+ }finally{receiver.dispose();await Promise.resolve();await Promise.resolve();}
+});
+
 test('disposing an active receiver immediately mutes and disconnects after its actual cancellation ledger', async () => {
   const h = basicKeyAudioHarness(), stopped = [], receiver = await BasicKeyAudioReceiver.create(h.context, h.output, {nodeFactory: h.nodeFactory, onStopped: value => stopped.push(value)});
   await receiver.prepare(plan([[0, 10000, 60, 80, 0], [5000, 6000, 64, 80, 0]])); await receiver.start({anchorTime: h.context.currentTime + .001});

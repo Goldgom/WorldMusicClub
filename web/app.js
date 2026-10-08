@@ -10,6 +10,7 @@ import {createCleanSongMedia} from './clean-song-media.js';
 import {setupCleanSongView} from './clean-song-view.js';
 import {cleanErrorText} from './clean-song-text.js';
 import {setupLobbyPreview} from './lobby-preview.js';
+import {audioStartLeadSeconds} from './audio-start-lead.js';
 import {setupReferenceListening} from './reference-listening.js';
 import {setupCompletePerformanceListening} from './complete-performance-listening.js';
 import {getAppI18n} from './app-locale.js';
@@ -1190,7 +1191,8 @@ async function togglePlayback() {
       // priority until the native ACK and shared recorder/transport bind finish.
       admissionLease=await notationAudioAdmission(window).acquireAudio(admissionController.signal);
       if(!admissionLease||!current())return;
-      const anchor=await (resumeCanonical?canonicalSession.resume({anchorTime:synth.context.currentTime+.05,...assistancePlaybackOptions()}):(song?cleanPlayer:canonicalSession).startPrepared({anchorTime:synth.context.currentTime+.05,...assistancePlaybackOptions()}));
+      const anchorTime=synth.context.currentTime+audioStartLeadSeconds();
+      const anchor=await (resumeCanonical?canonicalSession.resume({anchorTime,...assistancePlaybackOptions()}):(song?cleanPlayer:canonicalSession).startPrepared({anchorTime,...assistancePlaybackOptions()}));
       if(!anchor||!current())return;
       if(synth.context.state!=='running'||synth.context.currentTime>=anchor.anchorTime)throw Object.assign(new Error('The shared audio start anchor elapsed before transport admission.'),{code:'clean_late_start'});
       // Use the renderer's quantized sample anchor for both transport and inputs.

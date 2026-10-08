@@ -21,6 +21,23 @@ async function setup({notation=false,originalAcceptance=false,audioWorklet=true,
 const admittedGates=app=>app.audioNodes.filter(node=>node.kind==='audio-worklet'&&node.connected).flatMap(node=>[...node.core.plan.ends].flatMap((end,index)=>end>node.core.positionFrame?[{kind:node.core.plan.roles[index]?'percussion_selector':'melodic_key'}]:[]));
 const connectedReceivers=app=>app.audioNodes.filter(node=>node.kind==='audio-worklet'&&node.connected);
 
+test('Android application uses its future audio anchor for both initial playback and explicit resume',async()=>{
+ const {app,time}=await setup(),previous=Object.getOwnPropertyDescriptor(globalThis,'WorldMusicClubAndroid');
+ Object.defineProperty(globalThis,'WorldMusicClubAndroid',{configurable:true,value:{request(){}}});
+ try{
+  await app.click('start-listen');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');
+  const audio=app.audioHarnesses[0],first=connectedReceivers(app)[0];
+  assert.equal(first.core.anchorFrame-audio.frame,.25*audio.context.sampleRate);
+  assert.equal(first.core.startedCount,0);
+  time(1400);await app.tick();assert.ok(first.core.startedCount>0);
+  await app.click('play-button');assert.equal(app.$('clean-song-stage').dataset.rendererState,'paused');
+  await app.click('play-button');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');
+  const resumed=connectedReceivers(app)[0];
+  assert.equal(resumed.core.anchorFrame-audio.frame,.25*audio.context.sampleRate);
+  assert.equal(resumed.core.startedCount,0);
+ }finally{await app.close();if(previous)Object.defineProperty(globalThis,'WorldMusicClubAndroid',previous);else delete globalThis.WorldMusicClubAndroid;}
+});
+
 test('complete basic Listen, pause, reset and natural end run on the native full timeline',async()=>{
  const {app,descriptor,time}=await setup();try{
   assert.equal(app.$('start-listen').disabled,false);const i18n=getAppI18n(app.document);assert.equal(app.$('start-listen').hidden,true);assert.equal(app.$('start-performance').hidden,false);assert.equal(app.$('configure-song-mod').hidden,false);assert.equal(app.$('vsq-listen-basic').hidden,true);assert.equal(app.$('start-listen').textContent,i18n.t('shell.listenAllParts'));assert.equal(app.$('preview-part-label').firstChild.textContent,i18n.t('shell.humanPracticePart'));assert.equal(app.$('preview-part-help').hidden,true);assert.equal(app.$('preview-part').querySelector('option[value=""]'),null);assert.match(app.$('clean-song-rendition').textContent,/retains all 5 note onsets.*selected human part.*default synthesized/);assert.match(app.$('basic-key-policy-text').textContent,/FIFO.*20 ms.*CC120\/123/);
