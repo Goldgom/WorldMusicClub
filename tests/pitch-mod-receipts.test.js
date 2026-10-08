@@ -1,3 +1,4 @@
+import {withMockBasicEligibility} from './basic-human-admission-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -12,9 +13,10 @@ import {setupPianoFingering,defaultPianoSettings} from '../web/piano-fingering.j
 import {prepareCleanSong,prepareVsqPractice} from '../web/clean-song-package.js';
 import {songModIdentity} from '../web/song-mod.js';
 
-// All pitches, timing, digests, ownership and recommendations are unmodified
-// Rust handler output. This suite tests the JS admission and routing boundary.
-const fixtures=JSON.parse(readFileSync(new URL('./fixtures/pitch-mod-handler-vectors.json',import.meta.url),'utf8')).vectors;
+// Original pitches, timing, ownership and recommendations are Rust handler
+// output. New Basic eligibility fields are explicitly mocked at this consumer
+// boundary; no source fixture is rewritten or claimed to be regenerated.
+const fixtures=withMockBasicEligibility(JSON.parse(readFileSync(new URL('./fixtures/pitch-mod-handler-vectors.json',import.meta.url),'utf8'))).vectors;
 const copy=value=>structuredClone(value);
 const memory=()=>{const values=new Map();return{values,getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value)};};
 function fixture(kind='canonical_api'){
@@ -33,7 +35,7 @@ const binding=f=>({...f.context,mode:'original',settings:null,revision:1});
 const guideContext=f=>({score:f.view.score,timeline:f.view.compiled.timeline,cleanSong:f.view.cleanSong,pitchView:f.view,part_id:f.vector.fingering?.plan.part_id??null,profile:f.context.selection.profile,dirty:false});
 
 for(const kind of ['canonical_api','basic','vsq']){
-  test(`${kind} keeps requests original, tokens effective, and admits actual Rust pitch receipts`,()=>{
+  test(`${kind} keeps requests original, tokens effective, and admits pitch receipt shapes with mocked Basic eligibility`,()=>{
     const f=fixture(kind),b=binding(f),before=JSON.stringify(f.original),request=assistanceRequest(f.context,b);
     assert.deepEqual(request.body.pitch_mod,f.projection.configuration);
     if(f.context.source){assert.deepEqual(request.body.source,f.projection.source);assert.notEqual(request.body.source.runtime_policy,'wmc-pitch-mod-v1');assert.equal('score' in request.body,false);}

@@ -1,3 +1,4 @@
+import {withMockBasicEligibility} from './basic-human-admission-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -73,7 +74,7 @@ test('quota failure keeps a checked tab-only assignment through stage revalidati
 });
 
 test('current Basic native source reference and complete runtime reach assisted scoring and same-part machine gates',async()=>{
- const native=JSON.parse(readFileSync(new URL('./fixtures/assistance-native-basic.json',import.meta.url),'utf8')),opened=native.opened,descriptor=opened.clean_package,score=JSON.parse(descriptor.score_json).notation,server=await nativeScoreServer(),key=native.source.key;
+ const native=withMockBasicEligibility(JSON.parse(readFileSync(new URL('./fixtures/assistance-native-basic.json',import.meta.url),'utf8'))),opened=native.opened,descriptor=opened.clean_package,score=JSON.parse(descriptor.score_json).notation,server=await nativeScoreServer(),key=native.source.key;
  const summary={version:2,content_sha256:descriptor.content_sha256,profile:descriptor.profile,capabilities:descriptor.capabilities,coverage:descriptor.coverage,notation_available:true,media:[]};server.records.set(key,{...opened,entry:{key,revision:1,title:score.title,composer:score.composer,score_id:score.id,label:score.title,score_bytes:Buffer.byteLength(descriptor.score_json),saved_at_unix_ms:1700000000000,clean_package:summary}});
  server.setRoute(({path,body})=>{if(path==='/api/library/assistance/generate'){assert.deepEqual(body.source,native.source);assert.deepEqual(body.selection,native.automatic.checked.plan.selection);assert.deepEqual(body.settings,native.automatic.checked.plan.settings);return nativeResponse(native.automatic);}});
  const app=await nativeStorageApp(server,{now:()=>1000}),before=descriptor.score_json;

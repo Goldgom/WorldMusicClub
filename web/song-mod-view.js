@@ -1,3 +1,4 @@
+import {isBasicKeysSong,basicKeysParts} from './clean-song-package.js';
 import {renderSourceInstrumentDetails,sourceInstrumentSummary} from './source-instrument-details-view.js';
 import {createSongMod,songModChanges,songModOptions,SONG_MOD_INSTRUMENTS} from './song-mod.js';
 import {createPartInstrumentPolicy,partInstrumentPolicyIssue} from './part-instrument-policy.js';
@@ -67,6 +68,11 @@ export function setupSongModView({document,i18n,getContext,onOpen=()=>{},onApply
       for(const option of row.instrument.options)option.textContent=synthesisName(option.value);
       row.muteText.textContent=text('Mute playback','播放静音');row.visibleText.textContent=text('Show notes','显示音符');row.instrument.disabled=busy||row.actor.value==='human'&&!assistanceView.hasMachine(id)||!context.capabilities.instruments;
       row.reason.textContent=row.actor.value==='human'&&assistanceView.hasMachine(id)?assistanceText(i18n.locale,'machineWithin')+' '+text(`Machine sound: ${synthesisName(row.instrument.value)}.`,`机器音色：${synthesisName(row.instrument.value)}。`):row.actor.value==='human'?text(`Saved machine sound: ${synthesisName(row.instrument.value)}. It stays inactive until this part is assigned to Machine.`,`已保存的机器音色：${synthesisName(row.instrument.value)}。分配给机器演奏后才会启用。`):!context.capabilities.instruments?text('This renderer does not support per-part sound overrides.','此渲染器暂不支持逐声部音色替换。'):'';
+      if(isBasicKeysSong(context.cleanSong)){
+        const eligible=basicKeysParts(context.cleanSong).find(part=>part.id===id)?.source_eligibility;
+        const sourceReason=!eligible?text('Original-instrument eligibility is unavailable. Choose All Machine to listen; Human practice requires a fresh native check.','原乐器练习资格暂不可用。可选择全部机器聆听；真人练习需要重新进行本机检查。'):eligible.known_unsupported_count?text(`${eligible.known_unsupported_count} original attacks use known unsupported instruments. Original Human practice is blocked for this part. Choose Machine, or explicitly check assistance that keeps these attacks with Machine.`,`${eligible.known_unsupported_count} 个原始发音属于已明确不支持的乐器。本声部原样真人练习被阻止。请选择机器，或明确检查将这些发音保留给机器的辅助方案。`):'';
+        if(sourceReason)row.reason.textContent=[sourceReason,row.reason.textContent].filter(Boolean).join(' ');
+      }
       row.reason.hidden=!row.reason.textContent;row.actor.disabled=row.mute.disabled=row.visible.disabled=busy;row.actor.setAttribute('aria-label',`${row.name.textContent} · ${row.actorLabel.textContent}`);row.instrument.setAttribute('aria-label',`${row.name.textContent} · ${row.instrumentLabel.textContent}`);
     }
     cancel.disabled=false;human.disabled=machine.disabled=restore.disabled=layout.disabled=others.disabled=busy;apply.disabled=busy||Boolean(admissionIssue)||!assistanceView.canApply()||!pitchView.canApply();

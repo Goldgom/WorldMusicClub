@@ -1,12 +1,14 @@
+import {withMockBasicEligibility} from './basic-human-admission-fixtures.js';
 import {readFileSync} from 'node:fs';
 
 // Original exercises, emitted and byte-checked by the real Rust route tests.
-// These are source inputs and independent expected receipts, not a JS compiler.
+// Original source/timing output remains unchanged. New Basic eligibility fields
+// are explicitly mocked consumer protocol data, not a Rust regeneration.
 export function assistanceBrowserFixtures() {
   const read = name => JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), 'utf8'));
   return {
     canonical: read('assistance-canonical'),
-    basic: read('assistance-native-basic'),
+    basic: withMockBasicEligibility(read('assistance-native-basic')),
     vsq: read('assistance-native-vsq'),
     vsqOpened: read('vsq-clean-v1-native-open'),
   };
@@ -27,7 +29,8 @@ export function originalCrossScopeAssistanceScore(canonical) {
   return score;
 }
 
-/** Browser-only consumer replay of Rust-produced Basic/VSQ fixtures. This is
+/** Browser-only consumer replay of original Rust Basic/VSQ source fixtures,
+ * with explicitly mocked new Basic eligibility fields. This is
  * real Chromium AudioWorklet evidence, not desktop NativeLibrary acceptance.
  * All plans, clocks, gates, messages and rendering use production modules. */
 export async function replayNativeAssistanceAudio({basic, vsq, vsqOpened}) {

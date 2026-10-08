@@ -107,8 +107,8 @@ test('Basic Mod sound controls reach actual audio-thread timbre buffers and rest
 
 test('Cancel and navigation during pending Mod checks cannot save or apply a stale draft; repeated Apply checks once',async()=>{
  const f=await basicFixture(),{app,server,score,storageValues}=f;let release,gate=false;
- server.setRoute(({path,defaultReply})=>gate&&path==='/api/practice-targets'?new Promise(resolve=>{release=()=>resolve(defaultReply());}):undefined);
- try{await app.click('configure-song-mod');set(app,'performer',score.parts[2].id,'human');gate=true;const before=app.requests.filter(r=>r.path==='/api/practice-targets').length;app.$('song-mod-apply').click();app.$('song-mod-apply').click();await app.until(()=>Boolean(release));assert.equal(app.requests.filter(r=>r.path==='/api/practice-targets').length,before+1);await app.click('song-mod-cancel');assert.equal(app.$('song-mod-dialog').open,false);assert.equal(app.$('start-performance').disabled,false);assert.equal(app.$('configure-song-mod').disabled,false);release();gate=false;await app.tick();assert.equal([...storageValues.keys()].some(key=>key.startsWith(SONG_MOD_STORAGE_PREFIX)),false);
+ server.setRoute(({path,defaultReply})=>gate&&path==='/api/library/practice-admission'?new Promise(resolve=>{release=()=>resolve(defaultReply());}):undefined);
+ try{await app.click('configure-song-mod');set(app,'performer',score.parts[2].id,'human');gate=true;const before=app.requests.filter(r=>r.path==='/api/library/practice-admission').length;app.$('song-mod-apply').click();app.$('song-mod-apply').click();await app.until(()=>Boolean(release));assert.equal(app.requests.filter(r=>r.path==='/api/library/practice-admission').length,before+1);await app.click('song-mod-cancel');assert.equal(app.$('song-mod-dialog').open,false);assert.equal(app.$('start-performance').disabled,false);assert.equal(app.$('configure-song-mod').disabled,false);release();gate=false;await app.tick();assert.equal([...storageValues.keys()].some(key=>key.startsWith(SONG_MOD_STORAGE_PREFIX)),false);
   await app.click('configure-song-mod');set(app,'performer',score.parts[2].id,'human');gate=true;release=null;app.$('song-mod-apply').click();await app.until(()=>Boolean(release));await app.click('start-free-practice');release();gate=false;await app.tick();assert.equal(app.document.body.dataset.screen,'free');assert.equal([...storageValues.keys()].some(key=>key.startsWith(SONG_MOD_STORAGE_PREFIX)),false);
  }finally{release?.();await app.close();}
 });
@@ -295,7 +295,7 @@ test('human live preference and dormant machine recipe reopen unchanged after ap
 
 test('changing the performance instrument during pending stage Apply rejects its captured sound policy without saving',async()=>{
  const f=await basicFixture(),{app,server,score,storageValues}=f;let release,delayNext=false;
- server.setRoute(({path,defaultReply})=>{if(delayNext&&path==='/api/practice-targets'){delayNext=false;return new Promise(resolve=>{release=()=>resolve(defaultReply());});}});
+ server.setRoute(({path,defaultReply})=>{if(delayNext&&path==='/api/library/practice-admission'){delayNext=false;return new Promise(resolve=>{release=()=>resolve(defaultReply());});}});
  try{
   await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');await app.click('edit-song-mod');changeDormantRecipe(app,score.parts[0].id);assert.equal(app.$('song-mod-assistance-reset-label').hidden,true);assert.equal(app.$('song-mod-apply').disabled,false);delayNext=true;app.$('song-mod-apply').click();await app.until(()=>Boolean(release));
   const saved=[...storageValues].filter(([key])=>key.startsWith(SONG_MOD_STORAGE_PREFIX));app.$('instrument').value='guitar';app.emit(app.$('instrument'),'change');release();await app.until(()=>!app.$('song-mod-dialog').open);assert.deepEqual([...storageValues].filter(([key])=>key.startsWith(SONG_MOD_STORAGE_PREFIX)),saved);

@@ -1,3 +1,4 @@
+import {runtimeReceiptFields} from './source-practice-eligibility.js';
 import {assertPitchModContext} from './pitch-mod-context.js';
 /** Runtime admission only. Rust owns source interpretation and note selection. */
 export const ASSISTANCE_FORMAT='wmc-practice-assistance';
@@ -76,7 +77,7 @@ export function normalizeAssistanceSelection(selection){validateAssistanceSelect
 function receiptMatches(receipt,source,pitchMod){
   if(pitchMod)return assistanceEqual(receipt,assertPitchModContext(pitchMod,source).receipt);
   const expected=source||{profile:'wmc-canonical-score-v1',runtime_policy:'wmc-canonical-practice-v1',choice:null,content_sha256:null};
-  return fields(receipt,['source_binding','saved_package_sha256','source_profile','runtime_policy','choice','runtime_digest'])&&fields(receipt.source_binding,['domain','serialization_revision','digest'])&&receipt.source_binding.domain===profiles[expected.profile]?.domain&&receipt.source_binding.serialization_revision===1&&hash(receipt.source_binding.digest)&&receipt.saved_package_sha256===expected.content_sha256&&receipt.source_profile===expected.profile&&receipt.runtime_policy===expected.runtime_policy&&receipt.choice===expected.choice&&hash(receipt.runtime_digest);
+  return runtimeReceiptFields(receipt,expected.profile)&&fields(receipt.source_binding,['domain','serialization_revision','digest'])&&receipt.source_binding.domain===profiles[expected.profile]?.domain&&receipt.source_binding.serialization_revision===1&&hash(receipt.source_binding.digest)&&receipt.saved_package_sha256===expected.content_sha256&&receipt.source_profile===expected.profile&&receipt.runtime_policy===expected.runtime_policy&&receipt.choice===expected.choice&&hash(receipt.runtime_digest);
 }
 function responseSourceMatches(response,binding){
   if(binding.source!==null)return assistanceEqual(response.source,binding.source);

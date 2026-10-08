@@ -22,6 +22,7 @@ import {setupSourceArchiveView} from './source-archive-view.js';
 import {setupGameShell} from './game-shell.js';
 import {setupNoticeView} from './notice-view.js';
 import {resolvePracticeSelection,humanPracticePartIds} from './practice-selection.js';
+import {createBasicPracticeAdmissionRequest,createBasicPracticeAdmissionBinding,admitBasicPractice,assertBasicPracticeCurrent} from './basic-practice-admission.js';
 import {SongModStore,createSongMod,songModChanges,songModOptions,songModCapabilities,assertSongModSupported,validateSongMod} from './song-mod.js';
 import {createPartInstrumentPolicy,assertPartInstrumentPolicyCurrent,assertPartInstrumentPolicyReady,resolvePartInstrumentInput,partInstrumentPolicyIssue} from './part-instrument-policy.js';
 import {setupSongModView} from './song-mod-view.js';
@@ -142,6 +143,7 @@ function appError(key, params={}) {const error=new Error(t(key,params));error.ap
 function originLabel(score) {return t(({original_exercise:'app.originOriginal',public_domain_practice_arrangement:'app.originExcerpt',curated_cc0_edition:'app.originCC0'})[score.provenance.kind]||'app.originSource');}
 function passLabel(pass) {const label=passDisplayLabels.get(pass);return label?t(label.kind==='loop'?'app.loopLabel':'app.takeLabel',{number:label.number}):pass.label;}
 function compatibilityText(result) {
+  if(result.basicPractice&&result.reason)return result.reason;
   if(result.assistanceReason==='infeasible')return i18n.locale==='en'?'This Original assignment is infeasible under the checked model. Change the assignment in Mod or choose Listen.':'当前原始分配在已验证模型下不可行。请在 Mod 中更改分配，或选择聆听。';
   if(result.assistanceReason==='noHuman')return i18n.locale==='en'?'No human targets remain in this scope. Choose a scope with human targets or intentional Listen.':'当前范围没有真人目标。请选择包含真人目标的范围，或明确选择聆听。';
   if(result.assistance&&result.reason)return result.reason;
@@ -195,10 +197,10 @@ let shell=null,preview=null,performanceView=null,startingPreview=false,previewRe
 const catalogCache=new CatalogScoreCache();
 const latencyPreference=readLatencyPreference();
 let catalogIndexController=null,catalogIndexRequest=0,catalogIndexFailed=false;
-const state = {songMod:null,pitchView:null,hiddenPartIds:new Set(),inspection:false,cleanSong:null,catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceSelection:null, practiceLayout:'solo', showOtherParts:true, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: latencyPreference.value, loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reasonKey:'app.compatibilityWaiting'}, instrumentOutOfRange: null, instrumentConflict: false, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, playPending: false, noticeTimer: null, audioLimitWarned: false};
+const state = {basicPracticeAdmission:null,basicPracticeTokens:null,basicPracticePlan:null,songMod:null,pitchView:null,hiddenPartIds:new Set(),inspection:false,cleanSong:null,catalog: [], score: null, compiled: null, importDiagnostics: [], mode: 'listen', practicePart: null, practiceSelection:null, practiceLayout:'solo', showOtherParts:true, practiceTimeline: null, sourceTargetTimeline: null, practicePlan: null, targetGroups: new Map(), physicalIndex: null, targetTimeline: null, practiceIndex: null, practiceVersion: 0, instrument: 'piano', notation: 'staff', engravingActive: false, numberedMode: 'fixed', latency: latencyPreference.value, loop: null, loopIteration: 1, loopRequest: 0, loopPending: false, notationPage: 0, notationSpan: 16, notationPart: null, timelineIndex: null, sourceNotes: new Map(), keys: 61, lowestMidi: null, customKeys: false, guitar: {tuning: [...STANDARD_TUNING], frets: 12, capo: 0}, instrumentRequest: 0, profileDirty: false, compatibility: {status:'pending',reasonKey:'app.compatibilityWaiting'}, instrumentOutOfRange: null, instrumentConflict: false, inputs: [], recorder: null, assessmentBusy: false, held: new Map(), geometry: keyboardGeometry(61), generation: 0, loadIntent: 0, compileController: null, frame: 0, lastHighlight: '', finishing: false, playTicket: 0, playPending: false, noticeTimer: null, audioLimitWarned: false};
 
 const assistanceStore=new AppAssistanceStore({storage:pitchMods.preferences}),progressionStore=new PracticeProgressionStore({storage:pitchMods.preferences});
-let assistanceRefreshQueued=false,assistanceDisplayCache=null;
+let assistanceRefreshQueued=false,assistanceDisplayCache=null,basicHumanRequest=0;
 function assistanceContext(where){const value=where==='preview'?preview?.value:state;if(!value?.compiled||!value.score)return null;return {...appAssistanceContext(value,currentProfile(),songMods.identity(value)),admissionKey:JSON.stringify(where==='stage'&&state.loop?[state.loop.start_ms,state.loop.end_ms,state.loop.target_note_ids]:null)};}
 function assistanceChanged(){
   if(assistanceRefreshQueued)return;assistanceRefreshQueued=true;
@@ -282,7 +284,7 @@ function updateButtons() {
   state.finishing = state.recorder.pending || state.assessmentBusy;
   const activePass = state.recorder.active;
   const checkingCurrent = Boolean(activePass && (activePass.manualDeadline !== null || activePass.inFlight || (activePass.closedWall !== null && activePass.assessedRevision < activePass.revision && !activePass.error)));
-  const allowed = (!isBasicKeysSong(state.cleanSong)||hasBasicKeyRendition(state.cleanSong)||state.mode==='practice')&&(state.mode !== 'practice' || state.compatibility.status === 'ready'&&!assistancePracticeGate(stageAssistance));
+  const allowed = (!isBasicKeysSong(state.cleanSong)||hasBasicKeyRendition(state.cleanSong)||state.mode==='practice')&&(state.mode !== 'practice' || state.compatibility.status === 'ready'&&!assistancePracticeGate(stageAssistance)&&!basicPracticeGate());
   const liveSoundIssue=state.songMod?partInstrumentPolicyIssue(modInputPolicy(state.songMod,state,state.mode),state.score.parts,i18n.locale):'';
   const audioUnavailable=(!state.cleanSong||hasAudioThreadRendition(state.cleanSong)||modNeedsLiveAudio(state.songMod,state.mode))&&!synth.muted&&liveAudioUnavailable();
   $('play-button').disabled = !ready || canonicalSession.pausePending || (!transport.running && (!allowed || checkingCurrent || audioUnavailable || Boolean(liveSoundIssue)));
@@ -299,8 +301,8 @@ function updateButtons() {
   if(!transport.running&&!state.playPending){if(transport.completed)retireActivity();cleanPlayer.stop();if(!canonicalSession.held)canonicalSession.stop();activeMedia?.pause();}
   renderCleanActive();
   $('assess-button').disabled = !ready || state.mode !== 'practice' || checkingCurrent || !allowed;
-  $('practice-gate').hidden = state.mode !== 'practice' || state.compatibility.status === 'ready'&&!assistancePracticeGate(stageAssistance);
-  bindText($('practice-gate-reason'), () => compatibilityText(assistancePracticeGate(stageAssistance)||state.compatibility));
+  $('practice-gate').hidden = state.mode !== 'practice' || state.compatibility.status === 'ready'&&!assistancePracticeGate(stageAssistance)&&!basicPracticeGate();
+  bindText($('practice-gate-reason'), () => compatibilityText(basicPracticeGate()||assistancePracticeGate(stageAssistance)||state.compatibility));
   $('practice-gate-retry').disabled = !ready || state.compatibility.status === 'pending';
   bindText($('play-button'), () => transport.running ? t('app.pause') : transport.completed ? t('app.playAgain') : t('app.play'));
   $('workspace').dataset.scoreState=state.inspection?'inspection':'session';
@@ -429,6 +431,13 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     let tempoPitch=null;
     if(carryPitch){tempoPitch=await prepareTempoPitchCarry(compiled,carryPitch.configuration.semitones,controller.signal);compiled=tempoPitch.effective.compiled;practiceOptions={...tempoPitch.options,compiled,pitchView:tempoPitch.effective.pitchView,songMod:tempoPitch.mod};}
     if (generation !== state.generation || controller.signal.aborted || expectedIntent!==null&&expectedIntent!==state.loadIntent || carryPitch&&(state.pitchView!==carryPitch||carryProfile!==JSON.stringify(currentProfile())||carryNavigation!==scoreSaveNavigation||carryScreen!==shell.screen()||document.hidden)) return;
+    if(isBasicKeysSong(cleanSong)&&compiled&&!inspection&&(requestedMode??state.mode)==='practice'){
+      const selection=resolvePracticeSelection(compiled.score.parts,practiceOptions?.practiceSelection??{kind:'parts',part_ids:[requestedPracticePart||compiled.score.parts[0]?.id].filter(Boolean)}),candidate={...practiceOptions,score:compiled.score,compiled,cleanSong};
+      const current=()=>generation===state.generation&&!controller.signal.aborted&&(expectedIntent===null||expectedIntent===state.loadIntent)&&carryProfile===JSON.stringify(currentProfile())&&carryNavigation===scoreSaveNavigation&&!document.hidden;
+      const admission=await preparePracticeAdmission(compiled,selection,currentProfile(),practiceOptions?.assistance||null,null,controller.signal,candidate,current);
+      if(admission?.basicAdmission&&!current())return;assertBasicHumanAssignment(admission);
+      if(admission.compatibility.status!=='ready')throw new Error(compatibilityText(admission.compatibility));
+    }
     if(tempoPitch){tempoPitch.commit();songMods.commitSaved(tempoPitch.source,tempoPitch.mod);}
     // A rejected or cancelled replacement still owns the previous take and
     // checked assignment. Invalidate them only when a new source is accepted.
@@ -443,11 +452,11 @@ async function compileScore(score, preserveTempo = false, expectedIntent = null,
     state.importDiagnostics = importDiagnostics;
     const diagnostics = [...new Map([...(compiled?.diagnostics||[]), ...importDiagnostics].map(item => [`${item.code}:${item.note_id || ''}:${item.message}`, item])).values()];
     // Complete songs keep the exact admitted runtime identity for navigation.
-    state.compiled = state.pitchView?compiled:compiled?{...compiled, diagnostics}:null;
+    state.compiled = state.pitchView||isBasicKeysSong(cleanSong)?compiled:compiled?{...compiled, diagnostics}:null;
     canonicalSession.select(cleanSong?null:state.compiled,state.pitchView?.audioProfile||null);
     state.instrumentOutOfRange = null; state.instrumentConflict = false;
     state.timelineIndex = state.compiled?new TimelineIndex(state.compiled.timeline.notes):null;
-    state.practiceTimeline=null;state.sourceTargetTimeline=null;state.targetTimeline=null;state.practicePlan=null;state.targetGroups=new Map();state.physicalIndex=null;state.practiceIndex=null;
+    invalidateBasicPracticeAdmission();state.practiceTimeline=null;state.sourceTargetTimeline=null;state.targetTimeline=null;state.practicePlan=null;state.targetGroups=new Map();state.physicalIndex=null;state.practiceIndex=null;
     state.compatibility={status:'blocked',reasonKey:'app.compatibilityPlanBlocked'};
     metronome?.cancelForScore();
     state.sourceNotes = new Map(state.score.parts.flatMap(part => part.notes.map(note => [note.id, {note, partId: part.id}])));
@@ -646,11 +655,17 @@ async function applySongMod({origin,context,mod,pitchView=null,pitchChanged=fals
     const binding={...live,mode:assistance.plan.mode,settings:assistance.plan.settings,revision:assistance.plan.revision,expected_selection_digest:assistance.plan.selection_digest};assertPracticeAssistanceCurrent(assistance,binding);return binding;
   }
   if(!current())return;assertCandidate();
-  const admission=options.mode==='practice'&&(origin==='preview'||requiresReset)?await preparePracticeAdmission(effective.compiled,options.practiceSelection,currentProfile(),assistance,loop):null;
+  let admission=null;
+  if(options.mode==='practice'&&(origin==='preview'||requiresReset||isBasicKeysSong(effective.cleanSong))){
+    try{admission=await preparePracticeAdmission(effective.compiled,options.practiceSelection,currentProfile(),assistance,loop,undefined,effective,current);}
+    catch(error){if(!current())return;throw error;}
+  }
+  if(admission?.basicAdmission&&!current())return;assertBasicHumanAssignment(admission);
   const compatibility=admission?.compatibility||(origin==='preview'?{status:'ready'}:state.compatibility);
   // The lobby always starts the full source. A valid stage A/B range must not
   // make out-of-range notes elsewhere appear admitted in that preview.
-  const fullCompatibility=loop&&requiresReset&&options.mode==='practice'?(await preparePracticeAdmission(effective.compiled,options.practiceSelection,currentProfile(),assistance,null)).compatibility:compatibility;
+  const fullCompatibility=loop&&requiresReset&&options.mode==='practice'?(await preparePracticeAdmission(effective.compiled,options.practiceSelection,currentProfile(),assistance,null,undefined,effective,current)).compatibility:compatibility;
+  if(admission?.basicAdmission&&!current())return;assertBasicHumanAssignment(admission);
   if(assistance||assistanceDisabled||pitchChanged){
     const audioOptions={sampleRate:synth.context?.sampleRate||48000,mode:options.mode,practiceSelection:assistance&&!assistance.plan.selection.selected_part_ids.length?{kind:'parts',part_ids:[]}:options.practiceSelection,instrumentOverrides:options.instrumentOverrides,mutedPartIds:options.mutedPartIds,mutedParts:options.mutedPartIds,instrument:state.instrument,assistance,assistanceContext:assertCandidate,...(loop?{range:{startMs:loop.start_ms,endMs:loop.end_ms},loop:{enabled:true}}:{})};
     if(!effective.cleanSong){const audioProfile=effective.pitchView?.audioProfile||await api('/api/canonical-audio-profile',effective.compiled.score);if(!current())return;buildCanonicalAudioPlan(effective.compiled,audioProfile,{...audioOptions,acceptedPolicyId:CANONICAL_AUDIO_POLICY});}
@@ -663,6 +678,7 @@ async function applySongMod({origin,context,mod,pitchView=null,pitchChanged=fals
   if(context.pitchDraft&&!assistance&&!assistanceChanged)context.pitchDraft.prepareUnassisted(mod);
   // No callbacks, DOM publication or await may split checked ownership from
   // its matching Mod/selection. All fallible preparation precedes this boundary.
+  assertBasicHumanAssignment(admission);
   commitAssistance();
   const usesPitchPreference=pitchChanged||Boolean(context.pitchView)||Boolean(pitchMods.read(context));
   if(usesPitchPreference){
@@ -679,7 +695,8 @@ async function applySongMod({origin,context,mod,pitchView=null,pitchChanged=fals
     state.songMod=mod;state.mode=options.mode;state.practiceSelection=resolvePracticeSelection(state.score.parts,options.practiceSelection);
     state.practicePart=state.practiceSelection.kind==='all'&&!state.cleanSong?null:state.practiceSelection.part_ids[0]||null;
     state.practiceLayout=options.practiceLayout;state.showOtherParts=options.showOthers;state.hiddenPartIds=new Set(options.hiddenPartIds);
-    if(requiresReset){state.loopRequest++;rebuildPracticeScope({publish:false});if(admission)installPracticeAdmission(admission,{publish:false});else{state.compatibility={status:'ready'};state.targetTimeline=null;state.practicePlan=null;}}
+    if(requiresReset){state.loopRequest++;rebuildPracticeScope({publish:false});if(admission)installPracticeAdmission(admission,{publish:false,committed:true});else{state.compatibility={status:'ready'};state.targetTimeline=null;state.practicePlan=null;}}
+    else if(admission)installPracticeAdmission(admission,{publish:false,committed:true});
   }
   if(!usesPitchPreference)songMods.save(context,mod);
   const installedPitchDraft=context.pitchDraft&&(pitchChanged||assistanceChanged);if(installedPitchDraft)context.pitchDraft.install(origin);
@@ -703,20 +720,44 @@ async function applySongMod({origin,context,mod,pitchView=null,pitchChanged=fals
 }
 async function startUnifiedPerformance(){
   if(startingPreview||scoreAdmissionPending())return;const context=modContext('preview');if(!context)return;
-  try{if(context.pitchError)throw context.pitchError;assertSongModSupported(context.mod,context.capabilities,{assistance:context.assistance});assertModLiveAudioSupported(context.mod);assertPartInstrumentPolicyReady(modInputPolicy(context.mod,context),context.score.parts,i18n.locale);const options=songModOptions(context.mod,{assistance:context.assistance});preview.publish({...preview.value,...options,songMod:context.mod});await startPreview(options.mode);}
+  try{if(context.pitchError)throw context.pitchError;assertSongModSupported(context.mod,context.capabilities,{assistance:context.assistance});assertModLiveAudioSupported(context.mod);assertPartInstrumentPolicyReady(modInputPolicy(context.mod,context),context.score.parts,i18n.locale);const options=songModOptions(context.mod,{assistance:context.assistance});
+    if(isBasicKeysSong(context.cleanSong)&&options.mode==='practice'){
+      const request=++basicHumanRequest,profile=JSON.stringify(currentProfile());
+      const current=()=>request===basicHumanRequest&&context.previewVersion===preview.version&&context.score===preview.value.score&&context.navigation===scoreSaveNavigation&&profile===JSON.stringify(currentProfile())&&shell.screen()==='library'&&!document.hidden;
+      if(!synth.muted)await synth.unlock({live:!proceduralMachineOnly(context.cleanSong,options.mode)});if(!current())return;
+      const admission=await preparePracticeAdmission(context.compiled,options.practiceSelection,currentProfile(),context.assistance,null,undefined,context,current);
+      if(admission?.basicAdmission&&!current())return;assertBasicHumanAssignment(admission);
+      if(admission.compatibility.status!=='ready'){preview.publish({...preview.value,compatibility:admission.compatibility});return;}
+    }
+    preview.publish({...preview.value,...options,songMod:context.mod});await startPreview(options.mode);}
   catch(error){notice(()=>error.message,true);}
 }
 function markNotationRoles(){markPracticeNotation($('workspace'),{...getPracticeAssistanceDisplay(),sourceNotes:state.sourceNotes,humanPartIds:humanPartIds(),mode:state.mode,layout:state.practiceLayout,showOthers:state.showOtherParts});}
-async function applyHumanSelection(selection,{layout='complete',showOthers=state.showOtherParts}={}){
-  // Canonical scores use null for the legacy All parts option. Clean songs
-  // retain a concrete solo choice; their complete human set lives in selection.
-  if(!state.score)return;pausePlayback();state.practiceSelection=resolvePracticeSelection(state.score.parts,selection);state.practicePart=state.practiceSelection.kind==='all'&&!state.cleanSong?null:state.practiceSelection.part_ids[0]||null;state.practiceLayout=layout;state.showOtherParts=showOthers;void stageAssistance.restore();$('practice-part').value=state.practicePart||'';rebuildPracticeScope();resetPlayback();engravedView.practicePartChanged();state.notationPart=engravedView.scopeInfo().partId;$('notation-part').value=state.notationPart||'';renderNotationPage();updateRangeWarning();refreshPracticeView();await checkInstrument();
+async function applyHumanSelection(selection,{layout='complete',showOthers=state.showOtherParts,mode=state.mode}={}){
+  if(!state.score)return;
+  const selected=resolvePracticeSelection(state.score.parts,selection),basic=isBasicKeysSong(state.cleanSong);
+  let admission=null;
+  if(basic){
+    const request=++basicHumanRequest,compiled=state.compiled,version=state.practiceVersion,generation=state.generation,navigation=scoreSaveNavigation,profile=JSON.stringify(currentProfile()),originalMode=state.mode,assistance=stageAssistance.current();
+    const current=()=>request===basicHumanRequest&&compiled===state.compiled&&version===state.practiceVersion&&generation===state.generation&&navigation===scoreSaveNavigation&&profile===JSON.stringify(currentProfile())&&originalMode===state.mode&&assistance===stageAssistance.current()&&shell.screen()==='stage'&&!document.hidden;
+    try{
+      if(assistancePracticeGate(stageAssistance))throw new Error('Check the saved note assignment in Mod before changing Human parts.');
+      admission=await preparePracticeAdmission(compiled,selected,currentProfile(),assistance,state.loop,undefined,state,current);
+      if(admission?.basicAdmission&&!current())return;assertBasicHumanAssignment(admission);
+    }catch(error){if(current()){ $('practice-part').value=state.practicePart||'';notice(()=>error.message,true);}return;}
+  }
+  // The selected set is published only after its mandatory original-source
+  // ownership check. A failed proposal leaves the saved Mod and active take intact.
+  pausePlayback();state.mode=mode;$('session-mode').value=mode;state.practiceSelection=selected;state.practicePart=selected.kind==='all'&&!state.cleanSong?null:selected.part_ids[0]||null;state.practiceLayout=layout;state.showOtherParts=showOthers;
+  void stageAssistance.restore();$('practice-part').value=state.practicePart||'';rebuildPracticeScope();
+  if(admission)installPracticeAdmission(admission,{publish:false,committed:true});
+  resetPlayback();engravedView.practicePartChanged();state.notationPart=engravedView.scopeInfo().partId;$('notation-part').value=state.notationPart||'';renderNotationPage();updateRangeWarning();refreshPracticeView();
+  await checkInstrument();
 }
 async function applyCompletePracticeChoice({origin,context,selection,showOthers}) {
   if(origin==='stage'){
     if(context.score!==state.score)return;
-    state.mode='practice';$('session-mode').value='practice';
-    await applyHumanSelection(selection,{layout:'complete',showOthers});return;
+    await applyHumanSelection(selection,{layout:'complete',showOthers,mode:'practice'});return;
   }
   const version=preview.version,navigation=scoreSaveNavigation;
   const current=()=>context.score===preview.value.score&&context.identity===preview.value.identity&&context.previewVersion===version&&preview.version===version&&navigation===scoreSaveNavigation&&shell.screen()==='library'&&!document.hidden;
@@ -725,6 +766,7 @@ async function applyCompletePracticeChoice({origin,context,selection,showOthers}
   // be unlocked before compatibility checks introduce an asynchronous gap.
   if(!synth.muted)await synth.unlock();
   if(!current())return;
+  if(isBasicKeysSong(context.cleanSong)){const admission=await preparePracticeAdmission(context.compiled,resolvePracticeSelection(context.score.parts,selection),currentProfile(),context.assistance,null,undefined,context,current);if(!current())return;assertBasicHumanAssignment(admission);}
   const part=selection.kind==='all'&&!context.cleanSong?null:selection.part_ids?.[0]||context.score.parts[0]?.id;
   const pending=preview.select(context.identity,async()=>context.cleanSong?{score:context.score,cleanSong:context.cleanSong}:context.score,{part,practiceSelection:selection,practiceLayout:'complete',showOthers});
   const selectedVersion=preview.version,chosen=await pending;
@@ -732,6 +774,7 @@ async function applyCompletePracticeChoice({origin,context,selection,showOthers}
   if(preview.canStart('practice'))await startPreview('practice');
 }
 function rebuildPracticeScope({publish=true}={}) {
+  invalidateBasicPracticeAdmission();
   if (!state.compiled) return;
   const scope = practiceScope(state.compiled.timeline, state.practiceSelection??state.practicePart, state.loop);
   state.practiceTimeline = scope.selected; state.sourceTargetTimeline = scope.targets; state.targetTimeline = null; state.practicePlan = null; state.targetGroups = new Map(); state.physicalIndex = null;
@@ -843,18 +886,20 @@ async function checkInstrument(profile = currentProfile(), apply = false) {
   if (state.profileDirty && !apply) { state.compatibility = {status:'dirty',reasonKey:'app.compatibilityDirty'}; updateButtons(); return; }
   if (state.mode === 'practice' && transport.running) pausePlayback();
   if(isBasicKeysSong(state.cleanSong)&&!hasBasicKeyRendition(state.cleanSong)&&state.practiceSelection.part_ids.some(id=>!basicKeysParts(state.cleanSong).some(part=>part.id===id&&part.practice_available))){state.compatibility={status:'blocked',reasonKey:'app.compatibilityPlanBlocked'};state.targetTimeline=null;state.practicePlan=null;updateButtons();return;}
-  state.practicePlan=null;state.targetGroups=new Map();state.targetTimeline=null;state.physicalIndex=null;updatePracticeScopeLabel();renderTargetMappings();
+  invalidateBasicPracticeAdmission();state.practicePlan=null;state.targetGroups=new Map();state.targetTimeline=null;state.physicalIndex=null;updatePracticeScopeLabel();renderTargetMappings();
   state.compatibility = {status:'pending',reasonKey:'app.compatibilityPreparing'}; updateButtons();
   if(apply){state.profileDirty=false;if(profile.kind==='piano'){state.keys=profile.key_count;state.lowestMidi=profile.lowest_midi;}else state.guitar={tuning:profile.tuning,frets:profile.frets,capo:profile.capo};}
   const request = ++state.instrumentRequest; const compiled = state.compiled; const selection = state.practiceVersion;
+  const song=state.cleanSong,generation=state.generation,mode=state.mode,profileKey=JSON.stringify(profile);
+  const current=()=>request===state.instrumentRequest&&compiled===state.compiled&&selection===state.practiceVersion&&song===state.cleanSong&&generation===state.generation&&mode===state.mode&&profileKey===JSON.stringify(currentProfile());
   state.instrumentOutOfRange = null; state.instrumentConflict = false;
   bindText($('instrument-report'), () => t('app.checkingRange'));
   try {
     const assistance=await stageAssistance.restore();
-    if(request!==state.instrumentRequest||compiled!==state.compiled||selection!==state.practiceVersion)return;
+    if(!current())return;
     const gate=assistancePracticeGate(stageAssistance);if(gate){state.compatibility=gate;return;}
-    const admission=await preparePracticeAdmission(compiled,state.practiceSelection,profile,assistance,state.loop),{plan,report,sourceTargets}=admission;
-    if (request !== state.instrumentRequest || compiled !== state.compiled || selection !== state.practiceVersion) return;
+    const admission=await preparePracticeAdmission(compiled,state.practiceSelection,profile,assistance,state.loop,undefined,state,current),{plan,report,sourceTargets}=admission;
+    if(!current())return;assertPreparedPracticeAdmission(admission);
     if (apply) {
       state.profileDirty = false;
       resetPlayback();
@@ -873,7 +918,7 @@ async function checkInstrument(profile = currentProfile(), apply = false) {
     const diagnostics=[...new Map([...report.diagnostics,...plan.diagnostics].map(item=>[`${item.code}:${item.message}`,item])).values()];
     for (const diagnostic of diagnostics) { const li = document.createElement('li'); bindText(li, () => diagnostic.message); $('instrument-diagnostics').append(li); }
     $('instrument-settings').classList.toggle('has-warnings', diagnostics.some(d => !['guitar_fingering_advisory','guitar_pitch_only_targets'].includes(d.code)));
-  } catch (error) { if (request === state.instrumentRequest) { state.compatibility = {status:'error',reasonKey:'app.compatibilityError',originalReason:error.message}; bindText($('instrument-report'), () => t('app.instrumentUnverified', {detail:errorDetail(error)})); } }
+  } catch (error) { if (current()&&error.name!=='AbortError') { state.compatibility = isBasicKeysSong(state.cleanSong)?basicPracticeBlocker(error):{status:'error',reasonKey:'app.compatibilityError',originalReason:error.message}; bindText($('instrument-report'), () => t('app.instrumentUnverified', {detail:errorDetail(error)})); } }
   finally { if (request === state.instrumentRequest) updateButtons(); }
 }
 function renderTargetMappings() {
@@ -889,6 +934,7 @@ function syncProfileFields() {
   $('guitar-tuning').value=state.guitar.tuning.map(midiName).join(' ').replaceAll('♯','#'); $('guitar-frets').value=String(state.guitar.frets); $('guitar-capo').value=String(state.guitar.capo);
 }
 function markProfileDirty() {
+  invalidateBasicPracticeAdmission();
   state.profileDirty=true; state.instrumentRequest++;
   state.practicePlan=null;state.targetTimeline=null;state.physicalIndex=null;state.targetGroups=new Map();updatePracticeScopeLabel();renderTargetMappings();
   state.compatibility={status:'dirty',reasonKey:'app.compatibilityDirty'};
@@ -1058,6 +1104,8 @@ async function pressNote(source, midi, velocity = 90, eventTime = null, options 
   }else{
     const recorder=route.recorder;
     if(recorder!==state.recorder)return;
+    // Reject before both scored capture and raw onset evidence, even muted.
+    if(state.mode==='practice'&&basicPracticeGate())return;
     advanceLoopClock(receivedWall);
     let captured=null;
     if(state.mode==='practice' && state.compatibility.status==='ready'){
@@ -1090,9 +1138,9 @@ async function pressNote(source, midi, velocity = 90, eventTime = null, options 
   if(synth.muted)return;
   try{
     await synth.unlock();
-    if(synth.muted||heldAudioTokens.get(source)!==audioToken||state.held.get(source)!==midi)return;
-    if(livePolicy){await synth.prepareLiveAudio();if(synth.muted||heldAudioTokens.get(source)!==audioToken||state.held.get(source)!==midi)return;assertPartInstrumentPolicyCurrent(livePolicy,modInputBinding(state.songMod,state,state.mode));}
-    if(!synth.muted && heldAudioTokens.get(source)===audioToken && state.held.get(source)===midi && (!freeLive || (freeSession.liveOwner()===audioToken.liveOwner && freeLiveInputAllowed(route,captureTime,options))))synth.play(`manual:${source}`,midi,null,0,liveInstrument,velocity);
+    if(synth.muted||heldAudioTokens.get(source)!==audioToken||state.held.get(source)!==midi||scoreLive&&basicPracticeGate())return;
+    if(livePolicy){await synth.prepareLiveAudio();if(synth.muted||heldAudioTokens.get(source)!==audioToken||state.held.get(source)!==midi||scoreLive&&basicPracticeGate())return;assertPartInstrumentPolicyCurrent(livePolicy,modInputBinding(state.songMod,state,state.mode));}
+    if(!synth.muted && (!scoreLive||!basicPracticeGate()) && heldAudioTokens.get(source)===audioToken && state.held.get(source)===midi && (!freeLive || (freeSession.liveOwner()===audioToken.liveOwner && freeLiveInputAllowed(route,captureTime,options))))synth.play(`manual:${source}`,midi,null,0,liveInstrument,velocity);
   }catch(error){notice(synth.liveError===error?()=>liveAudioErrorText(error):route.kind==='free'?()=>i18n.t('error.audioUnavailable'):()=>errorDetail(error),true);}
 }
 function releaseMatching(prefix, eventTime = null, options = {}) {
@@ -1125,8 +1173,7 @@ function releaseNote(source, eventTime = null, options = {}) {
   if(route.kind==='free'){
     if(options.synthetic)freeSession?.cleanup(time.receivedWall,options.reason||'input_cleanup',{source,...(options.generationToken?{generationToken:options.generationToken}:{})},route.owner);
     else freeSession?.observe('note_off',observation,route.owner);
-  }else if(options.synthetic)route.recorder.evidence.cancel(observation);
-  else route.recorder.evidence.release(observation);
+  }else if(!basicPracticeGate()){if(options.synthetic)route.recorder.evidence.cancel(observation);else route.recorder.evidence.release(observation);}
   const contact=inputContacts.get(source);
   if(contact && time.eventWall>=contact.eventWall){contact.active=false;contact.eventWall=time.eventWall;}
   else if(!contact && options.inputKind==='midi' && !options.synthetic)rememberContact(source,{route,eventWall:time.eventWall,active:false});
@@ -1161,20 +1208,26 @@ async function togglePlayback() {
   if (canonicalSession.pausePending)return;
   if (transport.running || state.playPending) { pausePlayback(undefined,'pause',{preserveCanonical:transport.running}); return; }
   if(state.cleanSong&&!inspectCleanRendition(state.cleanSong).supported&&!(isBasicKeysSong(state.cleanSong)&&state.mode==='practice'&&state.targetTimeline?.notes.length)){notice(()=>cleanErrorText(i18n.locale,{code:'clean_renderer_unsupported'}),true);return;}
-  if (state.mode === 'practice' && (state.compatibility.status !== 'ready'||assistancePracticeGate(stageAssistance))) { notice(compatibilityNotice(state.compatibility), true); return; }
+  if (state.mode === 'practice' && (state.compatibility.status !== 'ready'||assistancePracticeGate(stageAssistance)||basicPracticeGate())) { notice(compatibilityNotice(state.compatibility), true); return; }
   if(state.songMod){try{assertModLiveAudioSupported(state.songMod,state.mode);assertPartInstrumentPolicyReady(modInputPolicy(state.songMod,state,state.mode),state.score.parts,i18n.locale);}catch(error){notice(()=>error.message,true);return;}}
   try{assertCurrentPassAssignment();}catch(error){notice(()=>error.message,true);return;}
   const waiting=state.recorder.active;
   if(waiting&&(waiting.manualDeadline!==null||waiting.inFlight||(transport.completed&&state.recorder.pending))){notice(() => t('app.assessmentWaiting'));return}
   if (transport.completed) { if(state.mode==='practice') { transport.reset(); if(state.loop)transport.seek(state.loop.start_ms); state.lastHighlight=''; } else resetPlayback(); }
   const generation=state.generation,ticket=++state.playTicket,song=state.cleanSong,score=state.score,mode=state.mode,targetPart=state.practicePart,practiceSelection=state.practiceSelection,instrument=state.instrument,mod=state.songMod,muted=synth.muted;
-  const current=()=>generation===state.generation&&ticket===state.playTicket&&song===state.cleanSong&&score===state.score&&mode===state.mode&&targetPart===state.practicePart&&practiceSelection===state.practiceSelection&&instrument===state.instrument&&mod===state.songMod&&muted===synth.muted&&!transport.running&&Boolean(state.compiled)&&shell.screen()==='stage'&&!document.hidden&&!document.querySelector('dialog[open]')&&(mode!=='practice'||state.compatibility.status==='ready'&&!assistancePracticeGate(stageAssistance));
+  const current=()=>generation===state.generation&&ticket===state.playTicket&&song===state.cleanSong&&score===state.score&&mode===state.mode&&targetPart===state.practicePart&&practiceSelection===state.practiceSelection&&instrument===state.instrument&&mod===state.songMod&&muted===synth.muted&&!transport.running&&Boolean(state.compiled)&&shell.screen()==='stage'&&!document.hidden&&!document.querySelector('dialog[open]')&&(mode!=='practice'||state.compatibility.status==='ready'&&!assistancePracticeGate(stageAssistance)&&!basicPracticeGate());
   partActivityStage?.clear();
   state.playPending=true;
   const admissionController=new AbortController();state.audioAdmissionController=admissionController;let admissionLease=null;
   try {
     if(!muted)await synth.unlock({live:!proceduralMachineOnly(song,mode)});
     if(!current())return;
+    if(mode==='practice'&&isBasicKeysSong(song)){
+      const checked=await preparePracticeAdmission(state.compiled,state.practiceSelection,currentProfile(),stageAssistance.current(),state.loop,admissionController.signal,state,current);
+      if(!current())return;assertBasicHumanAssignment(checked);installPracticeAdmission(checked);
+      if(checked.compatibility.status!=='ready'){notice(compatibilityNotice(checked.compatibility),true);return;}
+      assertCurrentPassAssignment();
+    }
     const audioThread=!muted&&(!song||hasAudioThreadRendition(song)),beatMs=60000/(Number($('tempo').value)||100),countIn=$('count-in').checked&&!isBasicKeysSong(song)?beatMs*4:0;
     // Count-in belongs to the same prepared source position as every audio gate,
     // transport frame and recorder timestamp; never subtract it after admission.
@@ -1212,18 +1265,27 @@ async function togglePlayback() {
     updateButtons();
   }catch(error){
     if(ticket!==state.playTicket)return;
-    pausePlayback();notice(()=>song?liveAudioErrorText(error):canonicalAudioErrorText(i18n.locale,error),true);
+    if(mode==='practice'&&isBasicKeysSong(song)&&error.basicPractice){invalidateBasicPracticeAdmission();state.compatibility=basicPracticeBlocker(error);}
+    pausePlayback();notice(()=>error.basicPractice?error.message:song?liveAudioErrorText(error):canonicalAudioErrorText(i18n.locale,error),true);
   }finally{
     admissionLease?.release();if(state.audioAdmissionController===admissionController)state.audioAdmissionController=null;
     if(ticket===state.playTicket&&state.playPending){state.playPending=false;cleanPlayer.stop();canonicalSession.stop();updateButtons();}
   }
 }
 function assertCurrentPassAssignment(){
+  if(state.mode==='practice')assertStageBasicPracticeAdmission();
   const pass=state.recorder.active;if(!pass||pass.closedWall!==null||!pass.captureEnabled)return;
   const saved=passInterpretations.get(pass),checked=stageAssistance.current();
+  assertBasicPassAdmission(pass);
   if(!saved||saved.practice_progression?.plan_digest!==progressionForAssistance(checked)?.plan.plan_digest||saved.practice_assistance?.plan.selection_digest!==(checked?.plan.selection_digest)||JSON.stringify(saved.practice_assistance?.receipt??null)!==JSON.stringify(checked?.receipt??null)||JSON.stringify(saved.source_revision)!==JSON.stringify(songMods.identity(state))||JSON.stringify(saved.pitch_mod??null)!==JSON.stringify(state.pitchView?.identity??null)||JSON.stringify(pass.timeline)!==JSON.stringify(state.targetTimeline))throw Object.assign(new Error('This take belongs to another note assignment. Reset the session before playing.'),{code:'assistance_take_reset_required'});
 }
+function assertBasicPassAdmission(pass){
+  if(!isBasicKeysSong(state.cleanSong))return;
+  const admission=assertStageBasicPracticeAdmission(),saved=passInterpretations.get(pass)?.basic_practice_admission;
+  if(!saved||saved.selection_digest!==admission.checked.plan.selection_digest||JSON.stringify(saved.receipt)!==JSON.stringify(admission.checked.receipt)||JSON.stringify(pass.timeline)!==JSON.stringify(state.targetTimeline))throw Object.assign(new Error('This take has no current original-source Human admission. Reset and recheck before scoring.'),{code:'basic_practice_take_stale'});
+}
 function beginPracticePass(now, captureEnabled = true) {
+  assertStageBasicPracticeAdmission();
   assertCurrentPassAssignment();
   const checked=stageAssistance.current();if(assistancePracticeGate(stageAssistance)||checked&&!checked.scored_mode_allowed||!state.targetTimeline?.notes.length)throw new Error('This assignment has no admitted human practice targets.');
   const recorder=state.recorder;let pass=recorder.active;
@@ -1237,6 +1299,7 @@ function beginPracticePass(now, captureEnabled = true) {
   }
   const interpretation=passInterpretations.get(pass)||{};
   if(!Object.hasOwn(interpretation,'practice_assistance')){interpretation.practice_assistance=assistanceTakeIdentity(stageAssistance.current());interpretation.practice_progression=progressionForAssistance(stageAssistance.current())?.plan??null;if(!stageAssistance.current()&&stageAssistance.state().persistence.status==='off')interpretation.practice_assistance_disabled=true;interpretation.song_mod=state.songMod?structuredClone(state.songMod):null;if(state.pitchView)interpretation.pitch_mod=state.pitchView.identity;interpretation.source_revision=structuredClone(songMods.identity(state));passInterpretations.set(pass,interpretation);}
+  if(isBasicKeysSong(state.cleanSong)){const admission=assertStageBasicPracticeAdmission();passInterpretations.get(pass).basic_practice_admission=structuredClone({receipt:admission.checked.receipt,selection_digest:admission.checked.plan.selection_digest});}
   state.inputs=pass.inputs;refreshPassHistory();displayChosenPass();return pass;
 }
 
@@ -1315,17 +1378,19 @@ function displayChosenPass() {
 function referenceInputActive(){return referenceListening?.isOpen()||performanceListening?.isActive();}
 async function waitForReferenceClose(){while(referenceInputActive())await Promise.all([referenceListening?.whenClosed(),performanceListening?.whenClosed()]);}
 async function drainAssessments() {
-  if(state.assessmentBusy||referenceInputActive())return;
+  if(state.assessmentBusy||referenceInputActive()||basicPracticeGate())return;
   const recorder=state.recorder;state.assessmentBusy=true;
   try {
     while(recorder===state.recorder){
       if(referenceInputActive())break;
       const pass=recorder.ready(performance.now())[0];if(!pass)break;
+      try{assertBasicPassAdmission(pass);}catch(error){notice(()=>error.message,true);break;}
       const job=recorder.submit(pass);updateButtons();refreshPassHistory();
       try{
         const assessment=await api('/api/assess',{timeline:job.timeline,inputs:job.inputs,tolerance_ms:recorder.toleranceMs});
+        if(recorder!==state.recorder)return;assertBasicPassAdmission(pass);
         await waitForReferenceClose();
-        if(recorder!==state.recorder)return;
+        if(recorder!==state.recorder)return;assertBasicPassAdmission(pass);
         recorder.complete(job,assessment);if(pass===recorder.active&&pass.closedWall===null&&!transport.running)bindText($('transport-status'), () => t('app.paused'));refreshPassHistory();displayChosenPass();
       }catch(error){await waitForReferenceClose();if(recorder!==state.recorder)return;recorder.fail(job,error.message);notice(() => t('app.assessmentError', {pass:passLabel(pass),detail:errorDetail(error)}),true);refreshPassHistory()}
     }
@@ -1334,14 +1399,16 @@ async function drainAssessments() {
 async function assess() {
   if(referenceInputActive())return;
   if(!state.compiled||state.mode!=='practice')return;
-  if(state.compatibility.status!=='ready'||assistancePracticeGate(stageAssistance)){notice(compatibilityNotice(assistancePracticeGate(stageAssistance)||state.compatibility),true);return}
+  if(state.compatibility.status!=='ready'||assistancePracticeGate(stageAssistance)||basicPracticeGate()){notice(compatibilityNotice(basicPracticeGate()||assistancePracticeGate(stageAssistance)||state.compatibility),true);return}
   const played=Boolean(state.recorder.active?.captureEnabled);
   pausePlayback();const generation=state.generation,recorder=state.recorder;
   if(!state.cleanSong&&!recorder.active){
     try{const prepared=await canonicalSession.prepare({soundEnabled:false,mode:'practice',practiceSelection:state.practiceSelection,...assistancePlaybackOptions(),...(state.songMod?songModOptions(state.songMod,{assistance:stageAssistance.current()}):{}),range:state.loop?{startMs:state.loop.start_ms,endMs:state.loop.end_ms}:undefined,loop:state.loop?{enabled:true}:undefined});if(!prepared||generation!==state.generation||recorder!==state.recorder)return;}
     catch(error){if(generation===state.generation)notice(()=>canonicalAudioErrorText(i18n.locale,error),true);return;}
   }
+  if(basicPracticeGate())return;
   const now=performance.now();if(!state.recorder.active)beginPracticePass(now,false);
+  assertBasicPassAdmission(state.recorder.active);
   state.recorder.requestAssessment(now,{grace:played});
   bindText($('transport-status'), () => played?t('app.receivingInput'):t('app.checkingTake'));
   updateButtons();refreshPassHistory();drainAssessments();
@@ -1573,7 +1640,7 @@ $('progress').addEventListener('keydown',event=>{
   event.preventDefault();seekPlayback(target);
 });
 $('assess-button').addEventListener('click', () => assess());
-$('session-mode').addEventListener('change', () => { state.mode = $('session-mode').value; resetPlayback();engravedView.modeChanged();const scope=engravedView.scopeInfo();state.notationPart=scope.scope==='all'?null:scope.partId;$('notation-part').value=state.notationPart||'';renderNotationPage(); updateRangeWarning(); });
+$('session-mode').addEventListener('change', async () => { const mode=$('session-mode').value;if(mode==='practice'&&isBasicKeysSong(state.cleanSong)){try{assertStageBasicPracticeAdmission();}catch{await applyHumanSelection(state.practiceSelection,{layout:state.practiceLayout,showOthers:state.showOtherParts,mode});$('session-mode').value=state.mode;return;}}state.mode=mode; resetPlayback();engravedView.modeChanged();const scope=engravedView.scopeInfo();state.notationPart=scope.scope==='all'?null:scope.partId;$('notation-part').value=state.notationPart||'';renderNotationPage(); updateRangeWarning(); });
 $('instrument').addEventListener('change', () => { resetPlayback(); state.instrument = $('instrument').value; state.profileDirty = false; syncProfileFields(); profileControls(); if (state.instrument === 'guitar') $('instrument-settings').open = true; checkInstrument(); $('piano-stage').hidden = state.instrument !== 'piano'; $('guitar-stage').hidden = state.instrument !== 'guitar'; $('key-count').disabled = state.instrument !== 'piano'; updateRangeWarning(); keyboardInputView?.refreshRange(); drawFrame(); });
 $('key-count').addEventListener('change', () => { resetPlayback(); state.customKeys = $('key-count').value === 'custom'; profileControls(); if (state.customKeys) { markProfileDirty(); $('instrument-settings').open = true; $('custom-key-count').value = String(state.keys); $('custom-lowest').value = midiName(state.geometry[0].midi).replace('♯','#'); return; } state.keys = Number($('key-count').value); state.lowestMidi = null; state.profileDirty = false; renderKeyboard(); updateRangeWarning(); checkInstrument(); });
 $('tempo').addEventListener('change', () => {
@@ -1740,17 +1807,65 @@ function cancelPendingStart(){if(startingPreview){state.loadIntent++;cancelCatal
 function previewCompatibility(result,profile=currentProfile()){
   return result.status==='ready'?{...result,reasonKey:profile.kind==='piano'?'app.compatibilityPianoReady':'app.compatibilityGuitarReady'}:result;
 }
-async function preparePracticeAdmission(compiled,selection,profile,assistance=null,loop=null,signal){
-  const checked=assistance?scopedAssistanceTargets(assistance,compiled.timeline,loop):null;
+function basicPracticeBlocker(error){
+  return {status:'blocked',basicPractice:true,reason:error?.message||'Human practice needs a current check against the original saved source. Choose Listen or retry the check.'};
+}
+function invalidateBasicPracticeAdmission(){state.basicPracticeAdmission=null;state.basicPracticeTokens=null;state.basicPracticePlan=null;}
+function assertStageBasicPracticeAdmission(){
+  if(!isBasicKeysSong(state.cleanSong))return null;
+  const admission=state.basicPracticeAdmission,tokens=state.basicPracticeTokens;
+  if(!admission||!tokens||state.profileDirty||state.compatibility.status!=='ready'||state.practicePlan!==state.basicPracticePlan||state.targetTimeline!==state.basicPracticePlan?.timeline)throw Object.assign(new Error('Human practice needs a current check against the original saved source. Choose Listen or retry the check.'),{code:'basic_practice_admission_required'});
+  const binding=createBasicPracticeAdmissionBinding(state,{selection:state.practiceSelection,profile:currentProfile(),assistance:stageAssistance.current(),...tokens});
+  return assertBasicPracticeCurrent(admission,binding);
+}
+function basicPracticeGate(){
+  if(state.mode!=='practice'||!isBasicKeysSong(state.cleanSong))return null;
+  if(state.compatibility.status!=='ready')return state.compatibility;
+  try{assertStageBasicPracticeAdmission();return null;}catch(error){return basicPracticeBlocker(error);}
+}
+function assertPreparedPracticeAdmission(admission){
+  if(!admission?.basicAdmission)return;
+  if(!admission.current())throw Object.assign(new Error('The Human assignment changed while its original source was being checked. Retry the current selection.'),{code:'basic_practice_admission_stale'});
+  assertBasicPracticeCurrent(admission.basicAdmission,admission.binding());
+}
+function assertBasicHumanAssignment(admission){
+  assertPreparedPracticeAdmission(admission);
+  // Device-range infeasibility is a visible practice blocker, not an ownership
+  // rewrite. Native unsupported-source errors never reach this commit boundary.
+}
+async function preparePracticeAdmission(compiled,selection,profile,assistance=null,loop=null,signal,context=null,current=()=>true){
+  // Basic ownership can only come from the saved-source native route. A caller
+  // timeline and the optional instrument-identity disclosure grant no ownership.
+  const value=context||(preview?.value.compiled===compiled?preview.value:state.compiled===compiled?state:null);
+  let basicAdmission=null,tokens=null,binding=null;
+  if(isBasicKeysSong(value?.cleanSong)){
+    if(value.compiled!==compiled)throw new Error('The Human assignment belongs to another source compilation.');
+    tokens={intentToken:{},sessionToken:{}};
+    binding=()=>createBasicPracticeAdmissionBinding(value,{selection,profile,assistance,...tokens});
+    const initial=createBasicPracticeAdmissionRequest(value,{selection,profile,assistance,...tokens});let response;
+    try{response=await api(initial.path,initial.body,signal);}catch(error){error.basicPractice=true;throw error;}
+    if(signal?.aborted||!current())throw Object.assign(new Error('The Human assignment check was superseded.'),{name:'AbortError',code:'basic_practice_admission_stale'});
+    basicAdmission=admitBasicPractice(response,initial.binding);
+    assertBasicPracticeCurrent(basicAdmission,binding());
+  }
+  const checked=basicAdmission?scopedAssistanceTargets(basicAdmission.checked,compiled.timeline,loop):assistance?scopedAssistanceTargets(assistance,compiled.timeline,loop):null;
   const sourceTargets=checked?.sourceTimeline||practiceScope(compiled.timeline,selection,loop).targets;
   const plan=checked?.plan||validateTargetPlan(await api('/api/practice-targets',{timeline:sourceTargets,profile},signal),sourceTargets);
+  if(basicAdmission&&(signal?.aborted||!current()))throw Object.assign(new Error('Practice check was superseded.'),{name:'AbortError'});
+  if(basicAdmission)assertBasicPracticeCurrent(basicAdmission,binding());
   const report=await api('/api/instrument-check',{timeline:sourceTargets,profile},signal);
+  if(basicAdmission&&(signal?.aborted||!current()))throw Object.assign(new Error('Practice check was superseded.'),{name:'AbortError'});
+  if(basicAdmission)assertBasicPracticeCurrent(basicAdmission,binding());
   let compatibility=compatibilityStatus(report,sourceTargets.notes);
   if(checked&&!checked.allowed)compatibility={status:'blocked',assistance:true,assistanceReason:plan.target_count?'infeasible':'noHuman'};
   else if(!plan.playable&&compatibility.status==='ready')compatibility={status:'blocked',reasonKey:'app.compatibilityPlanBlocked'};
-  return {plan,report,sourceTargets,compatibility:previewCompatibility(compatibility,profile)};
+  return {plan,report,sourceTargets,compatibility:previewCompatibility(compatibility,profile),basicAdmission,tokens,binding,current};
 }
-function installPracticeAdmission({plan,report,sourceTargets,compatibility},{publish=true}={}){
+function installPracticeAdmission(admission,{publish=true,committed=false}={}){
+  // committed is used only inside the synchronous, prechecked ownership commit.
+  if(!committed)assertPreparedPracticeAdmission(admission);
+  const {plan,report,sourceTargets,compatibility,basicAdmission,tokens}=admission;
+  state.basicPracticeAdmission=basicAdmission||null;state.basicPracticeTokens=tokens||null;state.basicPracticePlan=basicAdmission?plan:null;
   state.sourceTargetTimeline=sourceTargets;state.practicePlan=plan;state.targetTimeline=plan.timeline;state.targetGroups=new Map(plan.groups.map(group=>[group.target_id,group]));
   state.physicalIndex=new TimelineIndex(state.loop?windowNotes(plan.timeline.notes,state.loop.start_ms,state.loop.end_ms):plan.timeline.notes);state.compatibility=compatibility;
   state.instrumentOutOfRange=report.note_options.filter(note=>!note.playable).length;state.instrumentConflict=report.diagnostics.some(d=>d.code==='guitar_string_conflict');
@@ -1758,7 +1873,10 @@ function installPracticeAdmission({plan,report,sourceTargets,compatibility},{pub
 }
 async function checkPreview(compiled,part,signal,{assistance=null}={}){
   if(state.profileDirty)return{status:'dirty',reasonKey:'app.previewDirty'};
-  return (await preparePracticeAdmission(compiled,part,currentProfile(),assistance,null,signal)).compatibility;
+  const candidate=preview.value,version=preview.version,profile=JSON.stringify(currentProfile());
+  const current=()=>candidate.compiled===compiled&&preview.value.compiled===compiled&&preview.version===version&&profile===JSON.stringify(currentProfile());
+  try{return (await preparePracticeAdmission(compiled,part,currentProfile(),assistance,null,signal,candidate,current)).compatibility;}
+  catch(error){if(isBasicKeysSong(candidate.cleanSong)&&error.name!=='AbortError')return basicPracticeBlocker(error);throw error;}
 }
 function renderPreview(){
   refreshPracticeView();
@@ -1818,10 +1936,12 @@ function refreshPreview(){
 async function startPreview(mode){
   if(startingPreview||scoreAdmissionPending()||!preview.canStart(mode))return;
   lobbyPreview?.stop();
-  const candidate=preview.value,version=preview.version,request=++startRequest;startingPreview=true;renderPreview();
+  const candidate=preview.value,version=preview.version,request=++startRequest,profile=JSON.stringify(currentProfile()),navigation=scoreSaveNavigation;startingPreview=true;renderPreview();
+  const current=()=>request===startRequest&&version===preview.version&&candidate.score===preview.value.score&&profile===JSON.stringify(currentProfile())&&navigation===scoreSaveNavigation&&!document.hidden;
   try{
-    if(!synth.muted)await synth.unlock({live:!proceduralMachineOnly(candidate.cleanSong,mode)});if(request!==startRequest||version!==preview.version||candidate.score!==preview.value.score)return;
-    if(candidate.identity?.startsWith('native:')){await (await scoreStorage.storage()).requireActive(candidate.identity);if(request!==startRequest||version!==preview.version||candidate!==preview.value)return;}
+    if(!synth.muted)await synth.unlock({live:!proceduralMachineOnly(candidate.cleanSong,mode)});if(!current())return;
+    if(mode==='practice'&&isBasicKeysSong(candidate.cleanSong)){const admission=await preparePracticeAdmission(candidate.compiled,candidate.practiceSelection,currentProfile(),previewAssistance.current(),null,undefined,candidate,current);if(!current())return;assertBasicHumanAssignment(admission);if(admission.compatibility.status!=='ready'){preview.publish({...preview.value,compatibility:admission.compatibility});return;}}
+    if(candidate.identity?.startsWith('native:')){const storage=await scoreStorage.storage();if(request!==startRequest||version!==preview.version||candidate!==preview.value)return;await storage.requireActive(candidate.identity);if(request!==startRequest||version!==preview.version||candidate!==preview.value)return;}
     const intent=++state.loadIntent;
     const loaded=await compileScore(candidate.score,false,intent,candidate.compiled.diagnostics||[],candidate.part,mode,candidate.identity,candidate.cleanSong,false,candidate);
     if(!loaded||request!==startRequest||intent!==state.loadIntent)return;
@@ -1847,7 +1967,7 @@ async function openPreviewScore(){
   const candidate=preview.value;if(startingPreview||!(isBasicKeysSong(candidate.cleanSong)||isVsqSong(candidate.cleanSong)&&candidate.cleanSong.runtime)||!candidate.score||!['ready','inspection'].includes(candidate.status))return;
   const request=++startRequest,version=preview.version;startingPreview=true;renderPreview();
   try{
-    if(candidate.identity?.startsWith('native:')){await (await scoreStorage.storage()).requireActive(candidate.identity);if(request!==startRequest||version!==preview.version||candidate!==preview.value)return;}
+    if(candidate.identity?.startsWith('native:')){const storage=await scoreStorage.storage();if(request!==startRequest||version!==preview.version||candidate!==preview.value)return;await storage.requireActive(candidate.identity);if(request!==startRequest||version!==preview.version||candidate!==preview.value)return;}
     if(state.cleanSong?.identity!==candidate.cleanSong.identity||state.cleanSong?.libraryKey!==candidate.cleanSong.libraryKey){const intent=++state.loadIntent;const loaded=await compileScore(candidate.score,false,intent,candidate.compiled?.diagnostics||[],candidate.part,'practice',candidate.identity,candidate.cleanSong,true,candidate);if(!loaded||request!==startRequest)return;}
     else{pausePlayback();state.inspection=true;updateButtons();}
     enteringPreview=true;try{shell.show('stage');if(!shell.notationVisible())$('notation-toggle').click();engravedView.show();}finally{enteringPreview=false;}
@@ -1858,7 +1978,17 @@ $('open-score').addEventListener('click',()=>openPreviewScore());
 i18n.subscribe(()=>{redrawAppText();refreshSongModView();if(state.score&&!state.engravingActive)renderNotationPage();state.lastHighlight='';drawFrame(true);});
 $('start-listen').addEventListener('click',()=>startPreview('listen'));
 $('start-practice').addEventListener('click',async()=>{const value=preview.value;if(value.practiceLayout==='complete'){if(!synth.muted)await synth.unlock();await preview.select(value.identity,async()=>{const source=originalPitchContext(value);return source.cleanSong?{score:source.score,cleanSong:source.cleanSong}:source.score;},{part:value.part,practiceLayout:'solo'});}await startPreview('practice');});
-$('preview-part').addEventListener('change',()=>{const value=preview.value;if(value.score)preview.select(value.identity,async()=>{const source=originalPitchContext(value);return source.cleanSong?{score:source.score,cleanSong:source.cleanSong}:source.score;},{part:$('preview-part').value||null});});
+$('preview-part').addEventListener('change',async()=>{
+  const value=preview.value,part=$('preview-part').value||null;if(!value.score)return;
+  if(isBasicKeysSong(value.cleanSong)){
+    const request=++basicHumanRequest,version=preview.version,navigation=scoreSaveNavigation,profile=JSON.stringify(currentProfile());
+    const current=()=>request===basicHumanRequest&&version===preview.version&&value.score===preview.value.score&&navigation===scoreSaveNavigation&&profile===JSON.stringify(currentProfile())&&!document.hidden;
+    preview.publish({...value,compatibility:{status:'pending',reasonKey:'app.previewRechecking'}});
+    try{const admission=await preparePracticeAdmission(value.compiled,resolvePracticeSelection(value.score.parts,part===null?{kind:'all'}:{kind:'parts',part_ids:[part]}),currentProfile(),previewAssistance.current(),null,undefined,value,current);if(!current())return;assertBasicHumanAssignment(admission);}
+    catch(error){if(current()){preview.publish({...value,compatibility:value.compatibility});$('preview-part').value=value.part||'';notice(()=>error.message,true);}return;}
+  }
+  preview.select(value.identity,async()=>{const source=originalPitchContext(value);return source.cleanSong?{score:source.score,cleanSong:source.cleanSong}:source.score;},{part});
+});
 for(const id of ['catalog-search','catalog-origin'])$(id).addEventListener(id==='catalog-search'?'input':'change',renderCatalog);
 for(const id of ['instrument','key-count','custom-key-count','custom-lowest','guitar-tuning','guitar-frets','guitar-capo'])$(id).addEventListener(['instrument','key-count'].includes(id)?'change':'input',refreshPreview);
 async function loadCatalog() {
