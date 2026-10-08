@@ -22,7 +22,8 @@ export function validateNativePartActivityGeometry(e,{eligible}={}){
  else assert.ok(e.rows.every(row=>!row.visible&&row.rect.height===0),'Hidden rows cannot substitute for rendered evidence');
  return{visible,collapsed:eligible&&!visible};
 }
-function sourceLabel(parts,id){const part=parts.find(p=>(p.id||p.part_id)===id);assert.ok(part);return part.name??part.label??id;}
+// Independent oracle: names come from the checked source fixture, never renderer/runtime labels.
+function sourceLabel(parts,id){const matches=parts.filter(part=>part.id===id);assert.equal(matches.length,1,'Fixture source part ID must resolve uniquely');const {name,label}=matches[0];return typeof name==='string'&&name.trim()?name:typeof label==='string'&&label.trim()?label:id;}
 function validateClockWindow(e,s,state){
  const live=['playing','silent','muted'].includes(state),phase=live?'playing':state,{before,after}=e.captureWindow||{};assert.deepEqual(after,e.clock,'Screenshot action must bind its after-clock');
  for(const clock of [before,after]){assert.equal(clock?.phase,phase);assert.equal(clock.running,live);assert.equal(clock.completed,state==='ended');assert.equal(clock.available,true);assert.equal(clock.positionMs,clock.transportPositionMs);assert.ok(clock.positionMs>=0&&clock.positionMs<=clock.durationMs);}
@@ -47,7 +48,7 @@ export function validateCompletePracticeStripEvidence(r,f,vsq){
   const s=r.samples[name],e=s.strip;assert.equal(e?.version,2,`${name}: mandatory production strip evidence missing`);assert.equal(e.screen,'stage');assert.equal(e.mode,name==='vsq-listen'?'listen':'practice');assert.equal(e.ariaLabel,'Machine accompaniment');assert.equal(e.ariaLive,'off');assert.equal(e.keyboardInput,'off');assert.ok(Array.isArray(e.liveRegions)&&e.liveRegions.length===1,'Exactly one page live region required');assert.equal(e.liveRegions[0].value,'polite');assert.ok(typeof e.liveRegions[0].className==='string'&&e.liveRegions[0].className.split(/\s+/).includes('part-activity-page-label'),'Page live region requires the semantic class token');assert.equal(e.forbiddenSurfaces,0);
   for(const key of ['width','height','dpr','documentWidth'])assert.equal(e.viewport[key],s.geometry[key]);validateNativePartActivityGeometry(e,{eligible:state!==null});if(!state)continue;
   const isVsq=name.startsWith('vsq-'),index=isVsq?name==='vsq-muted'?4:3:name==='active-human'?1:name==='human-ended'?2:0,partId=isVsq?'vsq-track-1':'midi-t3-c3-r0';assert.equal(e.receiver?.index,index);assert.equal(s.audioPrepared,index+1);
-  validateAdmission(e,s,r.audio[index],{state,partId,label:sourceLabel(isVsq?vsq.runtime.runtime.parts:r.opened.clean_package.runtime.parts,partId),sourceSha256:isVsq?vsq.runtime.runtime.source_sha256:f.manifest.source.sha256,noteIds:isVsq?state==='muted'?[]:['vsq-t1-ID#0001']:f.manifest.machine_source_ids});
+  validateAdmission(e,s,r.audio[index],{state,partId,label:sourceLabel(isVsq?vsq.score.notation.parts:f.score.notation.parts,partId),sourceSha256:isVsq?vsq.runtime.runtime.source_sha256:f.manifest.source.sha256,noteIds:isVsq?state==='muted'?[]:['vsq-t1-ID#0001']:f.manifest.machine_source_ids});
  }
  if(r.phase==='complete-practice-seed'){
   const first=r.samples['multi-visible'].strip;

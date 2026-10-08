@@ -1,6 +1,7 @@
 import {validateCanonicalAudioPlan,CANONICAL_AUDIO_PROFILE} from './canonical-audio-plan.js';
 import {canonicalFingerprint} from './canonical-audio-fingerprint.js';
 import {isBasicKeysSong,isVsqSong} from './clean-song-package.js';
+import {partActivitySourceLabels} from './part-activity-labels.js';
 import {humanPracticePartIds} from './practice-selection.js';
 import {assertAssistanceAudioCurrent,emptyAssistedListen} from './practice-assistance-audio.js';
 
@@ -18,7 +19,7 @@ const requireThat=value=>{if(!value)throw new TypeError('Activity join unavailab
 const ownershipBinding=context=>typeof context==='function'?context():context;
 function ownershipStamp(context){const b=ownershipBinding(context);return b?Object.freeze({sourceToken:b.sourceToken,runtimeToken:b.runtimeToken,digest:b.expected_selection_digest,revision:b.revision??1,pitchMod:b.pitchMod}):null;}
 function ownershipCurrent(stamp,context){const b=ownershipBinding(context);return stamp?Boolean(b&&b.sourceToken===stamp.sourceToken&&b.runtimeToken===stamp.runtimeToken&&b.expected_selection_digest===stamp.digest&&(b.revision??1)===stamp.revision&&b.pitchMod===stamp.pitchMod):!b;}
-function snapshotFor({owner,source,runtime,plan,parts,timeline,canonical,human,assistance,assistanceContext}){
+function snapshotFor({owner,source,runtime,plan,parts,labelParts=parts,timeline,canonical,human,assistance,assistanceContext}){
  const prior=cache.get(owner);
  if(prior?.plan===plan&&prior.source===source&&prior.runtime===runtime&&prior.checked===(assistance??null)){requireThat(!assistance||ownershipCurrent(prior.ownership,assistanceContext));return prior.snapshot;}
  const checked=assertAssistanceAudioCurrent(assistance,assistanceContext,source,runtime);
@@ -44,8 +45,9 @@ function snapshotFor({owner,source,runtime,plan,parts,timeline,canonical,human,a
   requireThat(Number.isSafeInteger(start)&&Number.isSafeInteger(end)&&start>=0&&end>start);
   gates.push(Object.freeze({partId:n.part_id,occurrenceId:id,startMs:start*1000/plan.sampleRate,endMs:end*1000/plan.sampleRate}));
  }
+ const labels=partActivitySourceLabels(labelParts);
  const binding=Object.freeze({sourceToken:token(source),runtimeToken:token(runtime),planToken:token(plan),ownershipToken:token(checked||plan)});
- const snapshot=Object.freeze({...binding,parts:Object.freeze(parts.filter(p=>machineParts.has(p.id)).map(p=>Object.freeze({partId:p.id,label:typeof p.name==='string'?p.name:typeof p.label==='string'?p.label:p.id,machineSubset:human.has(p.id)}))),gates:Object.freeze(gates),durationMs:plan.durationFrames*1000/plan.sampleRate});
+ const snapshot=Object.freeze({...binding,parts:Object.freeze(parts.filter(p=>machineParts.has(p.id)).map(p=>Object.freeze({partId:p.id,label:labels.get(p.id)??p.id,machineSubset:human.has(p.id)}))),gates:Object.freeze(gates),durationMs:plan.durationFrames*1000/plan.sampleRate});
  admitted.add(snapshot);cache.set(owner,{source,runtime,plan,checked,snapshot,ownership:assistance?ownershipStamp(assistanceContext):null});return snapshot;
 }
 function result(snapshot,{positionMs,transport='stopped',countIn=false,soundEnabled=true,view},player,{epoch,preparing=false,mutedPartIds=[],clock=null}={}){
@@ -61,7 +63,7 @@ export function captureCleanActivityAdmission(player){
   const active=isVsqSong(source)?player.vsq:player.basicKeys,plan=active.plan,options=selections.get(player);if(!plan||!options||active.preparing)return;
   const parts=source.runtime.parts.map(p=>({...p,id:p.id??p.part_id}));
   const human=emptyAssistedListen(active.assistance,options.mode,options.practiceSelection)?new Set():humanPracticePartIds(parts,{...options,mode:active.assistance?'practice':options.mode||'listen'});
-  const snapshot=snapshotFor({owner:active,source,runtime:source.runtime,plan,parts,timeline:source.compilation.timeline.notes,human,assistance:active.assistance,assistanceContext:active.assistanceContext});
+  const snapshot=snapshotFor({owner:active,source,runtime:source.runtime,plan,parts,labelParts:source.notation?.parts??null,timeline:source.compilation.timeline.notes,human,assistance:active.assistance,assistanceContext:active.assistanceContext});
   cleanAdmissions.set(player,{source,runtime:source.runtime,active,plan,snapshot,options,epoch:active.epoch,assistance:active.assistance,assistanceContext:active.assistanceContext,ownership:active.assistance?ownershipStamp(active.assistanceContext):null,mutedPartIds:[...new Set([...options.mutedParts,...(options.soloParts.length?parts.filter(p=>!options.soloParts.includes(p.id)).map(p=>p.id):[])])]});
  }catch{/* Display failure cannot reject audio admission. */}
 }

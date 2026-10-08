@@ -69,7 +69,7 @@ export function createPartActivityView({document, parent, i18n}) {
     const selected = rows[page], t = (key, values) => partActivityText(i18n?.locale || 'en', key, values);
     const state = PART_ACTIVITY_STATES.includes(selected.state) ? selected.state : 'unavailable';
     setText(title, t('title')); setAttribute(root, 'aria-label', t('title'));
-    setText(label, cached(selected.label, 160) || t('part', {number: page + 1}));
+    setText(label, cached(selected.label, 160) || cached(selected.partId, 160) || t('part', {number: page + 1}));
     setText(machine, t('machine')); setAttribute(label, 'title', label.textContent);
     setText(summary, cached(selected.sourceInstrumentSummary, 300) || t('unidentified'));
     setAttribute(summary, 'title', summary.textContent);

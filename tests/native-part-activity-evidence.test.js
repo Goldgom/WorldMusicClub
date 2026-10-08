@@ -18,7 +18,7 @@ function geometry({width=1280,height=720,eligible=true}={}){
 function run(index,isVsq=false,notes){return{receiverId:index+1,planGeneration:1,positionFrame:index===2?86400:0,prepared:{generation:1},started:{anchorFrame:128},plan:{protocol:'wmh-basic-key-audio-v1',policyId:isVsq?'wmh-vsq-base-note-reference-v1':'wmh-basic-key-reference-v1',identityKind:isVsq?'vsq-authored-note':'midi-note',sourceSha256:isVsq?v.runtime.runtime.source_sha256:f.manifest.source.sha256,sampleRate:48000,durationFrames:isVsq?196001:240000,sourceNotes:isVsq?2:6,notes:notes||[['midi-t3-e1','event1',0,240000,60,70,0],['midi-t3-e2','event2',0,240000,115,70,0]]}};}
 function report(phase='complete-practice-seed',viewport){
  const seed=phase.endsWith('seed'),audio=seed?[run(0),run(1),run(2)]:[run(0),run(1,true),run(2,true,[]),run(3,true,[['vsq-t1-ID#0001','vsq-event',0,68101,63,90,2]]),run(4,true,[])];
- const r={phase,audio,activityObserverRestored:true,opened:{clean_package:{runtime:{parts:f.score.notation.parts.map(({id,name})=>({id,name}))}}},samples:{},trusted:[],modActions:[],vsqMixedStartAction:10,vsqMutedResetAction:19,vsqMutedStartAction:20};
+ const r={phase,audio,activityObserverRestored:true,opened:{clean_package:{runtime:{parts:f.score.notation.parts.map(({id})=>({id}))}}},samples:{},trusted:[],modActions:[],vsqMixedStartAction:10,vsqMutedResetAction:19,vsqMutedStartAction:20};
  const sequence={'vsq-all':9,'vsq-playing':11,'vsq-silent':12,'vsq-mixed':13,'vsq-muted':21};
  for(const [name,state]of Object.entries(NATIVE_PART_ACTIVITY_STATES[phase])){
   const live=['playing','silent','muted'].includes(state),isVsq=name.startsWith('vsq-')&&state!==null,index=isVsq?state==='muted'?4:3:name==='active-human'?1:name==='human-ended'?2:0,current=audio[index],position=state==='ended'?5000:name==='active-human'?1800:state==='silent'||name==='vsq-mixed'?2200:300,partId=isVsq?'vsq-track-1':'midi-t3-c3-r0',label=isVsq?'Test voice':'Track 3 / ch 3';
@@ -94,4 +94,19 @@ test('notation sampler binds lane paint, rejects hidden ancestors and never subs
 });
 test('mandatory source/EXE/profile/audio gates and original seed ledger count remain beside new native strip gate',async()=>{
  const source=await readFile(new URL('../scripts/verify-complete-practice-evidence.mjs',import.meta.url),'utf8');for(const token of ['validateCompletePracticeStripEvidence(r,f,vsqAcceptanceFixture())','validateCompletePracticeAudio(r,f)','assert.equal(r.audio.length,3','validateCompleteGeometry(await json','if(sourceSha)assert.equal(native.source_sha,sourceSha)','if(sourceTree)assert.equal(native.source_tree,sourceTree)','assert.equal(digest(b),native.executable_sha256)','await verifyCompletePracticeProfiles(native,json)'])assert.ok(source.includes(token),token);assert.match(source,/validateVsqAudioThreadRuns\(r.vsqMixed,v,\{mode:'practice',targetPart:'vsq-track-2',complete:false,natural:false,pcm:true\}\)/);assert.match(source,/validateVsqAudioThreadRuns\(r.vsqMuted,v,\{mode:'practice',targetPart:'vsq-track-2',mutedParts:\['vsq-track-1'\]/);const app=await renderer();assert.match(app,/muted:\{'vsq-track-1':true\}/);assert.match(app,/captureWindow=\{before,after:report.samples\[name\].strip.clock\}/);assert.match(app,/assert\(sequence<64,'Native action bound'\)/);
+});
+
+
+test('native label oracle joins checked source notation and ignores misleading runtime labels',()=>{
+ for(const phase of Object.keys(NATIVE_PART_ACTIVITY_STATES)){
+  const value=report(phase);
+  for(const part of value.opened.clean_package.runtime.parts)part.name='Invented runtime instrument';
+  check(value);
+  const name=phase.endsWith('seed')?'multi-visible':'vsq-playing',e=value.samples[name].strip;
+  for(const wrong of ['Invented runtime instrument',e.admission.admitted.parts[0].partId]){
+   const invalid=structuredClone(value),row=invalid.samples[name].strip;
+   row.admission.admitted.parts[0].label=wrong;row.rows[0].label=wrong;row.rows[0].labelTitle=wrong;
+   assert.throws(()=>check(invalid));
+  }
+ }
 });

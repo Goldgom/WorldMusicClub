@@ -72,7 +72,7 @@ test('source labels remain bounded literal evidence with unidentified and subset
   assert.equal(view.root.querySelector('.part-activity-label').textContent.includes('\u202e'),false);
   assert.match(view.root.querySelector('.part-activity-subset').textContent,/human part/);
   view.update({rows:[machine(0,{label:{toString(){throw Error('untrusted coercion');}},sourceInstrumentSummary:null})]},context);
-  assert.equal(view.root.querySelector('.part-activity-label').textContent,'Source part 1');
+  assert.equal(view.root.querySelector('.part-activity-label').textContent,'p0');
   assert.equal(view.root.querySelector('.part-activity-source').textContent,'Original instrument: not identified');
 });
 
@@ -142,4 +142,18 @@ test('Arrow, Home and End page within the bounded list and own both event edges'
     assert.equal(view.root.querySelector('.part-activity-name').textContent,expected);
   }
   assert.deepEqual(seen,[]);
+});
+
+test('source-name collisions remain distinct pages and sanitized-empty labels fall back to raw source ID',()=>{
+ const {view}=setup();
+ view.update({rows:[machine(0,{label:'Shared authored name'}),machine(1,{label:'Shared authored name'})]},context);
+ assert.equal(view.root.querySelector('.part-activity-page').textContent,'Page 1 of 2');
+ view.root.querySelector('.part-activity-next').click();
+ assert.equal(view.root.querySelector('.part-activity-row').getAttribute('data-part-id'),'p1');
+ assert.equal(view.root.querySelector('.part-activity-label').textContent,'Shared authored name');
+ for(const label of [undefined,'', '\u202e\u0000\u2066']){
+  view.update({rows:[machine(0,{partId:'midi-t3-c3-r0',label})]},context);
+  assert.equal(view.root.querySelector('.part-activity-label').textContent,'midi-t3-c3-r0');
+  assert.equal(view.root.querySelector('.part-activity-label').title,'midi-t3-c3-r0');
+ }
 });
