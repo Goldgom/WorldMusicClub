@@ -67,6 +67,16 @@ pub struct IdentityError {
     code: &'static str,
     message: String,
 }
+impl IdentityError {
+    /// Stable informational failure code. Errors grant no practice capability.
+    pub fn code(&self) -> &'static str {
+        self.code
+    }
+    /// Read-only explanation; the analyzer remains the only constructor.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
 impl std::fmt::Display for IdentityError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: {}", self.code, self.message)

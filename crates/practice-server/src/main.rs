@@ -113,13 +113,16 @@ async fn route(
     if request.method() != Method::POST
         && (path.starts_with("/api/practice-assistance/")
             || path.starts_with("/api/practice-progression/")
-            || path.starts_with("/api/pitch-mod/"))
+            || path.starts_with("/api/pitch-mod/")
+            || path.starts_with("/api/source-identity/"))
         && song_route
     {
         return engine_reply(song_api_error(
             405,
             "method_not_allowed",
-            if path.starts_with("/api/pitch-mod/") {
+            if path.starts_with("/api/source-identity/") {
+                "Source identity operations require POST"
+            } else if path.starts_with("/api/pitch-mod/") {
                 "Pitch Mod operations require POST"
             } else if path.starts_with("/api/practice-progression/") {
                 "Practice progression operations require POST"

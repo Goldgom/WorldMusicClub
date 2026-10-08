@@ -1031,6 +1031,7 @@ pub fn dispatch(
         ("GET", "/api/library/list") => library.list().and_then(|inventory| serde_json::to_value(inventory).map_err(|error| corrupt(error.to_string()))),
         ("POST", "/api/library/save") => decode(bytes).and_then(|request| library.save(request)).and_then(|entry| serde_json::to_value(entry).map_err(|error| corrupt(error.to_string()))),
         ("POST", "/api/library/source-instrument-details") => crate::native_source_instrument::describe(library, bytes),
+        ("POST", "/api/library/source-identity") => crate::native_source_instrument::describe_identity(library, bytes),
         ("POST", "/api/library/pitch-mod/project") => crate::native_pitch_mod::project(library, bytes),
         ("POST", "/api/library/basic-keys/notation") => crate::native_basic_keys::notation(library, bytes),
         ("POST", "/api/library/fingering/piano" | "/api/library/fingering/guitar") => crate::native_fingering::plan(library, bytes, path.ends_with("/piano")),
@@ -1050,7 +1051,7 @@ pub fn dispatch(
                 serde_json::to_value(loaded).map_err(|e| corrupt(e.to_string()))
             }
         }),
-        (_, "/api/library/source-instrument-details" | "/api/library/pitch-mod/project" | "/api/library/manage/query" | "/api/library/list" | "/api/library/save" | "/api/library/load" | "/api/library/export" | "/api/library/asset" | "/api/library/runtime" | "/api/library/basic-keys/notation" | "/api/library/fingering/piano" | "/api/library/fingering/guitar" | "/api/library/assistance/original" | "/api/library/assistance/generate" | "/api/library/assistance/create" | "/api/library/assistance/validate" | "/api/library/progression/generate" | "/api/library/progression/validate") => Err(fail(405, "library_method_not_allowed", "Unsupported method for this library operation")),
+        (_, "/api/library/source-identity" | "/api/library/source-instrument-details" | "/api/library/pitch-mod/project" | "/api/library/manage/query" | "/api/library/list" | "/api/library/save" | "/api/library/load" | "/api/library/export" | "/api/library/asset" | "/api/library/runtime" | "/api/library/basic-keys/notation" | "/api/library/fingering/piano" | "/api/library/fingering/guitar" | "/api/library/assistance/original" | "/api/library/assistance/generate" | "/api/library/assistance/create" | "/api/library/assistance/validate" | "/api/library/progression/generate" | "/api/library/progression/validate") => Err(fail(405, "library_method_not_allowed", "Unsupported method for this library operation")),
         _ => Err(fail(404, "library_unknown_route", "Unknown native library operation")),
     };
     match result {
@@ -1061,7 +1062,13 @@ pub fn dispatch(
 
 fn json_response(path: &str, value: serde_json::Value) -> http::Response<Vec<u8>> {
     let bytes = serde_json::to_vec(&value).expect("library JSON");
-    if path.starts_with("/api/library/progression/")
+    if path == "/api/library/source-identity" && bytes.len() > crate::MAX_RESPONSE {
+        error_response(fail(
+            413,
+            "source_identity_response_limit",
+            "Complete informational identity response exceeds 32 MiB; numeric details and practice remain available, and no partial identity is returned",
+        ))
+    } else if path.starts_with("/api/library/progression/")
         && bytes.len() > practice_server::MAX_SONG_RESPONSE_BYTES
     {
         error_response(fail(
@@ -1358,5 +1365,39 @@ mod concurrency_tests {
         drop(held);
         assert!(status.success());
         assert!(library.list().unwrap().entries.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod identity_response_tests {
+    use serde_json::{json, Value};
+
+    #[test]
+    fn complete_native_identity_envelope_has_independent_exact_32_mib_bound() {
+        let source = json!({"key":"song-example","content_sha256":"0".repeat(64),"profile":score_core::basic_keys::PROFILE,"choice":null,"runtime_policy":score_core::basic_keys::RENDITION_POLICY});
+        let overhead = serde_json::to_vec(&json!({"source":source,"details":""}))
+            .unwrap()
+            .len();
+        let mut text = "x".repeat(crate::MAX_RESPONSE - overhead);
+        let response = super::json_response(
+            "/api/library/source-identity",
+            json!({"source":source,"details":text}),
+        );
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.body().len(), crate::MAX_RESPONSE);
+        text.push('x');
+        let over = json!({"source":source,"details":text});
+        let response = super::json_response("/api/library/source-identity", over.clone());
+        assert_eq!(response.status(), 413);
+        let error: Value = serde_json::from_slice(response.body()).unwrap();
+        assert_eq!(error["code"], "source_identity_response_limit");
+        assert!(error.get("source").is_none());
+        assert!(error.get("details").is_none());
+        let numeric = super::json_response("/api/library/source-instrument-details", over);
+        assert_eq!(numeric.status(), 413);
+        assert_eq!(
+            serde_json::from_slice::<Value>(numeric.body()).unwrap()["code"],
+            "library_response_limit"
+        );
     }
 }
