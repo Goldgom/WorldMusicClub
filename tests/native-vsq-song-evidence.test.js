@@ -282,16 +282,18 @@ test('source-zero admission observes the first eligible frame and cancels pendin
  }
 });
 
-test('nominal VSQ stage entry waits for its started receiver and renderer before Reset can cancel preparation',async()=>{
+test('nominal VSQ stage entry waits for its started receiver, renderer and advancing source anchor before Reset',async()=>{
  const source=await readFile(new URL('../crates/desktop-shell/vsq-song-acceptance.js',import.meta.url),'utf8'),begin=source.indexOf(' async function start(mode){'),end=source.indexOf(' async function reset()',begin),implementation=source.slice(begin,end);
  for(const mode of ['listen','practice']){
   const nodes={'play-button':{disabled:false},'clean-song-stage':{dataset:{rendererState:'ready'}},[`start-${mode}`]:{id:`start-${mode}`}},document={body:{dataset:{screen:'library'}}},calls=[];
-  let state={started:4,pendingReceivers:0,ownedNodes:[]},predicate,finish,observed;const waiting=new Promise(resolve=>{observed=resolve;});
-  const start=runInNewContext(implementation+';start;',{document,$:id=>nodes[id],receiver:{status:()=>state},mod:{start:async(humans,options)=>{assert.deepEqual(JSON.parse(JSON.stringify(humans)),mode==='listen'?'none':['vsq-track-1']);assert.equal(options.layout,'solo');calls.push(['click','start-performance']);document.body.dataset.screen='stage';}},until:(condition,label,timeout)=>{assert.equal(label,`${mode} audio-thread stage admission`);assert.equal(timeout,10000);predicate=condition;observed();return new Promise(resolve=>{finish=resolve;});}});
+  let state={started:4,pendingReceivers:0,ownedNodes:[]},sourceClock={phase:'preparing',positionMs:0},predicate,finish,observed;const waiting=new Promise(resolve=>{observed=resolve;});
+  const start=runInNewContext(implementation+';start;',{document,$:id=>nodes[id],receiver:{status:()=>state},__wmhReadPlaybackClock:()=>sourceClock,mod:{start:async(humans,options)=>{assert.deepEqual(JSON.parse(JSON.stringify(humans)),mode==='listen'?'none':['vsq-track-1']);assert.equal(options.layout,'solo');calls.push(['click','start-performance']);document.body.dataset.screen='stage';}},until:(condition,label,timeout)=>{assert.equal(label,`${mode} audio-thread stage admission`);assert.equal(timeout,10000);predicate=condition;observed();return new Promise(resolve=>{finish=resolve;});}});
   let resetAllowed=false;const result=start(mode).then(()=>{resetAllowed=true;});await waiting;assert.equal(predicate(),false,'Stage and enabled Play do not mean the audio thread started');assert.equal(resetAllowed,false);
   const owner={state:'preparing',connected:true,disposed:false,disposing:false,pendingCommands:1,pendingStarts:0};state.ownedNodes=[owner];state.pendingReceivers=1;assert.equal(predicate(),false);
   nodes['clean-song-stage'].dataset.rendererState='playing';owner.state='running';state.started=5;owner.pendingStarts=1;assert.equal(predicate(),false,'A start awaiting its native acknowledgment remains pending');
-  state.pendingReceivers=0;owner.pendingCommands=0;owner.pendingStarts=0;assert.equal(predicate(),true);
+  state.pendingReceivers=0;owner.pendingCommands=0;owner.pendingStarts=0;assert.equal(predicate(),false,'The ACK admits a future anchor, not source progress');
+  sourceClock.phase='playing';assert.equal(predicate(),false,'A zero position still cannot admit Reset');
+  sourceClock.positionMs=1;assert.equal(predicate(),true);
   for(const change of [()=>owner.connected=false,()=>owner.disposed=true,()=>owner.disposing=true,()=>owner.state='ended',()=>nodes['clean-song-stage'].dataset.rendererState='ready']){const saved={...owner};change();assert.equal(predicate(),false);Object.assign(owner,saved);nodes['clean-song-stage'].dataset.rendererState='playing';}
   finish();await result;assert.equal(resetAllowed,true);assert.deepEqual(calls,[['click','start-performance']]);
  }
