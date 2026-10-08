@@ -1,5 +1,14 @@
 # Source development and accepted snapshots
 
+## Android development build
+
+Android now has a standalone offline WebView client, Rust JNI transport, private
+native-library storage, system file dialogs, a local APK compiler and a manual
+CI artifact workflow. ARM64 and x86_64 debug packages retain source identity and
+dependency/music notices. See [Android setup and limits](../ANDROID.md).
+These packages remain development builds until the exact source completes all
+required acceptance gates; no accepted Windows snapshot is changed.
+
 ## Project rename
 
 Current source is branded WorldMusicClub and hosted at [Goldgom/WorldMusicClub](https://github.com/Goldgom/WorldMusicClub). New browser/native portable packages, window titles and usage instructions use the new name. Existing storage, musical format identifiers, canonical producer metadata and historical release evidence retain their original identities; see [name compatibility](../BRAND_COMPATIBILITY.md). This rename does not accept or republish any historical Windows binary.

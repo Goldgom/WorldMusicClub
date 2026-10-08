@@ -5,6 +5,8 @@
   "type": "module",
   "description": "Local-first music practice UI for the Rust score engine",
   "scripts": {
+    "android:build": "npm run prepare:engraving && python scripts/build-android.py",
+    "android:smoke": "node scripts/android-device-smoke.mjs",
     "test": "node scripts/run-pure-tests.mjs",
     "test:browser": "node --test tests/frontend-browser.test.js",
     "test:full-app": "node --test tests/full-app-browser.test.js",

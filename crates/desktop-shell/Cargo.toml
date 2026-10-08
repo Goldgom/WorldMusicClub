@@ -6,6 +6,10 @@ rust-version = "1.90"
 publish.workspace = true
 license.workspace = true
 
+[features]
+default = ["windows-shell"]
+windows-shell = ["dep:tauri", "dep:tokio", "dep:tauri-build"]
+
 [dependencies]
 practice-server = { path = "../practice-server" }
 score-core = { path = "../score-core" }
@@ -17,8 +21,8 @@ base64 = "0.22"
 zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }
 
 [target.'cfg(windows)'.dependencies]
-tauri = { version = "=2.12.1", default-features = false, features = ["wry", "custom-protocol"] }
-tokio = { version = "1", features = ["sync", "time"] }
+tauri = { version = "=2.12.1", default-features = false, features = ["wry", "custom-protocol"], optional = true }
+tokio = { version = "1", features = ["sync", "time"], optional = true }
 
 [target.'cfg(windows)'.build-dependencies]
-tauri-build = { version = "=2.7.1", features = [] }
+tauri-build = { version = "=2.7.1", features = [], optional = true }

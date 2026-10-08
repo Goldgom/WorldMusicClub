@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/score-core", "crates/practice-server", "crates/desktop-shell"]
+members = ["crates/score-core", "crates/practice-server", "crates/desktop-shell", "crates/android-shell"]
 resolver = "2"
 
 [workspace.package]

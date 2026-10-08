@@ -156,11 +156,32 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=pathlib.Path, default=ROOT / 'dist/licenses/rust')
     parser.add_argument('--target', help='Cargo target triple; omit to inventory all locked targets')
+    parser.add_argument('--manifest-path', type=pathlib.Path, help='Inventory one native client dependency closure')
+    parser.add_argument('--no-default-features', action='store_true')
     args = parser.parse_args()
     command = ['cargo', 'metadata', '--locked', '--offline', '--format-version=1']
     if args.target:
         command.extend(['--filter-platform', args.target])
+    if args.manifest_path:
+        command.extend(['--manifest-path', str(args.manifest_path)])
+    if args.no_default_features:
+        command.append('--no-default-features')
     metadata = json.loads(subprocess.check_output(command, cwd=ROOT))
+    if args.manifest_path:
+        nodes = {node['id']: node for node in metadata['resolve']['nodes']}
+        selected = metadata['resolve']['root']
+        if not selected:
+            raise ValueError('Client notice inventory requires a package manifest')
+        reachable, pending = set(), [selected]
+        while pending:
+            package = pending.pop()
+            if package in reachable:
+                continue
+            reachable.add(package)
+            for dependency in nodes[package]['deps']:
+                if any(kind['kind'] != 'dev' for kind in dependency['dep_kinds']):
+                    pending.append(dependency['pkg'])
+        metadata['packages'] = [package for package in metadata['packages'] if package['id'] in reachable]
     notices, components, sources = collect(metadata, target=args.target)
     sysroot = pathlib.Path(subprocess.check_output(['rustc', '--print', 'sysroot'], text=True).strip())
     documentation = sysroot / 'share/doc/rust'

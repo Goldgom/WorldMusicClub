@@ -206,5 +206,21 @@
         "sha256": "0513f7e61304321f2d91e1851475be07e091042aa3640597e660608f72521e6c"
       }
     ]
+  },
+  {
+    "file": "jni-sys-64d77b7a-LICENSE-MIT",
+    "repository": "jni-rs/jni-sys",
+    "commit": "64d77b7a5f119d7b55b4e2c169a4668067ff59e6",
+    "path": "LICENSE-MIT",
+    "blob_sha": "2008402b8a1299cf118ea38e02116bfcc72e53c3",
+    "sha256": "1d85bd754b04ceec93e98e890edd1fa3c6a22e81bcb32135806beeccefa51cd1",
+    "url": "https://raw.githubusercontent.com/jni-rs/jni-sys/64d77b7a5f119d7b55b4e2c169a4668067ff59e6/LICENSE-MIT",
+    "packages": [
+      {
+        "name": "jni-sys-macros",
+        "version": "0.4.1",
+        "selected_license": "MIT"
+      }
+    ]
   }
 ]

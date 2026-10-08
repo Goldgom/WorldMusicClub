@@ -47,6 +47,13 @@ Each meaningful implementation increment is committed. Every 50 project commits 
 
 A limited local recognizer suggests note positions from one clean horizontal printed treble staff. You must correct and confirm every pitch and duration before it becomes playable. Handwritten music, complex notation and general PDFs are unsupported. The interface includes light/dark/system/custom themes. Saved-score copies are explicit and browser-local; export backups for durable records. See [current features and limits](docs/releases/0.2.0-alpha.1.md); the first alpha's historical guide remains in the releases folder.
 
+## Android builds
+
+Build an offline ARM64 Android 9+ development APK with `npm run android:build`.
+The client embeds the Rust engine and shared UI, with native private-library
+storage and system file dialogs. See [Android toolchain, commands and limits](docs/ANDROID.md).
+Debug APK compilation is separate from full release acceptance.
+
 ## Windows builds
 
 The [accepted 155 recovery](docs/releases/0.2.0-alpha.1-commit-155.md) includes notation-following and compact guitar display repairs, with exact source, ZIP checksum and native Windows evidence. The [published 119 preview](https://github.com/Goldgom/WorldMusicClub/releases/tag/v0.2.0-alpha.1-commit-119) remains a separate earlier build. Check `BUILD-INFO.json` to distinguish package contents from newer source features.
