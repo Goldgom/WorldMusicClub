@@ -13,9 +13,15 @@ export function settlePianoViewportBudget({document=globalThis.document,window=g
     const sample=()=>{
       const laneRect=lane.getBoundingClientRect(),transportRect=transport.getBoundingClientRect(),zoom=Math.round(laneRect.height/parseFloat(window.getComputedStyle(lane).height)*1000)/1000;
       const visual=window.visualViewport,viewportBottom=Math.min(window.innerHeight,visual?visual.offsetTop+visual.height:window.innerHeight),padding=parseFloat(window.getComputedStyle(root).paddingBottom)||0;
-      const available=Math.floor(((viewportBottom-transportRect.bottom-(root.scrollTop||0)*zoom+laneRect.height)/zoom-padding)*100)/100;
+      // The optional activity slot is a real flow sibling after transport.
+      // Measure its visible DOM extent independently: hidden source contexts
+      // and responsive display:none slots have no box and reserve no space.
+      const activity=root.querySelector('.part-activity-host'),activityRect=activity&&!activity.hidden?activity.getBoundingClientRect():null;
+      const activityBottom=activityRect?.width>0&&activityRect.height>0?activityRect.bottom:null;
+      const stageBottom=Math.max(transportRect.bottom,activityBottom??transportRect.bottom);
+      const available=Math.floor(((viewportBottom-stageBottom-(root.scrollTop||0)*zoom+laneRect.height)/zoom-padding)*100)/100;
       const expected=Math.max(100,available),committed=parseFloat(document.body.style.getPropertyValue('--piano-available-lane-height'));
-      samples.push({frame:samples.length,committed,expected,available,laneHeight:laneRect.height,transportBottom:transportRect.bottom,viewportBottom,zoom});
+      samples.push({frame:samples.length,committed,expected,available,laneHeight:laneRect.height,transportBottom:transportRect.bottom,activityBottom,stageBottom,viewportBottom,zoom});
       // The production budget writes hundredths of a CSS pixel. Only allow
       // layout's subpixel quantization, not a clipped-control tolerance.
       if(Number.isFinite(committed)&&Number.isFinite(expected)&&Math.abs(committed-expected)<=.02)return finish();

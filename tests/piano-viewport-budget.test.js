@@ -250,3 +250,66 @@ test('Reset to READY fails after three frames if the status viewport budget neve
     assert.equal(env.frames.size,0);
   }finally{env.view.destroy();}
 });
+
+// Model browser boxes, not the production budget formula. The activity host
+// follows transport in flow, and display:none yields an empty client rectangle.
+function activityBudgetFixture({zoom=1}={}){
+  const {document}=parseHTML('<html lang="en"><body data-screen="stage"><main id="workspace" class="piano-workspace"><div class="piano-lanes-shared"></div><div class="piano-keybed-shared"></div><div class="piano-transport"></div><div class="part-activity-host"></div></main></body></html>');
+  const root=document.getElementById('workspace'),lane=root.querySelector('.piano-lanes-shared'),transport=root.querySelector('.piano-transport'),host=root.querySelector('.part-activity-host'),frames=new Map(),observed=new Set();
+  let laneHeight=233,serial=0,notify,collapsed=false,slotHeight=56;
+  const values=new Map();Object.defineProperty(document.body,'style',{value:{getPropertyValue:key=>values.get(key)||'',setProperty(key,value){values.set(key,value);laneHeight=Math.round(parseFloat(value)*64)/64;},removeProperty:key=>values.delete(key)}});
+  root.getBoundingClientRect=()=>({top:0});
+  lane.getBoundingClientRect=()=>({width:1000*zoom,height:laneHeight*zoom});
+  root.querySelector('.piano-keybed-shared').getBoundingClientRect=()=>({height:110*zoom});
+  transport.getBoundingClientRect=()=>({height:40*zoom,bottom:(422.984375+laneHeight)*zoom});
+  host.getBoundingClientRect=()=>host.hidden||collapsed?{width:0,height:0,bottom:0}:{width:1000*zoom,height:slotHeight*zoom,bottom:transport.getBoundingClientRect().bottom+slotHeight*zoom};
+  const window={innerWidth:1280,innerHeight:720,getComputedStyle:node=>({height:node===lane?`${laneHeight}px`:'',paddingBottom:'8px'}),setTimeout,clearTimeout,requestAnimationFrame:fn=>(frames.set(++serial,fn),serial),cancelAnimationFrame:id=>frames.delete(id),addEventListener(){},removeEventListener(){},ResizeObserver:class{constructor(fn){notify=fn;}observe(node){observed.add(node);}disconnect(){}}};
+  const flush=()=>{const pending=[...frames.values()];frames.clear();for(const fn of pending)fn();};
+  const view=observePianoViewportBudget({document,window});flush();
+  return{document,window,view,host,observed,frames,flush,notify:()=>notify(),collapse:value=>{collapsed=value;},slot:height=>{slotHeight=height;},override:value=>values.set('--piano-available-lane-height',`${value}px`)};
+}
+
+test('activity settlement independently includes the real visible slot, including CSS zoom exactly once',async()=>{
+  for(const zoom of [1,1.25]){
+    const env=activityBudgetFixture({zoom});
+    try{
+      assert.ok(env.observed.has(env.host),'Production observes the new flow sibling');
+      const [sample]=await settlePianoViewportBudget(env);
+      assert.equal(sample.expected,zoom===1?233.01:100);
+      assert.equal(sample.available,zoom===1?233.01:89.01,'Zoom conversion uses measured pixels once');
+      assert.equal(sample.activityBottom-sample.transportBottom,56*zoom);
+      assert.equal(sample.stageBottom,sample.activityBottom);
+      if(zoom===1)assert.ok(sample.stageBottom+8<=720.02,'The visible slot fits with the unchanged padding');
+      else assert.ok(sample.available<100,'Impossible zoomed chrome must remain visible to strict geometry acceptance');
+      // This is the actual692 discrepancy: the old oracle incorrectly added
+      // the 56px sibling back into available human-lane space.
+      if(zoom===1)assert.equal(Math.floor((720-sample.transportBottom+sample.laneHeight-8)*100)/100,289.01);
+    }finally{env.view.destroy();}
+  }
+});
+
+test('source visibility and responsive collapse reclaim and restore only the measured slot within three frames',async()=>{
+  const env=activityBudgetFixture();
+  try{
+    for(const change of [()=>{env.host.hidden=true;},()=>{env.host.hidden=false;},()=>{env.window.innerWidth=1000;env.collapse(true);},()=>{env.window.innerWidth=1280;env.collapse(false);},()=>env.slot(43)]){
+      change();const settling=settlePianoViewportBudget(env);env.flush();env.notify();env.flush();env.flush();
+      const samples=await settling,last=samples.at(-1);
+      assert.equal(samples.length,4,'The last allowed rendered frame observes the real queued commit');
+      assert.equal(last.committed,last.expected);
+      assert.ok(last.stageBottom+8<=720.02,'Neither the complete transport nor visible activity slot may overflow');
+      if(env.host.hidden||last.activityBottom===null)assert.equal(last.expected,289.01,'Hidden or CSS-collapsed slots reserve zero space');
+      else assert.equal(last.expected,last.activityBottom-last.transportBottom===43?246.01:233.01,'Use observed extent, never a hard-coded 56px deduction');
+    }
+  }finally{env.view.destroy();}
+});
+
+test('activity settlement rejects missing commits and errors above the original 0.02px tolerance',async()=>{
+  for(const change of [env=>env.slot(57),env=>env.override(233.04)]){
+    const env=activityBudgetFixture();
+    try{
+      change(env);const settling=settlePianoViewportBudget(env),rejected=assert.rejects(settling,/did not commit within three rendered frames/);
+      for(let i=0;i<3;i++)env.flush();await rejected;
+      assert.equal(env.frames.size,0,'A failure cannot schedule a fourth rendered frame');
+    }finally{env.view.destroy();}
+  }
+});
