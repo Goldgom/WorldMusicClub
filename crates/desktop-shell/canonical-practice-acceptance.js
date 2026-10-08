@@ -67,8 +67,12 @@ function prepareCanonicalPracticeTarget({document,node=document.getElementById('
    if(stage){
     const laneRect=lane.getBoundingClientRect(),transportRect=transport.getBoundingClientRect(),zoom=Math.round(laneRect.height/parseFloat(window.getComputedStyle(lane).height)*1000)/1000;
     const visual=window.visualViewport,viewportBottom=Math.min(window.innerHeight,visual?visual.offsetTop+visual.height:window.innerHeight),padding=parseFloat(window.getComputedStyle(root).paddingBottom)||0;
-    const expected=Math.max(100,Math.floor(((viewportBottom-transportRect.bottom-(root.scrollTop||0)*zoom+laneRect.height)/zoom-padding)*100)/100),committed=parseFloat(document.body.style.getPropertyValue('--piano-available-lane-height'));
-    Object.assign(value,{committed,expected,laneHeight:laneRect.height,transportBottom:transportRect.bottom,viewportBottom,zoom});
+    // Activity is a real flow sibling after transport. Hidden source contexts
+    // and responsive display:none slots have no painted extent to reserve.
+    const activity=root.querySelector('.part-activity-host'),activityRect=activity&&!activity.hidden?activity.getBoundingClientRect():null;
+    const activityBottom=activityRect?.width>0&&activityRect.height>0?activityRect.bottom:null,stageBottom=Math.max(transportRect.bottom,activityBottom??transportRect.bottom);
+    const expected=Math.max(100,Math.floor(((viewportBottom-stageBottom-(root.scrollTop||0)*zoom+laneRect.height)/zoom-padding)*100)/100),committed=parseFloat(document.body.style.getPropertyValue('--piano-available-lane-height'));
+    Object.assign(value,{committed,expected,laneHeight:laneRect.height,transportBottom:transportRect.bottom,activityBottom,stageBottom,viewportBottom,zoom});
     budgetReady=Number.isFinite(committed)&&Number.isFinite(expected)&&Math.abs(committed-expected)<=.02;
     for(const [kind,chrome]of [['status',root.querySelector('.performance-status')],['notice',document.getElementById('notice')]])if(chrome){
      const rect=chrome.getBoundingClientRect(),css=window.getComputedStyle(chrome),expected=kind==='status'?Math.ceil(rect.height):chrome.hidden?0:Math.ceil(rect.height+(parseFloat(css.marginTop)||0)+(parseFloat(css.marginBottom)||0)),committed=parseFloat(document.body.style.getPropertyValue(`--piano-${kind}-space`));

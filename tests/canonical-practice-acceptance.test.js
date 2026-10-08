@@ -304,3 +304,66 @@ test('actual Settings to Transposition keeps both dialogs open and admits only t
   await helpers.waitCanonicalPracticeControl({document:app.document,node:parentControl,until:app.until,readClock:()=>readPlaybackClock(app.document)});const restored=helpers.prepareCanonicalPracticeTarget({document:app.document,window,node:parentControl});flush();await restored;assert.equal(frames.size,0);
  }finally{await app.close();}
 });
+
+async function canonicalActivityGeometryFixture({zoom=1,width=1280,height=720,padding=8,chrome=362.984375}={}){
+ const env=await canonicalPlayGeometryFixture(),{document,window}=env,root=document.getElementById('workspace'),lane=root.querySelector('.piano-lanes-shared'),transport=root.querySelector('.piano-transport'),host=document.createElement('div');
+ host.className='part-activity-host';root.append(host);let collapsed=false,slotHeight=56;
+ const laneBox=lane.getBoundingClientRect,computed=window.getComputedStyle;
+ lane.getBoundingClientRect=()=>({...laneBox(),height:laneBox().height*zoom});
+ window.innerWidth=width;window.innerHeight=height;window.getComputedStyle=node=>({...computed(node),paddingBottom:`${padding}px`});
+ transport.getBoundingClientRect=()=>({height:40*zoom,bottom:chrome*zoom+lane.getBoundingClientRect().height});
+ host.getBoundingClientRect=()=>host.hidden||collapsed?{width:0,height:0,bottom:0}:{width:1000*zoom,height:slotHeight*zoom,bottom:transport.getBoundingClientRect().bottom+slotHeight*zoom};
+ env.play.getBoundingClientRect=()=>({x:67,y:319.5625+laneBox().height,width:105,height:36});
+ env.notify();env.flush();
+ return{...env,host,collapse:value=>{collapsed=value;},slot:height=>{slotHeight=height;}};
+}
+
+test('native canonical readiness measures the actual activity sibling, not the stale transport-only capacity',async()=>{
+ for(const zoom of [1,1.25]){
+  const env=await canonicalActivityGeometryFixture({zoom});
+  try{
+   const pending=env.prepare();env.flush();const ready=await pending;
+   assert.equal(ready.expected,zoom===1?293.01:149.01);assert.equal(ready.committed,ready.expected);
+   assert.equal(ready.activityBottom-ready.transportBottom,56*zoom);assert.equal(ready.stageBottom,ready.activityBottom);
+   assert.ok(ready.stageBottom+8*zoom<=720.02,'Entire visible activity slot retains viewport padding');
+   assert.equal(ready.hitOwned,true);assert.equal(env.samples.length,2,'Settled budget still needs a second unchanged painted target');
+   if(zoom===1){assert.equal(ready.laneHeight,293.015625);assert.equal(Math.floor((720-ready.transportBottom+ready.laneHeight-8)*100)/100,349.01,'Reproduce the stale exact692 oracle discrepancy');}
+  }finally{env.view.destroy();}
+ }
+});
+
+test('native activity source hiding and responsive switches retain the five-sample commitment bound',async()=>{
+ const env=await canonicalActivityGeometryFixture();
+ try{
+  for(const change of [()=>{env.host.hidden=true;},()=>{env.host.hidden=false;},()=>{env.window.innerWidth=1000;env.collapse(true);},()=>{env.window.innerWidth=1280;env.collapse(false);},()=>env.slot(43)]){
+   change();env.samples.length=0;const pending=env.prepare();env.flush();env.notify();env.flush();env.flush();env.flush();const ready=await pending;
+   assert.equal(env.samples.length,5);assert.equal(ready.committed,ready.expected);assert.equal(ready.hitOwned,true);
+   assert.ok(ready.stageBottom+8<=720.02);
+   assert.equal(ready.expected,ready.activityBottom===null?349.01:ready.activityBottom-ready.transportBottom===43?306.01:293.01);
+  }
+ }finally{env.view.destroy();}
+});
+
+test('native activity readiness cannot admit stale budgets, missing ownership or a widened tolerance',async()=>{
+ for(const change of [env=>env.slot(57),env=>{env.document.elementFromPoint=()=>env.host;},env=>{env.document.body.style.setProperty('--piano-available-lane-height','293.04px');}]){
+  const env=await canonicalActivityGeometryFixture();
+  try{
+   change(env);const pending=env.prepare(),rejected=assert.rejects(pending,/did not settle within four rendered frames/);
+   for(let n=0;n<4;n++)env.flush();await rejected;assert.equal(env.samples.length,5);assert.equal(env.frames.size,0);
+  }finally{env.view.destroy();}
+ }
+});
+
+
+test('native Windows 1024 by 689 readiness reserves its measured activity slot without shrinking minimum lanes',async()=>{
+ const env=await canonicalActivityGeometryFixture({width:1024,height:689,padding:16,chrome:468.90625});
+ // Retain the exact Windows layout quantization from the bound692 trace.
+ const lane=env.document.querySelector('.piano-lanes-shared');lane.getBoundingClientRect=()=>({width:986,height:148.078125});
+ try{
+  const pending=env.prepare();env.flush();const ready=await pending;
+  assert.equal(ready.committed,148.09);assert.equal(ready.expected,148.09);assert.equal(ready.laneHeight,148.078125);assert.equal(ready.transportBottom,616.984375);
+  assert.equal(ready.activityBottom-ready.transportBottom,56);assert.ok(ready.stageBottom+16<=689.02);
+  assert.equal(Math.floor((689-ready.transportBottom+ready.laneHeight-16)*100)/100,204.09);
+  assert.equal(ready.hitOwned,true);assert.equal(ready.modalOwner,null);assert.equal(env.samples.length,2);
+ }finally{env.view.destroy();}
+});
