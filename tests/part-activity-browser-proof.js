@@ -7,7 +7,7 @@ export function readPartActivityGeometry(){
  const visible=node=>Boolean(node&&node.getClientRects().length&&getComputedStyle(node).visibility!=='hidden');
  const box=node=>{if(!visible(node))return null;const r=node.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height};};
  const root=document.querySelector('.part-activity-strip');
- return{width:innerWidth,height:innerHeight,dpr:devicePixelRatio,documentWidth:document.documentElement.scrollWidth,documentHeight:document.documentElement.scrollHeight,
+ return{screen:document.body.dataset.screen,instrument:document.querySelector('#instrument')?.value,stageTitle:document.querySelector('#stage-title')?.textContent,hostHidden:document.querySelector('.part-activity-host')?.hidden,stripHidden:root?.hidden,width:innerWidth,height:innerHeight,dpr:devicePixelRatio,documentWidth:document.documentElement.scrollWidth,documentHeight:document.documentElement.scrollHeight,
  host:box(document.querySelector('.part-activity-host')),strip:box(root),row:box(root?.querySelector('.part-activity-row')),state:root?.querySelector('.part-activity-row')?.dataset.state??null,label:root?.querySelector('.part-activity-name')?.textContent??null,
  clock:JSON.parse(document.querySelector('#progress')?.getAttribute('data-playback-clock')||'null'),
  reachable:Object.fromEntries(['#play-button','#reset-button'].map(selector=>{const node=document.querySelector(selector),r=node?.getBoundingClientRect(),hit=r&&document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return[selector,Boolean(node&&hit&&(node===hit||node.contains(hit)))];})),
@@ -16,10 +16,10 @@ export function readPartActivityGeometry(){
 }
 export function assertPartActivityGeometry(s,{visible}){
  assert.ok(PART_ACTIVITY_VIEWPORTS.some(([w,h])=>w===s.width&&h===s.height));assert.ok(s.documentWidth<=s.width+1&&s.documentHeight<=s.height+1,'Document overflow hides stage controls');
- const inside=r=>{assert.ok(r&&Object.values(r).every(Number.isFinite));assert.ok(r.width>0&&r.height>0&&r.x>=-1&&r.y>=-1&&r.x+r.width<=s.width+1&&r.y+r.height<=s.height+1);};
- for(const id of ['#play-button','#reset-button','#piano-scroll'])inside(s.controls[id]);for(const id of ['#play-button','#reset-button'])assert.equal(s.reachable[id],true);assert.ok(s.controls['#keyboard']?.height>=80);
+ const inside=(r,label)=>{assert.ok(r&&Object.values(r).every(Number.isFinite),`${label}: missing or nonfinite rectangle at ${s.width}x${s.height}`);assert.ok(r.width>0&&r.height>0&&r.x>=-1&&r.y>=-1&&r.x+r.width<=s.width+1&&r.y+r.height<=s.height+1,`${label}: clipped or outside ${s.width}x${s.height}`);};
+ for(const id of ['#play-button','#reset-button','#piano-scroll'])inside(s.controls[id],id);for(const id of ['#play-button','#reset-button'])assert.equal(s.reachable[id],true);assert.ok(s.controls['#keyboard']?.height>=80);
  if(!visible){assert.equal(s.host,null);assert.equal(s.strip,null);return;}
- inside(s.host);inside(s.strip);inside(s.row);assert.equal(s.host.height,56);assert.equal(s.strip.height,56);for(const r of Object.values(s.controls).filter(Boolean)){const a=s.strip;assert.ok(a.x+a.width<=r.x+1||r.x+r.width<=a.x+1||a.y+a.height<=r.y+1||r.y+r.height<=a.y+1,'Strip overlaps human controls');}assert.equal(s.notes,0);assert.equal(s.keyboardInput,'off');assert.equal(s.live,'off');assert.equal(s.pageLive,'polite');
+ inside(s.host,'activity host');inside(s.strip,'activity strip');inside(s.row,'activity row');assert.equal(s.host.height,56);assert.equal(s.strip.height,56);for(const r of Object.values(s.controls).filter(Boolean)){const a=s.strip;assert.ok(a.x+a.width<=r.x+1||r.x+r.width<=a.x+1||a.y+a.height<=r.y+1||r.y+r.height<=a.y+1,'Strip overlaps human controls');}assert.equal(s.notes,0);assert.equal(s.keyboardInput,'off');assert.equal(s.live,'off');assert.equal(s.pageLive,'polite');
 }
 export function assertPartActivitySourceEvidence(e,{suffix=''}={}){
  const fixture=partActivityMidi({suffix}),source=Buffer.from(e.sourceBase64,'base64'),response=Buffer.from(e.responseBase64,'base64'),hash=b=>createHash('sha256').update(b).digest('hex');
