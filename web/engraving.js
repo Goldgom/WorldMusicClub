@@ -201,8 +201,16 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
   let visualLease = null, resizePending = null;
   if (signal?.aborted) return result('cancelled', 'cancelled', i18n);
   const scheduler = options?.cooperative === true ? createEngravingRenderScheduler(view) : null;
-  let checked, identity, projection, boundIdentity;
-  const measureCoordinates=()=>projection?engravingProjectionModelCoordinates(projection,identity.score):{ok:true,measures:Array.from({length:checked.metadata.measureCount},(_,sourceMeasureIndex)=>({sourceMeasureIndex,offset:{numerator:0,denominator:1}}))};
+  let checked, identity, projection, boundIdentity,systemCoordinates=null;
+  // The validated source/model relationship belongs to this renderer generation.
+  // Keep its immutable table: following must not serialize the complete source
+  // XML and score again on every playback tick just to read screen geometry.
+  const measureCoordinates=()=>{
+    if(systemCoordinates)return systemCoordinates;
+    const value=projection?engravingProjectionModelCoordinates(projection,identity.score):{ok:true,measures:Array.from({length:checked.metadata.measureCount},(_,sourceMeasureIndex)=>({sourceMeasureIndex,offset:{numerator:0,denominator:1}}))};
+    systemCoordinates=value.ok?Object.freeze({ok:true,measures:Object.freeze(value.measures.map(measure=>Object.freeze({...measure,offset:Object.freeze({...measure.offset})})))}):value;
+    return systemCoordinates;
+  };
   let unsubscribeLocale, renderer, mount, observer, frame, fragmentLayout, bindings=null, expected=null, renderGeneration=0, ready = false, cancelled = false, width = 0;
   const useAnimationFrame = typeof view.requestAnimationFrame === 'function' && typeof view.cancelAnimationFrame === 'function';
   let cancelWait;
