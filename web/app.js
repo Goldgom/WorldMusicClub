@@ -1,3 +1,4 @@
+import {createPartActivityPolicyStamp} from './part-activity-lifecycle.js';
 import {createPartActivityStage} from './part-activity-stage.js';
 import {setupLibraryManagementView} from './library-management-view.js';
 import {basicKeyWrittenAt} from './basic-key-notation.js';
@@ -268,7 +269,8 @@ async function api(path, body, signal) {
   if (!response.ok) throw result.error ? Object.assign(new Error(result.error),{code:result.code}) : appError('app.serverStatus',{status:response.status});
   return result;
 }
-function activityLifecycle(){return [state.cleanSong,state.compiled,state.score,state.generation,state.songMod,state.practiceSelection,state.practiceVersion,state.pitchView,stageAssistance.current()];}
+const activityPolicyStamp=createPartActivityPolicyStamp();
+function activityLifecycle(){return [state.cleanSong,state.compiled,state.score,state.generation,activityPolicyStamp(state.songMod,state.practiceSelection),state.practiceVersion,state.pitchView,stageAssistance.current()];}
 function retireActivity(){partActivityStage?.retire({cleanSong:state.cleanSong,lifecycle:activityLifecycle()});}
 function updateButtons() {
   refreshPracticeView();

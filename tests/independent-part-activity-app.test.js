@@ -63,3 +63,31 @@ test('independent activity app: paging keyup preserves held human owner while ma
   app.emit(next,'keyup',{key:' ',code:'Space'});app.frame();assert.equal(key.getAttribute('aria-pressed'),'false');app.emit(key,'keydown',{key:' ',code:'Space'});app.frame();assert.equal(key.getAttribute('aria-pressed'),'true');app.emit(key,'focusout',{relatedTarget:next});app.emit(next,'focusin',{relatedTarget:key});app.frame();assert.equal(key.getAttribute('aria-pressed'),'false');app.emit(next,'keyup',{key:' ',code:'Space'});app.frame();assert.equal(key.getAttribute('aria-pressed'),'false');assert.equal((await app.exported('export-takes')).passes[0].inputs.length,2);
  }finally{await app.close();}
 });
+test('independent activity app: display-only Mod restores paused rows without readmission or capture changes',async()=>{
+ const f=await assistedApp(),{app}=f;
+ try{
+  f.at(app.sourceStartWall()+30);await app.click('play-button');app.frame();
+  assert.equal(f.strip().hidden,false);assert.ok(f.strip().querySelector('[data-state="paused"]'));
+  const clock=CanonicalPracticeSession.prototype.sourceClock,clockTrace=[];
+  const traceFrame=()=>{clockTrace.length=0;CanonicalPracticeSession.prototype.sourceClock=function(...args){const result=clock.apply(this,args);clockTrace.push({args,result});return result;};try{app.frame();return structuredClone(clockTrace);}finally{CanonicalPracticeSession.prototype.sourceClock=clock;}};
+  const baselineClock=traceFrame();
+  const before=await app.exported('export-takes'),playerStart=CanonicalPracticeSession.prototype.start;let starts=0;
+  CanonicalPracticeSession.prototype.start=function(...args){starts++;return playerStart.apply(this,args);};
+  try{
+   async function edit(change){await app.click('edit-song-mod');change();await app.click('song-mod-apply');await app.until(()=>!app.$('song-mod-dialog').open,()=>app.$('song-mod-error').textContent);app.frame();}
+   const check=(node,value)=>{node.checked=value;app.emit(node,'change');};
+   await edit(()=>check(app.$('song-mod-show-others'),false));assert.equal(f.strip().hidden,true);
+   await edit(()=>check(app.$('song-mod-show-others'),true));assert.equal(f.strip().hidden,false);assert.ok(f.strip().querySelector('[data-state="paused"]'));
+   await edit(()=>set(app,'song-mod-layout','solo'));assert.equal(f.strip().hidden,true);
+   await edit(()=>set(app,'song-mod-layout','complete'));assert.equal(f.strip().hidden,false);assert.ok(f.strip().querySelector('[data-state="paused"]'));
+   const part=()=>app.$('song-mod-parts').querySelector('[data-mod-visible="piano"]');
+   await edit(()=>check(part(),false));assert.equal(f.strip().hidden,true);
+   await edit(()=>check(part(),true));assert.equal(f.strip().hidden,false);assert.ok(f.strip().querySelector('[data-state="paused"]'));
+   assert.deepEqual(traceFrame(),baselineClock,'display-only restoration preserves the same paused frame clock trace');
+   assert.equal(starts,0);assert.equal(f.strip().querySelector('[data-state="playing"]'),null);
+   const after=await app.exported('export-takes');assert.deepEqual(after.passes,before.passes);assert.deepEqual(after.target_plan,before.target_plan);
+   await edit(()=>check(app.$('song-mod-parts').querySelector('[data-mod-mute="piano"]'),true));assert.equal(f.strip().hidden,true);
+   await edit(()=>check(app.$('song-mod-parts').querySelector('[data-mod-mute="piano"]'),false));assert.equal(f.strip().hidden,true,'restoring mute does not revive a retired policy');
+  }finally{CanonicalPracticeSession.prototype.start=playerStart;}
+ }finally{await app.close();}
+});

@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {createPartActivityPolicyStamp} from '../web/part-activity-lifecycle.js';
+import {createSongMod} from '../web/song-mod.js';
 import {createPartActivityStage} from '../web/part-activity-stage.js';
 import {CleanSongPlayer} from '../web/clean-song-player.js';
 import {CanonicalPracticeSession} from '../web/canonical-practice-session.js';
@@ -16,7 +18,19 @@ for(const kind of ['basic','vsq'])test(`${kind} retired rows are inactive only a
  try{
   await p.start(options);assert.ok(stage.sample({...frame,transport:'running'}).rows.length);
   stage.retire({cleanSong:song,lifecycle});p.pause();assert.equal(p.activityPlayback().status,'unavailable');
-  for(const transport of ['paused','ended']){const result=stage.sample({...frame,transport});assert.ok(result.rows.length);assert.ok(result.rows.every(r=>r.state===transport&&r.activeGateCount===0));}
+  const stamp=createPartActivityPolicyStamp(),identity={songId:'activity',sourceRevision:{kind:'canonical-score-v1',value:'a'.repeat(64)}},config={layout:'complete',showOtherParts:true,parts:[{partId:'p',performer:'machine',instrument:'source',visible:true,muted:false}]},selection=()=>({kind:'all',part_ids:['p']});
+  lifecycle.push(stamp(createSongMod(identity,config),selection()));
+  // Retire against the real admitted controller receipt, before stopping audio.
+  await p.start(options);stage.retire({cleanSong:song,lifecycle});p.pause();
+  for(const transport of ['paused','ended']){
+   for(const display of [{layout:'solo',showOtherParts:true},{layout:'complete',showOtherParts:false},{layout:'complete',showOtherParts:true}]){
+    const policy=stamp(createSongMod(identity,{...config,...display}),selection()),next=[...lifecycle.slice(0,-1),policy];
+    const result=stage.sample({...frame,lifecycle:next,context:{...context,layout:display.layout,showOtherParts:display.showOtherParts},transport});
+    if(display.layout==='solo'||!display.showOtherParts)assert.equal(result,null);
+    else {assert.ok(result.rows.length);assert.ok(result.rows.every(r=>r.state===transport&&r.activeGateCount===0));}
+   }
+   const result=stage.sample({...frame,transport});assert.ok(result.rows.length);assert.ok(result.rows.every(r=>r.state===transport&&r.activeGateCount===0));
+  }
   assert.equal(stage.sample({...frame,transport:'running'}),null,'retirement cannot resurrect audible authority');
   await p.start(options);stage.retire({cleanSong:song,lifecycle});p.pause();assert.equal(stage.sample({...frame,transport:'paused',otherRenderer:true}),null);assert.equal(stage.sample({...frame,transport:'paused'}),null,'replay clears live-take display');
   await p.start(options);stage.retire({cleanSong:song,lifecycle});p.pause();assert.equal(stage.sample({...frame,transport:'paused',lifecycle:[song,{},1]}),null);
