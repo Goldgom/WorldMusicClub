@@ -269,5 +269,6 @@
   "tests/source-identity-loader.test.js",
   "tests/source-identity-details-view.test.js",
   "tests/frontend-source-identity.test.js",
-  "tests/source-identity-proof.test.js"
+  "tests/source-identity-proof.test.js",
+  "tests/source-identity-backend-retention.test.js"
 ]
