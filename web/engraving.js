@@ -1,6 +1,7 @@
 /** Optional, offline OSMD presentation adapter. Rust remains the score/timing authority. */
 import {validateEngravingNoteMap,createEngravingNoteBindings,validateEngravingModelTies,restoreSourceBoundPageTies,isAdmittedNativeEngravingSource} from './engraving-note-map.js';
-import {createEngravingProjection,createSourceBoundEngravingFragments, restoreSourceBoundProjectionFractions, validateEngravingProjectionModel, ENGRAVING_SOURCE_LIMITS} from './engraving-projection.js';
+import {createEngravingProjection,createSourceBoundEngravingFragments, restoreSourceBoundProjectionFractions, validateEngravingProjectionModel, engravingProjectionModelCoordinates, ENGRAVING_SOURCE_LIMITS} from './engraving-projection.js';
+import {applyEngravingSystemBreaks,readEngravingSystems} from './engraving-systems.js';
 import {prepareEngravingFragmentLabels,prepareEngravingFragmentBarlines} from './engraving-measure-fragments.js';
 import {createEngravingRenderScheduler,notationAudioAdmission} from './engraving-render-scheduler.js';
 import {getAppI18n} from './app-locale.js';
@@ -132,9 +133,10 @@ export function validateEngravingInput(xml, options = {}, Parser = globalThis.DO
   if (options.width !== undefined && (!Number.isFinite(options.width) || options.width < 320 || options.width > 4096)) return invalid('width');
   if(options.compactHeader!==undefined&&typeof options.compactHeader!=='boolean')return invalid('compactHeader');
   if(options.cooperative!==undefined&&typeof options.cooperative!=='boolean')return invalid('options');
+  if(options.measuresPerRow!==undefined&&(!Number.isInteger(options.measuresPerRow)||options.measuresPerRow<1||options.measuresPerRow>64))return invalid('options');
   const identity = validateEngravingNoteMap(document, options.identity);
   if (noteCount > ENGRAVING_LIMITS.notes && !identity.ok) return unsupported('sourceMap');
-  return {ok: true, status: 'validated', document, identity, options: {dark: options.dark === true, responsive: options.responsive !== false, compactHeader:options.compactHeader===true, fromMeasure, toMeasure, partIds: selectedIds, zoom, width: options.width}, metadata: {noteCount, measureCount, partIds, fromMeasure, toMeasure}};
+  return {ok: true, status: 'validated', document, identity, options: {dark: options.dark === true, responsive: options.responsive !== false, compactHeader:options.compactHeader===true, measuresPerRow:options.measuresPerRow, fromMeasure, toMeasure, partIds: selectedIds, zoom, width: options.width}, metadata: {noteCount, measureCount, partIds, fromMeasure, toMeasure}};
 }
 
 function loadRenderer(document, visualLease) {
@@ -200,6 +202,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
   if (signal?.aborted) return result('cancelled', 'cancelled', i18n);
   const scheduler = options?.cooperative === true ? createEngravingRenderScheduler(view) : null;
   let checked, identity, projection, boundIdentity;
+  const measureCoordinates=()=>projection?engravingProjectionModelCoordinates(projection,identity.score):{ok:true,measures:Array.from({length:checked.metadata.measureCount},(_,sourceMeasureIndex)=>({sourceMeasureIndex,offset:{numerator:0,denominator:1}}))};
   let unsubscribeLocale, renderer, mount, observer, frame, fragmentLayout, bindings=null, expected=null, renderGeneration=0, ready = false, cancelled = false, width = 0;
   const useAnimationFrame = typeof view.requestAnimationFrame === 'function' && typeof view.cancelAnimationFrame === 'function';
   let cancelWait;
@@ -329,6 +332,10 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     rules.MaxMeasureToDrawIndex = projection ? projection.drawToIndex : checked.options.toMeasure - 1;
     rules.MinMeasureToDrawNumber = 0;
     rules.MaxMeasureToDrawNumber = 0;
+    if(checked.options.measuresPerRow!==undefined){
+      const coordinates=measureCoordinates();
+      if(!coordinates.ok||!applyEngravingSystemBreaks(renderer,coordinates.measures,checked.options)){state.dispose();return result('unsupported','projection',i18n);}
+    }
     if(checked.options.compactHeader){rules.PageTopMargin=1;rules.PageTopMarginNarrow=1;}
     renderer.Zoom = checked.options.zoom;
     renderer.updateGraphic();
@@ -361,6 +368,7 @@ export async function renderEngravedStaff(container, xml, options = {}, signal) 
     return result('ready', 'ready', i18n, {metadata, dispose: state.dispose, resize,
       mappingStatus:()=>bindings?.mappingStatus()||unavailableMapping(),
       renderGeneration:()=>renderGeneration,
+      systemLayout:()=>{if(!isCurrent()||!ready)return {status:'unavailable',systems:[]};const coordinates=measureCoordinates();return coordinates.ok?readEngravingSystems(renderer,mount,coordinates.measures,checked.options):{status:'unavailable',systems:[]};},
       expectedNoteBounds:()=>bindings?.expectedNoteBounds()||{status:'unavailable',rects:[],unavailableSourceNoteIds:[]},
       refreshExpectedCueGeometry:()=>bindings?.refreshExpectedCueGeometry()||false,
       setExpectedWrittenNotes(value){if(!isCurrent()||!bindings)return false;const accepted=bindings.setExpectedWrittenNotes(value);expected=accepted?{sourceNoteIds:[...value.sourceNoteIds],sourceMeasureIndex:value.sourceMeasureIndex}:null;return accepted},

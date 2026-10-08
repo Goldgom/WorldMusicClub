@@ -84,6 +84,19 @@ test('preflight rejects executable/resource markup and extreme numerical layout 
   assert.equal(validate({musicalValue: ['fifths', '-3']}).ok, true);
 });
 
+test('row layout options are bounded and modify only the disposable renderer model', async () => {
+  for(const measuresPerRow of [0,-1,1.5,65,'2',null])assert.equal(validate({}, {measuresPerRow}).status,'invalid');
+  for(const measuresPerRow of [1,2,64])assert.equal(validate({}, {measuresPerRow}).options.measuresPerRow,measuresPerRow);
+  const env=environment(),load=env.Renderer.prototype.load;
+  env.Renderer.prototype.load=function(content){this.Sheet.SourceMeasures=Array.from({length:4},()=>({}));return load.call(this,content);};
+  const ready=await renderEngravedStaff(env.container,xml,{measuresPerRow:2});
+  assert.equal(ready.status,'ready');
+  assert.equal(env.instances[0].Sheet.SourceMeasures[2].printNewSystemXml,true);
+  assert.equal(env.instances[0].loaded.getElementsByTagName('print').length,0);
+  assert.deepEqual(ready.systemLayout(),{status:'unavailable',systems:[]},'A renderer double without real systems cannot invent layout');
+  ready.dispose();assert.deepEqual(ready.systemLayout(),{status:'unavailable',systems:[]});
+});
+
 // Original synthetic pitches only. These ratios describe timing, not a private melody.
 function exactRhythmXml({actual = 240, normal = 227, duration = 227, divisions = 480, type = 'eighth', normalType = type, extra = '', tail = ''} = {}) {
   return `<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Synthetic rhythm</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>${divisions}</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes><note id="synthetic-C"><pitch><step>C</step><octave>4</octave></pitch><duration>${duration}</duration><voice>1</voice><type>${type}</type><time-modification><actual-notes>${actual}</actual-notes><normal-notes>${normal}</normal-notes><normal-type>${normalType}</normal-type></time-modification><staff>1</staff>${extra}</note></measure>${tail}</part></score-partwise>`;

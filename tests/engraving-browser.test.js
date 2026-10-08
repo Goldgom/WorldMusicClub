@@ -1390,6 +1390,49 @@ test('original short fractional bar retains exact clocks and source-owned SVG gl
 });
 
 registerNativeTieGraphBrowserTests({test,options,getPage:()=>page,renderBinding,expectBinding,clearBinding,bindingEvidence});
+
+test('real system rows contain the complete grand staff and preserve source identity after fit and reflow',options,async()=>{
+  const exported=await exportScore(),sourceBefore=JSON.stringify({score:duet.score,exported});
+  await renderBinding(duet.score,exported,{fromMeasure:1,toMeasure:3,measuresPerRow:1,compactHeader:true,zoom:1.2});
+  const inspect=()=>page.evaluate(()=>{
+    const layout=window.lastEngraving.systemLayout(),watch=window.__wmhBinding;
+    watch.assert(layout.status==='ready','The actual mounted OSMD model exposes verified system geometry');
+    const systems=watch.renderer.GraphicSheet.MusicPages.flatMap(page=>page.MusicSystems);
+    watch.assert(layout.systems.length===systems.length,'Each real MusicSystem appears once, independent of staff count');
+    for(const [index,system]of systems.entries()){
+      const row=layout.systems[index];
+      watch.assert(row.staffCount===3,'Piano grand staff and guitar form one simultaneous three-staff system');
+      const heads=system.GraphicalMeasures.flat().flatMap(measure=>measure.staffEntries||[]).flatMap(entry=>entry.graphicalVoiceEntries||[]).flatMap(voice=>voice.notes||[]).filter(note=>note.sourceNote.PrintObject).flatMap(note=>note.getNoteheadSVGs?.()||[]);
+      for(const head of heads){const box=head.getBoundingClientRect();watch.assert(box.top>=row.top-1&&box.bottom<=row.bottom+1&&box.left>=row.left-1&&box.right<=row.right+1,'The system bounds include actual note/rest paint on every staff');}
+    }
+    return layout;
+  });
+  const initial=await inspect();assert.deepEqual(initial.systems.map(row=>row.sourceMeasureIndices),[[0],[1],[2]],'Printed pickup labels and silent staves do not change source ordinals');
+  await page.evaluate(()=>{document.querySelector('#staff svg').style.zoom='.75';});
+  const fitted=await inspect();assert.ok(Math.abs(fitted.systems[0].height/initial.systems[0].height-.75)<.01,'The actual CSS fit is included once');
+  await page.evaluate(()=>{document.querySelector('#staff svg').style.zoom='';});
+  const renders=await page.evaluate(()=>window.__wmhBinding.renderCalls);await page.setViewportSize({width:760,height:900});await page.waitForFunction(count=>window.__wmhBinding.renderCalls>count,renders);
+  const narrow=await inspect();assert.deepEqual(narrow.systems.flatMap(row=>row.sourceMeasureIndices),[0,1,2]);
+  assert.equal(JSON.stringify({score:duet.score,exported}),sourceBefore,'Row boundaries never modify source data or downloadable XML');
+  await bindingEvidence('actual-system-rows',{initial,fitted,narrow});
+});
+
+test('native source-measure fragments force row breaks only at genuine source bars',options,async()=>{
+  const fixture=JSON.parse(await readFile(new URL('./fixtures/basic-key-internal-key-pages.json',import.meta.url),'utf8')),data=fixture.noncrossing,before=JSON.stringify(data);
+  await renderBinding(data.response.page.score,data.response.page.musicxml,{fromMeasure:1,toMeasure:2,measuresPerRow:1,compactHeader:true},data);
+  const evidence=await page.evaluate(()=>{
+    const watch=window.__wmhBinding,layout=window.lastEngraving.systemLayout();
+    watch.assert(layout.status==='ready','Native fragment geometry is readable from its own admitted renderer');
+    const flags=watch.renderer.Sheet.SourceMeasures.map(measure=>Boolean(measure.printNewSystemXml));
+    watch.assert(JSON.stringify(flags)==='[false,false,true,false]','The internal key interval is not a source-measure row boundary');
+    watch.assert(watch.reindex().length===4,'Each original source note retains its verified glyph');
+    return {layout,flags};
+  });
+  assert.deepEqual(evidence.layout.systems.map(row=>row.sourceMeasureIndices),[[0],[1]]);
+  assert.equal(JSON.stringify(data),before);
+  await bindingEvidence('source-fragment-system-rows',evidence);
+});
+
 test('native internal keys keep exact source glyphs, visible key positions and original measure numbers',options,async()=>{
   const fixture=JSON.parse(await readFile(new URL('./fixtures/basic-key-internal-key-pages.json',import.meta.url),'utf8')),data=fixture.noncrossing,score=data.response.page.score,exported=data.response.page.musicxml,before=JSON.stringify(fixture),evidence=[];
   const inspect=()=>page.evaluate(()=>{
