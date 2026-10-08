@@ -20,7 +20,7 @@ test('activity is display-only and restricted to complete practice machine rows'
   const {view} = setup();
   assert.equal(PART_ACTIVITY_VIEW_LIMIT, 128); assert.equal(PART_ACTIVITY_PAGE_SIZE, 1);
   assert.equal(view.root.hidden, true);
-  for (const patch of [{screen:'home'}, {layout:'solo'}, {mode:'listen'}, {mode:'free'}, {showOtherParts:false}, {showOtherParts:undefined}]) {
+  for (const patch of [{screen:'home'}, {layout:'solo'}, {mode:'listen'}, {mode:'free'}, {showOtherParts:false}, {showOtherParts:undefined}, {hideOtherParts:true}]) {
     assert.equal(partActivityEligible({...context,...patch}), false);
     view.update({rows:[machine(1)]}, {...context,...patch}); assert.equal(view.root.hidden,true);
   }
@@ -42,7 +42,7 @@ test('one-row paging reaches every admitted part in source order and clamps shri
     assert.equal(view.root.querySelectorAll('.part-activity-row').length,1);
     if(index<127)next.click();
   }
-  assert.equal(next.disabled,true); assert.equal(view.root.querySelector('.part-activity-page').textContent,'Part 128 of 128');
+  assert.equal(next.disabled,true); assert.equal(view.root.querySelector('.part-activity-page').textContent,'Page 128 of 128');
   previous.click(); assert.equal(view.root.querySelector('.part-activity-label').textContent,'Part 126');
   view.update({rows:rows.slice(0,2)},context);assert.equal(view.root.querySelector('.part-activity-label').textContent,'Part 1');
   assert.equal(next.disabled,true); assert.equal(view.root.querySelector('.part-activity-limit').hidden,true);
@@ -82,7 +82,7 @@ test('unchanged frames and clock movement perform zero DOM writes; only paging i
   observer.observe(view.root,{attributes:true,childList:true,characterData:true,subtree:true});
   for(let frame=1;frame<100;frame++)view.update({rows:rows.map(row=>({...row})),positionMs:frame},context);
   await Promise.resolve(); assert.equal(writes.length,0); observer.disconnect();
-  const live=view.root.querySelectorAll('[aria-live]');assert.equal(live.length,1);assert.equal(live[0].className,'part-activity-page');
+  const live=view.root.querySelectorAll('[aria-live]');assert.equal(live.length,1);assert.equal(live[0].classList.contains('part-activity-page'),true);
   assert.equal(live[0].getAttribute('aria-live'),'polite');
 });
 
@@ -109,4 +109,37 @@ test('repeat arriving from a held musical key never steals its release', () => {
   assert.deepEqual(events,['Space']);
   key(window,next,'keydown',' ','Space');key(window,next,'keydown',' ','Space',true);key(window,next,'keyup',' ','Space');
   assert.deepEqual(events,['Space'],'Repeats of an owned navigation press still stay owned');
+});
+
+test('input inspection stops before index 128 even when all bounded rows are hidden', () => {
+  const {view}=setup(); const rows=Array.from({length:10000},(_,i)=>machine(i,{visible:false}));
+  Object.defineProperty(rows,128,{get(){throw Error('Read beyond bounded source window');}});
+  view.update({rows},context);assert.equal(view.root.hidden,true);
+  rows[0]=machine(0);rows[1]=machine(0);rows[2]=machine(2,{partId:null});rows[3]=machine(3,{partId:''});
+  view.update({rows},context);assert.equal(view.root.hidden,false);
+  assert.equal(view.root.querySelector('.part-activity-pages').hidden,true);
+  assert.equal(view.root.querySelector('.part-activity-page-label').textContent,'Page 1 of 1');
+  assert.equal(view.root.querySelector('.part-activity-limit').hidden,false);
+});
+
+test('restored accessibility selectors and bounded titles expose literal source evidence', () => {
+  const {view}=setup();view.update({rows:[machine(0,{label:'literal source',sourceInstrumentSummary:'source declaration'}),machine(1)]},context);
+  assert.equal(view.root.getAttribute('aria-live'),'off');
+  assert.equal(view.root.querySelector('.part-activity-name').getAttribute('title'),'literal source');
+  assert.equal(view.root.querySelector('.part-activity-source').getAttribute('title'),'source declaration');
+  assert.equal(view.root.querySelector('.part-activity-machine').textContent,'Machine');
+  assert.equal(view.root.querySelector('.part-activity-previous').getAttribute('aria-label'),'Previous accompaniment parts');
+  assert.equal(view.root.querySelector('.part-activity-next').getAttribute('aria-label'),'Next accompaniment parts');
+});
+
+test('Arrow, Home and End page within the bounded list and own both event edges', () => {
+  const {view,window,document}=setup();view.update({rows:Array.from({length:4},(_,i)=>machine(i))},context);
+  const next=view.root.querySelector('.part-activity-next'),seen=[];
+  document.addEventListener('keydown',()=>seen.push('down'));document.addEventListener('keyup',()=>seen.push('up'));
+  for(const [value,expected] of [['End','Part 3'],['ArrowLeft','Part 2'],['Home','Part 0'],['ArrowRight','Part 1']]) {
+    assert.equal(key(window,next,'keydown',value).defaultPrevented,true);
+    key(window,next,'keyup',value);
+    assert.equal(view.root.querySelector('.part-activity-name').textContent,expected);
+  }
+  assert.deepEqual(seen,[]);
 });
