@@ -1447,7 +1447,7 @@ test('real Rust follow crosses Jianpu rests and silent measures while manual bro
   assert.equal(await page.locator('#notation-page').textContent(),firstPage,'The Rust repeat occurrence turns back to the first written page');
   await ui('#engraved-button').click();assert.match(await page.locator('#play-button').textContent(),/Pause/);assert.equal(await page.locator('#engraving-follow').isChecked(),true);
   await waitForEngraving();await ui('#jianpu-button').click();assert.match(await page.locator('#play-button').textContent(),/Pause/);
-  await page.locator('#play-button').click();const paused=(await page.locator('#progress').evaluate(readPlaybackClock)).positionMs;
+  await page.locator('#play-button').click();const paused=(await assertPausedPlaybackClock(page)).positionMs;
   await ui('#engraved-button').click();await waitForEngraving();await ui('#staff-button').click();
   assert.equal((await page.locator('#progress').evaluate(readPlaybackClock)).positionMs,paused,'Paused view changes never change the transport position');
   assert.equal(requests.filter(request=>request.path==='/api/notation-navigation'&&JSON.parse(request.body).id===score.id).length,1);
