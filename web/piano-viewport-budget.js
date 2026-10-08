@@ -15,7 +15,7 @@ export function observePianoViewportBudget({document,window=document.defaultView
   const observer=window.ResizeObserver?new window.ResizeObserver(()=>update.schedule()):null;
   const update=createPianoBudgetUpdate({document,window,property:'--piano-available-lane-height',measure(){
     const normal=document.getElementById('workspace'),free=document.getElementById('free-practice-screen');
-    for(const root of [normal,free])if(root)for(const node of [root,...root.querySelectorAll('.piano-workspace-heading,.play-panel,.free-performance-panel,.piano-stage-toolbar,.performance-status,.piano-keybed-shared,.piano-transport,.keyboard-input-footer,.keyboard-pan,#piano-fingering-guidance')])if(!observed.has(node)){observed.add(node);observer?.observe(node);}
+    for(const root of [normal,free])if(root)for(const node of [root,...root.querySelectorAll('.piano-workspace-heading,.play-panel,.free-performance-panel,.piano-stage-toolbar,.performance-status,.piano-keybed-shared,.piano-transport,.keyboard-input-footer,.keyboard-pan,#piano-fingering-guidance,.part-activity-host')])if(!observed.has(node)){observed.add(node);observer?.observe(node);}
     const mode=document.body.dataset.screen==='free'?'free':'normal',root=mode==='free'?free:normal;
     if(!root||root.hidden||!root.classList.contains('piano-workspace'))return;
     const lane=root.querySelector('.piano-lanes-shared'),transport=root.querySelector('.piano-transport'),keyboard=root.querySelector('.piano-keybed-shared');
@@ -27,7 +27,7 @@ export function observePianoViewportBudget({document,window=document.defaultView
     const key=JSON.stringify([window.innerWidth,window.innerHeight,zoom,keyboardRect.height/zoom,document.documentElement.lang,root.getBoundingClientRect?.().top||0]);
     if(key!==context){context=key;capacities=new Map();}
     const visual=window.visualViewport,viewportBottom=Math.min(window.innerHeight,visual?visual.offsetTop+visual.height:window.innerHeight);
-    const plan=pianoViewportBudget({viewportBottom,laneHeight:laneRect.height,transportBottom:transportRect.bottom+(root.scrollTop||0)*zoom,zoom,bottomPadding:parseFloat(window.getComputedStyle?.(root)?.paddingBottom)||0});
+    const plan=pianoViewportBudget({viewportBottom,laneHeight:laneRect.height,transportBottom:Math.max(transportRect.bottom,root.querySelector('.part-activity-host:not([hidden])')?.getBoundingClientRect?.().bottom||0)+(root.scrollTop||0)*zoom,zoom,bottomPadding:parseFloat(window.getComputedStyle?.(root)?.paddingBottom)||0});
     if(!plan)return;
     capacities.set(mode,plan.height);
     return `${Math.min(...capacities.values())}px`;

@@ -1,3 +1,4 @@
+import {createPartActivityView} from './part-activity-view.js';
 import {getAppI18n} from './app-locale.js';
 import {localizeStatic} from './locale-view.js';
 import {stageFeedbackView} from './hud-feedback.js';
@@ -115,6 +116,9 @@ export function setupPerformanceView({getContext,i18n=getAppI18n()}) {
   play.querySelector('.section-heading').replaceWith(status);
   const piano=$('piano-stage');piano.classList.add('performance-piano');const overlay=document.createElement('div');overlay.className='performance-overlay';overlay.innerHTML='<div id="stage-cue" aria-live="off" hidden><strong id="stage-cue-main"></strong><span id="stage-cue-detail"></span></div><div class="keyboard-pan"><button id="keyboard-pan-left" class="button secondary" data-i18n-aria-label="performance.panLower" aria-label="显示更低的琴键音高">←</button><span id="keyboard-range-context"></span><button id="keyboard-pan-right" class="button secondary" data-i18n-aria-label="performance.panHigher" aria-label="显示更高的琴键音高">→</button></div>';
   const field=document.createElement('div');field.className='performance-field';piano.before(field);field.append(overlay,piano,$('guitar-stage'));const pan=overlay.querySelector('.keyboard-pan');play.insertBefore(pan,document.querySelector('.transport'));const scroll=$('piano-scroll');for(const[id,direction]of[['keyboard-pan-left',-1],['keyboard-pan-right',1]])$(id).addEventListener('click',()=>{scroll.scrollBy({left:direction*scroll.clientWidth*.65,behavior:'auto'});updateRange()});
+  const activityHost=document.createElement('div');activityHost.className='part-activity-host';activityHost.hidden=true;play.append(activityHost);
+  const activityView=createPartActivityView({document,parent:activityHost,i18n});
+  function updateActivity(snapshot,context){activityView.update(snapshot,context);const hide=activityView.root.hidden;if(activityHost.hidden!==hide){activityHost.hidden=hide;viewportBudget?.refresh();}}
   const transport=document.querySelector('.transport'),panHome=document.createComment('Piano pan controls home');pan.before(panHome);
   const cue=$('stage-cue'),cueHome=document.createComment('Guitar transport cue home');cue.before(cueHome);
   let pianoGuidance=null,guidanceHome=null;
@@ -167,11 +171,11 @@ export function setupPerformanceView({getContext,i18n=getAppI18n()}) {
     const cueState=!cue?null:context.running?'countdown':context.completed?'complete':context.hasStarted?'paused':'ready',signature=JSON.stringify([i18n.revision,cue,cueState]);
     if(signature!==lastCue){lastCue=signature;const node=$('stage-cue');node.hidden=!cue;if(cueState)node.dataset.cueState=cueState;else node.removeAttribute('data-cue-state');$('stage-cue-main').textContent=cue?.main||'';$('stage-cue-detail').textContent=cue?.detail||'';}updateRange();updatePianoToolbarTitles(pianoActions);
   }
-  function screenChanged(screen){if(screen==='stage'){hud.append(nav);header.hidden=true;}else if(screen==='free'){$('free-practice-screen').querySelector('.free-practice-heading').append(nav);header.hidden=true;}else{header.append(nav);header.hidden=false;}update();notationLayout.refresh();viewportBudget?.refresh();}
+  function screenChanged(screen){if(screen!=='stage')updateActivity(null,{});if(screen==='stage'){hud.append(nav);header.hidden=true;}else if(screen==='free'){$('free-practice-screen').querySelector('.free-practice-heading').append(nav);header.hidden=true;}else{header.append(nav);header.hidden=false;}update();notationLayout.refresh();viewportBudget?.refresh();}
   const refreshLocale=()=>{localizeStatic(document,i18n);update();notationLayout.refresh();};
   localizeStatic(document,i18n);screenChanged(document.body.dataset.screen);
   const unsubscribe=i18n.subscribe(refreshLocale);
   const stopStatusBudget=observePianoStatusBudget({document,status});
   viewportBudget=observePianoViewportBudget({document});
-  return{update,screenChanged,setPianoGuidance,destroy(){viewportBudget.destroy();stopStatusBudget();stopNoticeBudget();unsubscribe();notationLayout.destroy();window.removeEventListener('resize',updateRange);scroll.removeEventListener('scroll',updateRange);shortLandscape?.removeEventListener('change',arrangeNotationTools);compactPiano?.removeEventListener('change',arrangePianoAuxiliary);portraitPiano?.removeEventListener('change',arrangePianoAuxiliary);cueHome.after(cue);cueHome.remove();panHome.after(pan);if(pianoGuidance)guidanceHome.after(pianoGuidance);panHome.remove();guidanceHome?.remove();transport.classList.remove('piano-compact-transport');}};
+  return{update,updateActivity,screenChanged,setPianoGuidance,destroy(){activityView.destroy();activityHost.remove();viewportBudget.destroy();stopStatusBudget();stopNoticeBudget();unsubscribe();notationLayout.destroy();window.removeEventListener('resize',updateRange);scroll.removeEventListener('scroll',updateRange);shortLandscape?.removeEventListener('change',arrangeNotationTools);compactPiano?.removeEventListener('change',arrangePianoAuxiliary);portraitPiano?.removeEventListener('change',arrangePianoAuxiliary);cueHome.after(cue);cueHome.remove();panHome.after(pan);if(pianoGuidance)guidanceHome.after(pianoGuidance);panHome.remove();guidanceHome?.remove();transport.classList.remove('piano-compact-transport');}};
 }

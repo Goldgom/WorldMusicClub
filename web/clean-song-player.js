@@ -1,3 +1,4 @@
+import {cleanActivityPlayback,rememberCleanActivityOptions,captureCleanActivityAdmission,invalidatePartActivityRetirement} from './part-activity-playback.js';
 import {hasValidZeroSmpteOffsets} from './clean-song-timecode.js';
 import {ReferenceAudioReceiver} from './midi-reference-synth.js';
 import {createReferenceRoom} from './clean-song-reverb.js';
@@ -42,26 +43,30 @@ export class CleanSongPlayer {
   get audioThreadRunning(){return this.basicKeys.running||this.vsq.running;}
   constructor({getPositionMs,onError=()=>{},setTimer=(...args)=>globalThis.setTimeout(...args),clearTimer=(...args)=>globalThis.clearTimeout(...args),lookAheadMs=100}={}) {
     if(typeof getPositionMs!=='function')throw new TypeError('The shared transport clock is required.');
-    this.vsq=new VsqPracticePlayer({getPositionMs,onError,setTimer,clearTimer,lookAheadMs});
-    this.basicKeys=new BasicKeyPlayer({getPositionMs,onError,setTimer,clearTimer,lookAheadMs});
+    const activityError=error=>{invalidatePartActivityRetirement(this);onError(error);};
+    this.vsq=new VsqPracticePlayer({getPositionMs,onError:activityError,setTimer,clearTimer,lookAheadMs});
+    this.basicKeys=new BasicKeyPlayer({getPositionMs,onError:activityError,setTimer,clearTimer,lookAheadMs});
     Object.assign(this,{getPositionMs,onError,setTimer,clearTimer,lookAheadMs});this.epoch=0;this.timer=null;this.lanes=new Map();this.song=null;this.running=false;
   }
-  select(song){this.stop();this.song=song;this.profile=inspectCleanRendition(song);this.programs=new Map();this.vsq.select(isVsqSong(song)?song:null);this.basicKeys.select(isBasicKeysSong(song)?song:null);if(!song||isVsqSong(song)||isBasicKeysSong(song))return;
+  select(song){invalidatePartActivityRetirement(this);this.stop();this.song=song;this.profile=inspectCleanRendition(song);this.programs=new Map();this.vsq.select(isVsqSong(song)?song:null);this.basicKeys.select(isBasicKeysSong(song)?song:null);if(!song||isVsqSong(song)||isBasicKeysSong(song))return;
     if(!this.profile.supported)return;
     const merged=[...song.runtime.events.map(event=>({...event,type:'command'})),...song.runtime.notes.map(note=>({at_ms:note.start_ms,origin:note.attack,note,type:'note'}))].sort((a,b)=>a.at_ms-b.at_ms||a.origin.track-b.origin.track||a.origin.event-b.origin.event);
     const channels=new Map();for(const item of merged){const channel=item.command?.channel??item.note?.channel;const state=channels.get(channel)||defaults();channels.set(channel,state);if(item.type==='command')apply(state,item.command);else this.programs.set(item.note.event_id,state.program);}
   }
+  activityPlayback(frame={}){return cleanActivityPlayback(this,frame);}
   prepare(options={}) {
-    if(isBasicKeysSong(this.song))return this.basicKeys.prepare(options);
-    if(isVsqSong(this.song))return this.vsq.prepare(options);
+    rememberCleanActivityOptions(this,options);
+    if(isBasicKeysSong(this.song))return this.basicKeys.prepare(options).then(result=>{if(result)captureCleanActivityAdmission(this);return result;});
+    if(isVsqSong(this.song))return this.vsq.prepare(options).then(result=>{if(result)captureCleanActivityAdmission(this);return result;});
     if(options.assistance!=null)throw new CleanSongError('assistance_audio_unsupported','Note assistance is not available for this reference renderer.');
     basicKeyInstrumentOverrides([],options.instrumentOverrides);
     return null;
   }
   startPrepared(options={}) {return (isVsqSong(this.song)?this.vsq:this.basicKeys).startPrepared(options);}
   start({context,output,mode='listen',targetPart=null,practiceSelection,mutedParts=null,soloParts=null,resumePositionMs=null,instrument='piano',instrumentOverrides={},acceptedPolicyId,assistance,assistanceContext}={}) {
-    if(isBasicKeysSong(this.song))return this.basicKeys.start({context,output,mode,targetPart,practiceSelection,mutedParts,soloParts,resumePositionMs,instrumentOverrides,acceptedPolicyId,assistance,assistanceContext});
-    if(isVsqSong(this.song))return this.vsq.start({context,output,mode,targetPart,practiceSelection,mutedParts,soloParts,resumePositionMs,instrument,instrumentOverrides,assistance,assistanceContext});
+    rememberCleanActivityOptions(this,{mode,targetPart,practiceSelection,mutedParts,soloParts});
+    if(isBasicKeysSong(this.song))return this.basicKeys.start({context,output,mode,targetPart,practiceSelection,mutedParts,soloParts,resumePositionMs,instrumentOverrides,acceptedPolicyId,assistance,assistanceContext}).then(result=>{if(result)captureCleanActivityAdmission(this);return result;});
+    if(isVsqSong(this.song))return this.vsq.start({context,output,mode,targetPart,practiceSelection,mutedParts,soloParts,resumePositionMs,instrument,instrumentOverrides,assistance,assistanceContext}).then(result=>{if(result)captureCleanActivityAdmission(this);return result;});
     if(assistance!=null)throw new CleanSongError('assistance_audio_unsupported','Note assistance is not available for this reference renderer.');
     this.stop();basicKeyInstrumentOverrides([],instrumentOverrides);if(!this.song||!this.profile.supported)throw new CleanSongError('clean_renderer_unsupported','The reference renderer cannot represent these retained commands.',{blockers:this.profile?.blockers});
     if(this.profile.logical_device_mapping&&acceptedPolicyId!==this.profile.rendition)throw new CleanSongError('reference_policy_required','Select the disclosed logical device mapping to this procedural receiver.');

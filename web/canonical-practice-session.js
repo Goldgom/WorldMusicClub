@@ -1,3 +1,4 @@
+import {captureCanonicalActivityAdmission,clearCanonicalActivityAdmission,invalidatePartActivityRetirement} from './part-activity-playback.js';
 import {resolvePracticeSelection} from './practice-selection.js';
 import {windowNotes} from './practice-settings.js';
 import {CanonicalPlayer,CANONICAL_AUDIO_POLICY} from './canonical-player.js';
@@ -21,13 +22,13 @@ export function canonicalDisplayNotes(timeline,loop=null) {
 export class CanonicalPracticeSession {
   constructor({api,onError=()=>{},onEnded=()=>{},onPass=()=>{},playerFactory=options=>new CanonicalPlayer(options)}={}) {
     this.api=api;this.onError=onError;this.onEnded=onEnded;this.epoch=0;
-    this.player=playerFactory({onError:error=>{this.phase='stopped';this.errorClock=this.player.lastStopClock;this.onError(error);},onPass:receipt=>{this.passReceipts?.push(receipt);onPass(receipt);},onEnded:result=>{this.phase='ended';this.completion=result;this.onEnded(result);}});
+    this.player=playerFactory({onError:error=>{invalidatePartActivityRetirement(this);clearCanonicalActivityAdmission(this);this.phase='stopped';this.errorClock=this.player.lastStopClock;this.onError(error);},onPass:receipt=>{this.passReceipts?.push(receipt);onPass(receipt);},onEnded:result=>{this.phase='ended';this.completion=result;this.onEnded(result);}});
   }
-  select(compilation,profile=null) {this.stop();this.compilation=compilation;this.profile=profile;this.interpretation=null;}
-  stop() {this.epoch++;this.controller?.abort();this.controller=null;this.player.stop();this.completion=null;this.preparing=false;this.phase='stopped';this.errorClock=null;this.silentPlan=null;this.clockOrigin=null;}
+  select(compilation,profile=null) {invalidatePartActivityRetirement(this);this.stop();this.compilation=compilation;this.profile=profile;this.interpretation=null;}
+  stop() {clearCanonicalActivityAdmission(this);this.epoch++;this.controller?.abort();this.controller=null;this.player.stop();this.completion=null;this.preparing=false;this.phase='stopped';this.errorClock=null;this.silentPlan=null;this.clockOrigin=null;}
   get running(){return this.player.running;}
   get plan(){return this.player.plan||this.silentPlan;}
-  sourcePositionMs(wallTime=performance.now()){return this.sourceClock(wallTime)?.positionMs??this.player.sourcePositionMs()??this.errorClock?.positionMs??null;}
+  sourcePositionMs(wallTime=performance.now(),sample=null){const clock=this.sourceClock(wallTime);if(sample)sample.sourceClock=clock;return clock?.positionMs??this.player.sourcePositionMs()??this.errorClock?.positionMs??null;}
   sourceClock(wallTime=performance.now()){
     const origin=this.clockOrigin,context=this.player.context;
     if(!origin||this.paused)return this.player.sourceClockAtTime?.()??null;
@@ -44,7 +45,7 @@ export class CanonicalPracticeSession {
   get pausePending(){return this.phase==='pausing';}
   wallAtFrame(frame){return this.clockOrigin?this.clockOrigin.wallTime+(frame/this.clockOrigin.sampleRate-this.clockOrigin.audioTime)*1000:null;}
   async prepare({soundEnabled=true,context,output,mode='practice',practiceSelection,audiblePartIds,instrumentOverrides,mutedPartIds,range,countInMs=0,loop,resumePositionMs=undefined,assistance,assistanceContext}={}) {
-    this.stop();const epoch=this.epoch,compilation=this.compilation,controller=new AbortController();this.controller=controller;this.preparing=true;
+    invalidatePartActivityRetirement(this);this.stop();const epoch=this.epoch,compilation=this.compilation,controller=new AbortController();this.controller=controller;this.preparing=true;
     const current=()=>epoch===this.epoch&&!controller.signal.aborted&&compilation===this.compilation;
     try {
       let profile=this.profile;
@@ -63,7 +64,7 @@ export class CanonicalPracticeSession {
       if(plan.synthesisPolicyId){this.interpretation.synthesis_policy_id=plan.synthesisPolicyId;this.interpretation.instrument_overrides={...plan.instrumentOverrides};this.interpretation.reference_timbre='per-part synthetic';this.interpretation.timbre_description='Basic sine, triangle-like, and reed-like additive synthesis; not acoustic instrument reproduction';}
       if(plan.mutedPartIds.length)this.interpretation.muted_part_ids=[...plan.mutedPartIds];
       if(plan.rangeMode)this.interpretation.loop_budget={requested_passes:plan.requestedPasses,max_passes:plan.maxPasses,budget_limited:plan.budgetLimited,range_gate_count:plan.rangeGateCount,first_gate_count:plan.firstGateCount,record_capacity:plan.recordCapacity,range_start_frame:plan.rangeStartFrame,range_end_frame:plan.rangeEndFrame,count_in_frames:plan.countInFrames,initial_position_frame:plan.initialPositionFrame,initial_count_in_frames:plan.initialCountInFrames};
-      this.phase='ready';return {plan,interpretation:this.interpretation};
+      this.phase='ready';captureCanonicalActivityAdmission(this,{assistance,assistanceContext});return {plan,interpretation:this.interpretation};
     }catch(error){if(!current()||error.name==='AbortError')return null;throw error;}
     finally{if(epoch===this.epoch){this.preparing=false;this.controller=null;}}
   }

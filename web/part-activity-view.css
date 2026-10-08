@@ -1,0 +1,15 @@
+/* One real flow slot, separate from the human HUD and instrument surfaces. */
+.part-activity-host{position:static;flex:0 0 56px;box-sizing:border-box;height:56px;min-height:56px;max-height:56px;width:100%;min-width:0;overflow:hidden}
+.part-activity-host[hidden],.part-activity-strip[hidden],.part-activity-strip [hidden]{display:none!important}
+.part-activity-strip{box-sizing:border-box;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto minmax(0,1fr);column-gap:8px;flex:none;min-width:0;width:100%;height:56px;max-height:56px;overflow:hidden;padding:3px 8px;border:1px solid var(--border,#52657b);border-radius:8px;background:var(--paper,#eff4ee);color:var(--ink,#142333);font-size:11px;line-height:1.2}
+.part-activity-title{grid-column:1;grid-row:1;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.part-activity-row{grid-column:1;grid-row:2;display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:8px;min-width:0;align-items:center}
+.part-activity-label,.part-activity-source,.part-activity-subset{grid-column:1;display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.part-activity-label{font-weight:600}.part-activity-source,.part-activity-subset{font-size:9px}.part-activity-state{grid-column:2;grid-row:1/4;max-width:78px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.part-activity-pages{grid-column:2;grid-row:1/3;display:flex;align-items:center;gap:4px}
+.part-activity-pages button{min-width:26px;min-height:26px;padding:0 5px;border:1px solid currentColor;border-radius:5px;background:transparent;color:inherit;font:inherit;cursor:pointer}
+.part-activity-pages button:disabled{opacity:.45;cursor:default}.part-activity-pages button:focus-visible{outline:2px solid var(--accent,#397c69);outline-offset:1px}.part-activity-page{font-size:10px;font-variant-numeric:tabular-nums}
+.part-activity-limit{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+/* 1280×720 and1920×1080 retain56px; narrow/short stages preserve human space. */
+@media(max-height:650px),(max-width:1000px){.part-activity-host{display:none!important}}
+@media(prefers-reduced-motion:reduce){.part-activity-strip,.part-activity-strip *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

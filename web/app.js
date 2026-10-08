@@ -1,3 +1,4 @@
+import {createPartActivityStage} from './part-activity-stage.js';
 import {setupLibraryManagementView} from './library-management-view.js';
 import {basicKeyWrittenAt} from './basic-key-notation.js';
 import {renderBasicKeyPage} from './basic-key-numbered.js';
@@ -153,13 +154,14 @@ const renderGuitarGuidance=setupGuitarGuidance(document);
 setupThemes();
 const skinRuntime=createSkinRuntime({document});
 const transport = new Transport();
-const synth = new Synth({onError:error=>{pausePlayback();notice(()=>liveAudioErrorText(error),true);}});
+const synth = new Synth({onError:error=>{partActivityStage?.clear();pausePlayback(undefined,'audio_failure');notice(()=>liveAudioErrorText(error),true);}});
 function liveAudioErrorText(error) { return cleanErrorText(i18n.locale,{code:error?.code,message:error?.message,details:error?.details,liveAudioTerminal:synth.liveError===error}); }
 let cleanView=null,previewMedia=null,activeMedia=null,previewMediaKey=null,activeMediaKey=null;
 const cleanMutedParts=new Set(),cleanSoloParts=new Set();
-const cleanPlayer=new CleanSongPlayer({getPositionMs:()=>transport.time(performance.now()),onError:error=>{pausePlayback();notice(()=>cleanErrorText(i18n.locale,error),true);}});
-const canonicalSession=new CanonicalPracticeSession({api,onError:error=>{pausePlayback();notice(()=>canonicalAudioErrorText(i18n.locale,error),true);}});
-function playbackPosition(now=performance.now()){return !state.cleanSong&&transport.running?(now<transport.startedAt?transport.position:canonicalSession.sourcePositionMs(now)??transport.time(now)):transport.time(now);}
+const cleanPlayer=new CleanSongPlayer({getPositionMs:()=>transport.time(performance.now()),onError:error=>{partActivityStage?.clear();pausePlayback(undefined,'audio_failure');notice(()=>cleanErrorText(i18n.locale,error),true);}});
+const canonicalSession=new CanonicalPracticeSession({api,onError:error=>{partActivityStage?.clear();pausePlayback(undefined,'audio_failure');notice(()=>canonicalAudioErrorText(i18n.locale,error),true);}});
+function playbackPosition(now=performance.now(),sample=null){return !state.cleanSong&&transport.running?(now<transport.startedAt?transport.position:canonicalSession.sourcePositionMs(now,sample)??transport.time(now)):transport.time(now);}
+let partActivityStage=null;
 let metronome = null;
 let adaptationView = null;
 let transpositionView = null;
@@ -266,6 +268,8 @@ async function api(path, body, signal) {
   if (!response.ok) throw result.error ? Object.assign(new Error(result.error),{code:result.code}) : appError('app.serverStatus',{status:response.status});
   return result;
 }
+function activityLifecycle(){return [state.cleanSong,state.compiled,state.score,state.generation,state.songMod,state.practiceSelection,state.practiceVersion,state.pitchView,stageAssistance.current()];}
+function retireActivity(){partActivityStage?.retire({cleanSong:state.cleanSong,lifecycle:activityLifecycle()});}
 function updateButtons() {
   refreshPracticeView();
   renderCanonicalAudio();
@@ -287,7 +291,7 @@ function updateButtons() {
   $('loop-apply').disabled = !ready||Boolean(state.cleanSong);
   for(const id of ['tempo','loop-enabled','loop-from','loop-to','metronome-enabled','metronome-pulse'])$(id).disabled=Boolean(state.cleanSong);
   $('count-in').disabled=isBasicKeysSong(state.cleanSong);
-  if(!transport.running&&!state.playPending){cleanPlayer.stop();if(!canonicalSession.held)canonicalSession.stop();activeMedia?.pause();}
+  if(!transport.running&&!state.playPending){if(transport.completed)retireActivity();cleanPlayer.stop();if(!canonicalSession.held)canonicalSession.stop();activeMedia?.pause();}
   renderCleanActive();
   $('assess-button').disabled = !ready || state.mode !== 'practice' || checkingCurrent || !allowed;
   $('practice-gate').hidden = state.mode !== 'practice' || state.compatibility.status === 'ready'&&!assistancePracticeGate(stageAssistance);
@@ -314,6 +318,7 @@ function pausePlayback(reason = 'app.paused', evidenceReason = 'pause', {redraw 
   lobbyPreview?.stop(['blur','hidden','pagehide'].includes(evidenceReason)?'interrupted':'stopped');
   if(referenceListening?.isOpen()){referenceListening.pause();return;}
   if(performanceListening?.isActive()){if(['blur','hidden','pagehide'].includes(evidenceReason))performanceListening.stop();else performanceListening.pause();return;}
+  if(evidenceReason==='pause'&&!state.playPending&&transport.hasStarted)retireActivity();else partActivityStage?.clear();
   state.playTicket++;state.playPending=false;cleanPlayer.pause();activeMedia?.pause();
   if(shell?.screen()==='free'){freeView?.interrupt(evidenceReason);cleanupFreeInputs(evidenceReason);return;}
   // Opening a panel or browsing an already-paused session is not a new input
@@ -339,6 +344,7 @@ function resetPlayback() {
   // Keep the ordinary pause cleanup/evidence boundary, but render only after
   // this reset has replaced the old completed transport with the new clock.
   pausePlayback(undefined,'pause',{redraw:false});
+  partActivityStage?.clear();
   transport.reset();canonicalSession.interpretation=null;activeMedia?.sync({positionMs:0,running:false});
   if (state.loop) transport.seek(state.loop.start_ms);
   state.loopIteration = 1;state.canonicalPassIndex=0;state.canonicalBudgetEnded=false;metronome?.reset();
@@ -1145,6 +1151,7 @@ async function togglePlayback() {
   if (transport.completed) { if(state.mode==='practice') { transport.reset(); if(state.loop)transport.seek(state.loop.start_ms); state.lastHighlight=''; } else resetPlayback(); }
   const generation=state.generation,ticket=++state.playTicket,song=state.cleanSong,score=state.score,mode=state.mode,targetPart=state.practicePart,practiceSelection=state.practiceSelection,instrument=state.instrument,mod=state.songMod,muted=synth.muted;
   const current=()=>generation===state.generation&&ticket===state.playTicket&&song===state.cleanSong&&score===state.score&&mode===state.mode&&targetPart===state.practicePart&&practiceSelection===state.practiceSelection&&instrument===state.instrument&&mod===state.songMod&&muted===synth.muted&&!transport.running&&Boolean(state.compiled)&&shell.screen()==='stage'&&!document.hidden&&!document.querySelector('dialog[open]')&&(mode!=='practice'||state.compatibility.status==='ready'&&!assistancePracticeGate(stageAssistance));
+  partActivityStage?.clear();
   state.playPending=true;
   const admissionController=new AbortController();state.audioAdmissionController=admissionController;let admissionLease=null;
   try {
@@ -1421,9 +1428,13 @@ function drawFrame(displayOnly = false) {
   // Completion above may have replaced an overshooting frame time with the
   // exact source endpoint. Every display below, including written-note lookup,
   // uses this same frame's current transport sample, never range readback.
-  position=playbackPosition(now);
+  const activityClock={};
+  position=playbackPosition(now,activityClock);
   if(displayOnly!==true&&state.cleanSong)activeMedia?.sync({positionMs:position,running:transport.running});
   updateProgress(position,duration);
+  const activityContext={screen:shell.screen(),layout:state.practiceLayout,mode:state.mode,showOtherParts:state.showOtherParts};
+  const activity=partActivityStage?.sample({cleanSong:state.cleanSong,source:state.compiled,context:activityContext,position,lifecycle:activityLifecycle(),otherRenderer:referenceInputActive(),sourceClock:activityClock.sourceClock??null,transport:state.playPending?'preparing':transport.completed?'ended':transport.running?'running':transport.hasStarted?'paused':'ready',countIn:now<transport.startedAt||position<segmentStart,soundEnabled:!synth.muted,hiddenPartIds:[...state.hiddenPartIds]});
+  performanceView?.updateActivity(activity,activityContext);
   performanceView?.update();
   if($('results-dialog').open)updateResultsSummary(undefined,now);
   if(displayOnly!==true)pianoFingering?.render({position,segmentStart,segmentEnd:state.loop?.end_ms||duration,running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed});
@@ -1950,6 +1961,7 @@ guitarFingering=setupGuitarFingering({api,getContext:guitarContext,onChange:()=>
 guitarFingeringView=setupGuitarFingeringView({document,controller:guitarFingering,getContext:guitarContext,onRefresh:drawFrame});
 guitarFingeringView.render();
 metronome = setupMetronome({api,getScore:()=>state.cleanSong?null:originalPitchContext(state).score,getDuration:()=>state.compiled?.timeline.duration_ms||0,getWindow:()=>state.loop,getPlayback:()=>({running:transport.running,position:playbackPosition(performance.now()),segment:transport.startedAt}),getCountInMs:()=>$('count-in').checked?4*60000/(Number($('tempo').value)||100):0,synth});
+partActivityStage=createPartActivityStage({canonicalSession,cleanPlayer});
 performanceView=setupPerformanceView({i18n,getContext:()=>({geometry:state.geometry,rangeLabel:`${midiName(state.geometry[0].midi)}–${midiName(state.geometry.at(-1).midi)}`,mode:state.mode,instrument:state.instrument,position:playbackPosition(performance.now()),segmentStart:state.loop?.start_ms||0,countInBeatMs:60000/(Number($('tempo').value)||100),running:transport.running,hasStarted:transport.hasStarted,completed:transport.completed,now:performance.now(),recorder:state.recorder})});
 pianoFingering=setupPianoFingeringView({document,api,getContext:()=>({pitchView:state.pitchView,score:state.score,timeline:state.compiled?.timeline,cleanSong:state.cleanSong,part_id:state.practiceSelection?.kind==='parts'?state.practiceSelection.part_ids[0]:state.practicePart,profile:currentProfile(),dirty:state.profileDirty,...fingeringAssistanceContext()}),onChange:()=>drawFrame(),openSettings:()=>shell.open('settings')});
 performanceView.setPianoGuidance($('piano-fingering-guidance'));

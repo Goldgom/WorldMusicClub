@@ -249,5 +249,7 @@
   "tests/source-instrument-details-view.test.js",
   "tests/source-instrument-loader.test.js",
   "tests/source-instrument-policy-invariants.test.js",
-  "tests/native-human-mod-panel-revision.test.js"
+  "tests/native-human-mod-panel-revision.test.js",
+  "tests/part-activity-admission.test.js",
+  "tests/part-activity-view.test.js"
 ]
