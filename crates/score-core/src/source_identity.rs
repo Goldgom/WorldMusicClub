@@ -196,7 +196,16 @@ fn build(source: &basic_keys::CompleteBasicKeys, source_binding: practice_source
         source_route_index: Some(i), port: r.port, device_name_bytes: r.device_name_bytes.clone(),
         declaration_coordinates: vec![], admission: "sole_implicit_route",
     }).collect();
-    let mut route_index: BTreeMap<_, _> = perf.routes.iter().cloned().enumerate().map(|(i, r)| (r, i)).collect();
+    // Intern names only on actual name declarations. Port changes compare
+    // compact IDs, never a potentially megabyte-long current device name.
+    let mut names = Vec::<Vec<u8>>::new();
+    let mut name_index = BTreeMap::<Vec<u8>, usize>::new();
+    let mut route_index = BTreeMap::new();
+    for (i, route) in perf.routes.iter().enumerate() {
+        let name = route.device_name_bytes.as_deref()
+            .map(|bytes| intern_name(bytes, &mut names, &mut name_index));
+        route_index.insert((route.port, name), i);
+    }
     // Bound copied route text before building extra metadata-only route states.
     // A large device name followed by many port changes must not amplify memory
     // without limit before the final serialized-output budget is checked.
@@ -207,26 +216,26 @@ fn build(source: &basic_keys::CompleteBasicKeys, source_binding: practice_source
     let mut events = vec![];
     for track in &perf.tracks {
         let mut tick = 0u64;
-        let mut route = basic_keys::Route { port: None, device_name_bytes: None };
+        let mut route: (Option<u8>, Option<usize>) = (None, None);
         for (index, record) in track.events.iter().enumerate() {
             tick += u64::from(record.0);
             let at = Coordinate { track: track.source_index, event: index as u32 };
             let bytes = record.1.as_slice();
             // Retain even metadata-only routes; explicit port zero is not implicit.
             let routing = match bytes {
-                [255, 0x21, port] => { route.port = Some(*port); true }
-                [255, 0x09, name @ ..] => { route.device_name_bytes = Some(name.to_vec()); true }
+                [255, 0x21, port] => { route.0 = Some(*port); true }
+                [255, 0x09, name @ ..] => { route.1 = Some(intern_name(name, &mut names, &mut name_index)); true }
                 _ => false,
             };
             if routing {
                 first_route.get_or_insert(at);
                 let ri = if let Some(ri) = route_index.get(&route) { *ri } else {
-                    let added_bytes = route.device_name_bytes.as_ref().map_or(0, Vec::len);
+                    let added_bytes = route.1.map_or(0, |id| names[id].len());
                     route_bytes = route_bytes.checked_add(added_bytes).filter(|n| *n <= MAX_DISCLOSURE_BYTES)
                         .ok_or_else(|| error("analysis_limit", "Route evidence exceeds its complete-output budget"))?;
                     let ri = routes.len();
-                    routes.push(RouteEvidence { source_route_index: None, port: route.port, device_name_bytes: route.device_name_bytes.clone(), declaration_coordinates: vec![], admission: "explicit_routing_out_of_scope" });
-                    route_index.insert(route.clone(), ri);
+                    routes.push(RouteEvidence { source_route_index: None, port: route.0, device_name_bytes: route.1.map(|id| names[id].clone()), declaration_coordinates: vec![], admission: "explicit_routing_out_of_scope" });
+                    route_index.insert(route, ri);
                     ri
                 };
                 routes[ri].declaration_coordinates.push(at);
@@ -317,6 +326,14 @@ fn build(source: &basic_keys::CompleteBasicKeys, source_binding: practice_source
     if attacks.len() != perf.notes.len() { return Err(error("invalid_basic_source", "Disclosure must snapshot every source attack exactly once")); }
     let parts = summarize(&perf.parts, &attacks);
     Ok(SourceIdentityDisclosure { revision: 1, analysis_policy_id: ANALYSIS_POLICY_ID, identity_table_revision: IDENTITY_TABLE_REVISION, product_policy_id: PRODUCT_POLICY_ID, source_profile: basic_keys::PROFILE, source_binding, original_bytes_verification: source_instrument::OriginalBytesVerification::DeclaredProvenanceOnly, original_midi_sha256: source.source.sha256.clone(), routes, epochs, attacks, parts, diagnostics: diagnostics.values })
+}
+
+fn intern_name(bytes: &[u8], names: &mut Vec<Vec<u8>>, index: &mut BTreeMap<Vec<u8>, usize>) -> usize {
+    if let Some(id) = index.get(bytes) { return *id; }
+    let id = names.len();
+    names.push(bytes.to_vec());
+    index.insert(bytes.to_vec(), id);
+    id
 }
 
 // O(events * 16), independent of the number of permissible interleavings.

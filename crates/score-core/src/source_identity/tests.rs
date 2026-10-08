@@ -290,3 +290,25 @@ fn continuation_keeps_original_attack_identity_and_creates_no_new_snapshot() {
     assert!(serialized.contains(&details.attacks[0].note_id));
     assert_eq!(describe_basic(&source).unwrap().attacks.len(), 1);
 }
+
+#[test]
+fn repeated_metadata_ports_use_interned_names_including_alternating_ports() {
+    // Repeated full-name map comparisons would process ~10 GiB here despite
+    // only 256 KiB of name bytes in the input. Port lookups must use compact IDs.
+    let name = vec![b'A'; 256 * 1024];
+    let mut declaration = vec![255, 9];
+    declaration.extend(vlq(name.len() as u32));
+    declaration.extend(&name);
+    let mut metadata = vec![(0, declaration)];
+    for index in 0..40_000 {
+        metadata.push((0, vec![255, 33, 1, (index % 2) as u8]));
+    }
+    let source = convert(&[
+        vec![(0, gm(1)), (1, vec![192, 0]), (1, vec![144, 60, 64])],
+        metadata,
+    ]);
+    let details = describe_basic(&source).unwrap();
+    assert_eq!(details.attacks[0].classification, Classification::Unresolved);
+    assert_eq!(details.routes.iter().map(|r| r.declaration_coordinates.len()).sum::<usize>(), 40_001);
+    assert_eq!(details.routes.iter().filter(|r| r.device_name_bytes.as_ref() == Some(&name)).count(), 3);
+}
