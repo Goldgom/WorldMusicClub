@@ -377,8 +377,8 @@ fn build(
                 routes[ri].declaration_coordinates.push(at);
             }
             let action = match bytes {
-                [0xf0, 0x7e, 0x7f, 9, mode @ (1 | 2 | 3), 0xf7] => Some(Action::Mode(*mode)),
-                [0xf0, 0x7e, device, 9, 1 | 2 | 3, 0xf7] if *device != 0x7f => {
+                [0xf0, 0x7e, 0x7f, 9, mode @ 1..=3, 0xf7] => Some(Action::Mode(*mode)),
+                [0xf0, 0x7e, device, 9, 1..=3, 0xf7] if *device != 0x7f => {
                     Some(Action::Opaque(Reason::TargetedSysex))
                 }
                 [0xf7, ..] => Some(Action::Opaque(Reason::FragmentOrEscape)),
