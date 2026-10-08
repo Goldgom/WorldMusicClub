@@ -44,11 +44,19 @@ async function captureSettledCompletePracticeMod({document,until,report,requestS
 function observeCompletePracticeActivity(Player,{getAudioCount=()=>0}={}){
  const original=Player.prototype.activityPlayback,tokens=new WeakMap();let latest=null,lastReady=null,owner=null,nextToken=0;
  const token=value=>{if(!value||typeof value!=='object')throw Error('Missing actual activity identity');if(!tokens.has(value)){if(nextToken>=128)throw Error('Activity identity bound');tokens.set(value,++nextToken);}return tokens.get(value);};
- function observed(...args){const result=Reflect.apply(original,this,args);owner=this;latest=result;if(result?.status==='ready')lastReady={value:result,source:this.song,runtime:this.song?.runtime,receiverIndex:getAudioCount()-1};return result;}
+ const sameReceiver=(saved,player,index)=>saved&&saved.player===player&&saved.source===player?.song&&saved.runtime===player?.song?.runtime&&saved.receiverIndex===index;
+ function observed(...args){const result=Reflect.apply(original,this,args),receiverIndex=getAudioCount()-1;owner=this;latest=result;
+  if(!sameReceiver(lastReady,this,receiverIndex)||result?.status==='ready'&&lastReady&&(['sourceToken','runtimeToken','planToken','ownershipToken'].some(key=>result.snapshot?.[key]!==lastReady.value.snapshot[key])||result.epoch!==lastReady.value.epoch))lastReady=null;
+  // A joined source plan can still report ready during terminal/input grace,
+  // with an unavailable, stopped, or overshot frame. Preserve the last genuine
+  // bounded application frame; never normalize or replace the returned result.
+  const frame=result?.frame,duration=result?.snapshot?.durationMs,genuine=result?.status==='ready'&&Number.isSafeInteger(receiverIndex)&&receiverIndex>=0&&Number.isFinite(duration)&&duration>=0&&Number.isFinite(frame?.positionMs)&&frame.positionMs>=0&&frame.positionMs<=duration&&['running','paused','ended'].includes(frame.transport)&&frame.countIn===false&&(frame.transport!=='running'||frame.rendererState==='running')&&(frame.transport!=='ended'||frame.positionMs===duration);
+  if(genuine)lastReady={value:result,player:this,source:this.song,runtime:this.song?.runtime,receiverIndex};return result;
+ }
  Player.prototype.activityPlayback=observed;
  return{snapshot(){
   const current={status:latest?.status??null,reason:latest?.reason??null,running:Boolean(owner?.basicKeys?.running||owner?.vsq?.running),plans:[owner?.basicKeys?.plan,owner?.vsq?.plan].filter(Boolean).length,source:owner?.song?token(owner.song):null,runtime:owner?.song?.runtime?token(owner.song.runtime):null};
-  if(!lastReady)return{current,admitted:null};const {value,source,runtime,receiverIndex}=lastReady,{snapshot,frame}=value;
+  if(!sameReceiver(lastReady,owner,getAudioCount()-1))return{current,admitted:null};const {value,source,runtime,receiverIndex}=lastReady,{snapshot,frame}=value;
   if(snapshot.parts.length>128||snapshot.gates.length>16)throw Error('Complete fixture activity bound');
   return{current,admitted:{receiverIndex,source:token(source),runtime:token(runtime),epoch:value.epoch,identity:Object.fromEntries(['sourceToken','runtimeToken','planToken','ownershipToken'].map(key=>[key,token(snapshot[key])])),parts:structuredClone(snapshot.parts),gates:structuredClone(snapshot.gates),durationMs:snapshot.durationMs,frame:{positionMs:frame.positionMs,transport:frame.transport,rendererState:frame.rendererState,countIn:frame.countIn,soundEnabled:frame.soundEnabled,mutedPartIds:[...frame.mutedPartIds]}}};
  },restore(){if(Player.prototype.activityPlayback===observed)Player.prototype.activityPlayback=original;return Player.prototype.activityPlayback===original;}};
