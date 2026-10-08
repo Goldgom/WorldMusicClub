@@ -5,6 +5,11 @@ use std::path::Path;
 fn json(value: &impl Serialize) -> Vec<u8> {
     serde_json::to_vec(value).unwrap()
 }
+fn rendition_snapshot(source: &basic_keys::CompleteBasicKeys) -> Vec<u8> {
+    json(&basic_keys::compile_rendition(source).map(|compiled| {
+        (compiled.timeline, compiled.rendition, compiled.diagnostics)
+    }))
+}
 fn fixture(name: &str) -> basic_keys::CompleteBasicKeys {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("src/source_identity/fixtures")
@@ -58,7 +63,7 @@ fn authored_38_case_contract_matches_49_attack_snapshots() {
     let mut total = 0;
     for case in cases {
         let bytes = std::fs::read(root.join(case["file"].as_str().unwrap())).unwrap();
-        assert_eq!(format!("{:x}", Sha256::digest(&bytes)), case["sha256"]);
+        assert_eq!(format!("{:x}", Sha256::digest(&bytes)), case["sha256"].as_str().unwrap());
         let source = basic_keys::convert_midi(&bytes, "Original authored fixture").unwrap();
         let before = basic_keys::encode_json(&source).unwrap();
         let details = describe_basic(&source).unwrap();
@@ -76,7 +81,7 @@ fn authored_38_case_contract_matches_49_attack_snapshots() {
         assert_eq!(details.source_binding.domain, "wmc-basic-complete-wire-json");
         assert_eq!(details.source_binding.serialization_revision, 1);
         assert_eq!(details.source_binding.digest, format!("{:x}", Sha256::digest(&before)));
-        assert_eq!(details.original_midi_sha256, case["sha256"]);
+        assert_eq!(details.original_midi_sha256, case["sha256"].as_str().unwrap());
         total += details.attacks.len();
     }
     assert_eq!(total, 49);
@@ -212,12 +217,12 @@ fn original_hash_is_declared_provenance_and_not_an_original_byte_verification() 
 fn budget_error_is_complete_failure_and_leaves_source_and_rendition_unchanged() {
     let source = fixture("31_program_changes_per_attack");
     let wire = basic_keys::encode_json(&source).unwrap();
-    let before = json(&basic_keys::compile_rendition(&source));
+    let before = rendition_snapshot(&source);
     let numeric_before = json(&source_instrument::describe_basic(&source).unwrap());
     let details = describe_basic(&source).unwrap();
     assert_eq!(bounded(details, 1).unwrap_err().code, "analysis_limit");
     assert_eq!(basic_keys::encode_json(&source).unwrap(), wire);
-    assert_eq!(json(&basic_keys::compile_rendition(&source)), before);
+    assert_eq!(rendition_snapshot(&source), before);
     assert_eq!(json(&source_instrument::describe_basic(&source).unwrap()), numeric_before);
 }
 

@@ -197,6 +197,12 @@ fn build(source: &basic_keys::CompleteBasicKeys, source_binding: practice_source
         declaration_coordinates: vec![], admission: "sole_implicit_route",
     }).collect();
     let mut route_index: BTreeMap<_, _> = perf.routes.iter().cloned().enumerate().map(|(i, r)| (r, i)).collect();
+    // Bound copied route text before building extra metadata-only route states.
+    // A large device name followed by many port changes must not amplify memory
+    // without limit before the final serialized-output budget is checked.
+    let mut route_bytes = routes.iter().map(|r| {
+        r.device_name_bytes.as_ref().map_or(0, Vec::len)
+    }).sum::<usize>();
     let mut first_route = None;
     let mut events = vec![];
     for track in &perf.tracks {
@@ -215,6 +221,9 @@ fn build(source: &basic_keys::CompleteBasicKeys, source_binding: practice_source
             if routing {
                 first_route.get_or_insert(at);
                 let ri = if let Some(ri) = route_index.get(&route) { *ri } else {
+                    let added_bytes = route.device_name_bytes.as_ref().map_or(0, Vec::len);
+                    route_bytes = route_bytes.checked_add(added_bytes).filter(|n| *n <= MAX_DISCLOSURE_BYTES)
+                        .ok_or_else(|| error("analysis_limit", "Route evidence exceeds its complete-output budget"))?;
                     let ri = routes.len();
                     routes.push(RouteEvidence { source_route_index: None, port: route.port, device_name_bytes: route.device_name_bytes.clone(), declaration_coordinates: vec![], admission: "explicit_routing_out_of_scope" });
                     route_index.insert(route.clone(), ri);
