@@ -1,18 +1,77 @@
-/** Source evidence is display-only. Never infer eligibility or a GM sound from it. */
+/** Source evidence and independently analyzed identities are display-only, never practice policy. */
 export const SOURCE_DETAIL_PAGE_SIZE = 20;
 export const SOURCE_DETAIL_TEXT_PAGE_SIZE = 500;
 
-export function sourceInstrumentDetailPage(part, details, locale = 'en', status = 'absent', error = null, requestedPage = 0) {
+// Localize analysis statuses/reasons; instrument labels come unchanged from Rust.
+const IDENTITY_REASONS = {
+  missing_gm_declaration: ['No admitted General MIDI declaration', '没有可采纳的 General MIDI 声明'],
+  gm_off: ['General MIDI declaration was turned off', 'General MIDI 声明已关闭'],
+  missing_program: ['No explicit Program Change in this declaration epoch', '此声明阶段没有显式 Program Change'],
+  missing_explicit_bank: ['An explicit bank pair is missing', '缺少显式 Bank 选择对'],
+  unknown_tuple: ['Program/bank combination is outside the reviewed identity subset', 'Program/Bank 组合不在已核对的识别子集中'],
+  explicit_routing_out_of_scope: ['Explicit port or device routing is outside this analysis', '显式端口或设备路由超出此分析范围'],
+  targeted_sysex: ['Device-targeted SysEx is outside this analysis', '面向特定设备的 SysEx 超出此分析范围'],
+  fragment_or_escape: ['Fragmented or escaped SysEx cannot establish identity', '分段或转义 SysEx 不能确定身份'],
+  opaque_sound_boundary: ['An uninterpreted sound-changing event prevents identification', '未解释的音色更改事件使身份无法确定'],
+  cross_track_order_uncertain: ['Identity depends on uncertain cross-track event order', '身份取决于不确定的跨轨事件顺序'],
+  invalid_program: ['Invalid program evidence', 'Program 证据无效'],
+  optional_drum_channel_behavior: ['Optional percussion-channel behavior is unresolved', '可选的打击乐通道行为尚未解析'],
+  non_basic_profile: ['Only Basic MIDI sources are analyzed', '仅分析 Basic MIDI 来源'],
+  analysis_limit: ['Identity analysis exceeded its safety limit', '身份分析超出安全限制'],
+};
+
+function identityFacts(part, options, text) {
+  const entry = options.identityIndex?.parts?.get(part.id), rows = [], segments = [];
+  if (!entry && !options.identityStatus && !options.identityError) return {entry, rows, segments};
+  if (entry) {
+    const classifications = {
+      supported: text('Supported by the provisional product list', '在临时产品支持列表内'),
+      known_unsupported: text('Known unsupported by the provisional product list', '已识别，但在临时产品支持列表外'),
+      unresolved: text('Unresolved', '未解析'),
+    };
+    rows.push([text('Identity analysis classification', '身份分析分类'), (entry.mixed ? text('Mixed · ', '混合 · ') : '') + (classifications[entry.classification] || classifications.unresolved)]);
+    rows.push([text('Analyzed source attacks', '已分析源起音数'), String(entry.attack_count)]);
+    rows.push([text('Attack classification counts', '起音分类计数'), text(`${entry.supported_count} supported · ${entry.known_unsupported_count} known unsupported · ${entry.unresolved_count} unresolved`, `${entry.supported_count} 个在支持列表内 · ${entry.known_unsupported_count} 个已知不支持 · ${entry.unresolved_count} 个未解析`)]);
+    if (!entry.attack_count) rows.push([text('Identity evidence', '身份依据'), text('No source note attacks; no instrument identity was inferred from file or part names.', '没有源音符起音；未根据文件名或声部名推测乐器身份。')]);
+    const identities = entry.identities || [], reasons = entry.reasons || [];
+    const attackCount = count => text(` · ${count} source attacks`, ` · ${count} 个源起音`);
+    segments.push({length: identities.length, get: index => [text('Analyzed original identity', '分析所得原始乐器身份'), identities[index].label, attackCount(identities[index].count)]});
+    segments.push({length: reasons.length, get: index => {
+      const reason = reasons[index], copy = Object.hasOwn(IDENTITY_REASONS,reason.code) ? IDENTITY_REASONS[reason.code] : null;
+      return [text('Unresolved identity reason', '身份未解析原因'), copy ? text(...copy) : text('Unrecognized analysis reason', '未识别的分析原因'), attackCount(reason.count)];
+    }});
+  } else {
+    const status = options.identityStatus;
+    rows.push([text('Identity analysis', '身份分析'), status === 'loading' ? text('Loading…', '加载中…') : status === 'unsupported' ? text('Available only for Basic MIDI sources.', '仅适用于 Basic MIDI 来源。') : status === 'error' ? text('Identity analysis could not be loaded.', '无法加载身份分析。') : text('No analyzed identity is available for this part.', '此声部没有可用的已分析身份。')]);
+    if (status === 'error' && options.identityError) rows.push([text('Identity analysis error', '身份分析错误'), String(options.identityError)]);
+  }
+  rows.push([text('Identity analysis scope', '身份分析范围'), text('Basic MIDI only, using a limited reviewed identity subset. Unreviewed entries remain unresolved. Informational only: these classifications do not decide practice support or change playback, assignment or scoring.', '仅分析 Basic MIDI，并使用有限的已核对身份子集；未核对的条目保留为未解析。仅供参考：这些分类不决定练习支持，也不改变播放、演奏者分配或评分。')]);
+  return {entry, rows, segments};
+}
+
+function paginateSegments(segments, requestedPage) {
+  const totalRows=segments.reduce((sum,segment)=>sum+segment.length,0),pageCount=Math.max(1,Math.ceil(totalRows/SOURCE_DETAIL_PAGE_SIZE)),page=Math.max(0,Math.min(pageCount-1,Number.isSafeInteger(requestedPage)?requestedPage:0));
+  const start=page*SOURCE_DETAIL_PAGE_SIZE,end=Math.min(totalRows,start+SOURCE_DETAIL_PAGE_SIZE),visible=[];
+  let offset=0;
+  for(const segment of segments){
+    for(let index=Math.max(0,start-offset);index<Math.min(segment.length,end-offset);index++)visible.push(segment.get(index));
+    offset+=segment.length;
+  }
+  return {rows:visible,totalRows,page,pageCount};
+}
+
+export function sourceInstrumentDetailPage(part, details, locale = 'en', status = 'absent', error = null, requestedPage = 0, identityOptions = {}) {
   const text = (en, zh) => locale === 'en' ? en : zh;
   const unknown = text('Unknown', '未知');
   const segments = [];
-  const rows = [[text('Original instrument', '原始乐器'), text('Not identified', '未识别')]];
+  const identity = identityFacts(part, identityOptions, text);
+  const rows = [[text('Original instrument', '原始乐器'), identity.entry?.identities?.length ? text('See analyzed original identities below', '见下方分析所得原始乐器身份') : text('Not identified', '未识别')], ...identity.rows];
   const sourcePart = details?.parts?.find(value => value.part_id === part.id);
   if (!sourcePart) {
     rows.push([text('Source details', '源文件详情'), status === 'loading' ? text('Loading…', '加载中…') : status === 'unsupported' ? text('This source format does not provide instrument details. This does not determine practice support.', '此来源格式暂不提供乐器详情；这不代表不支持演奏。') : status === 'error' ? text('Instrument details could not be loaded.', '无法加载乐器详情。') : text('Unavailable for this source. The part name is not an instrument identification.', '此来源的详细信息不可用；声部名称不能作为乐器识别依据。')]);
     if (status === 'error' && error) rows.push([text('Details error', '详情错误'), String(error)]);
     rows.push([text('Notated notes', '记谱音符数'), String((part.notes || []).filter(note => note.pitch != null).length)]);
-    return {rows,totalRows:rows.length,page:0,pageCount:1};
+    return paginateSegments([{length:rows.length,get:index=>rows[index]},...identity.segments],requestedPage);
   }
   const track = details.tracks?.find(value => value.id === sourcePart.track_id);
   const channel = details.channels?.find(value => value.id === sourcePart.channel_id);
@@ -40,36 +99,29 @@ export function sourceInstrumentDetailPage(part, details, locale = 'en', status 
   }};
   const tail=[];
   if (!summary?.observed_selections?.length) tail.push([text('MIDI program / bank', 'MIDI Program / Bank'), unknown]);
-  tail.push([text('Instrument namespace', '乐器音色标准'), text('Unknown; numeric program values do not identify an acoustic instrument or confirm General MIDI.', '未知；数字 Program 不能证明原始声学乐器或确认 General MIDI 标准。')]);
+  tail.push([text('Instrument namespace', '乐器音色标准'), identity.entry ? text('Unknown in numeric-only evidence. Independent identity analysis is shown separately; numeric values alone do not identify an acoustic instrument or confirm General MIDI.', '仅数字证据中的音色标准未知。独立身份分析单独列出；数字本身不能证明原始声学乐器或确认 General MIDI 标准。') : text('Unknown; numeric program values do not identify an acoustic instrument or confirm General MIDI.', '未知；数字 Program 不能证明原始声学乐器或确认 General MIDI 标准。')]);
   tail.push([text('Source note attacks / notated notes', '源起音数 / 记谱音符数'), `${sourcePart.source_attack_count} / ${sourcePart.notated_note_count}`]);
   tail.push([text('MIDI key range', 'MIDI 键范围'), sourcePart.key_range ? `${sourcePart.key_range.lowest}–${sourcePart.key_range.highest}` : unknown]);
   if (summary?.attacks_without_declared_program) tail.push([text('Attacks without a declared program', '未声明 Program 的起音数'), String(summary.attacks_without_declared_program)]);
   if (summary?.attacks_with_ambiguous_selection) tail.push([text('Attacks with ambiguous selection', '音色选择存在歧义的起音数'), String(summary.attacks_with_ambiguous_selection)]);
   const counts=[text('Declared names / observed numeric selections','声明名称数 / 已观察数字选择数'),`${names.length} / ${selections.length}`];
   // Keep short source facts on the first page, before potentially huge lists.
-  segments.push({length:rows.length,get:index=>rows[index]},{length:1,get:()=>counts},{length:middle.length,get:index=>middle[index]},{length:tail.length,get:index=>tail[index]},nameSegment,selectionSegment);
-  const totalRows=segments.reduce((sum,segment)=>sum+segment.length,0),pageCount=Math.max(1,Math.ceil(totalRows/SOURCE_DETAIL_PAGE_SIZE)),page=Math.max(0,Math.min(pageCount-1,Number.isSafeInteger(requestedPage)?requestedPage:0));
-  const start=page*SOURCE_DETAIL_PAGE_SIZE,end=Math.min(totalRows,start+SOURCE_DETAIL_PAGE_SIZE),visible=[];
-  let offset=0;
-  for(const segment of segments){
-    for(let index=Math.max(0,start-offset);index<Math.min(segment.length,end-offset);index++)visible.push(segment.get(index));
-    offset+=segment.length;
-  }
-  return {rows:visible,totalRows,page,pageCount};
+  segments.push({length:rows.length,get:index=>rows[index]},{length:1,get:()=>counts},{length:middle.length,get:index=>middle[index]},{length:tail.length,get:index=>tail[index]},...identity.segments,nameSegment,selectionSegment);
+  return paginateSegments(segments,requestedPage);
 }
 
 /** Bounded plain rows for tests and non-DOM consumers. Full evidence stays in details. */
-export function sourceInstrumentDetailRows(part,details,locale='en',status='absent',error=null,page=0){
-  return sourceInstrumentDetailPage(part,details,locale,status,error,page).rows.map(([label,value,suffix=''])=>[label,String(value).slice(0,SOURCE_DETAIL_TEXT_PAGE_SIZE)+suffix]);
+export function sourceInstrumentDetailRows(part,details,locale='en',status='absent',error=null,page=0,identityOptions={}){
+  return sourceInstrumentDetailPage(part,details,locale,status,error,page,identityOptions).rows.map(([label,value,suffix=''])=>[label,String(value).slice(0,SOURCE_DETAIL_TEXT_PAGE_SIZE)+suffix]);
 }
 
 const views=new WeakMap();
 export function renderSourceInstrumentDetails(options) {
-  const {document,root,part,details,locale,status,error}=options;
+  const {document,root,part,details,locale,status,error,identityIndex,identityStatus,identityError}=options;
   let state=views.get(root);
-  if(!state||state.details!==details||state.partId!==part.id){state={details,partId:part.id,page:0,textPages:new Map()};views.set(root,state);}
+  if(!state||state.details!==details||state.identityIndex!==identityIndex||state.identityStatus!==identityStatus||state.identityError!==identityError||state.partId!==part.id){state={details,identityIndex,identityStatus,identityError,partId:part.id,page:0,textPages:new Map()};views.set(root,state);}
   const text=(en,zh)=>locale==='en'?en:zh;
-  const page=sourceInstrumentDetailPage(part,details,locale,status,error,state.page);state.page=page.page;
+  const page=sourceInstrumentDetailPage(part,details,locale,status,error,state.page,{identityIndex,identityStatus,identityError});state.page=page.page;
   root.replaceChildren();
   const repaint=()=>renderSourceInstrumentDetails(options);
   const button=(parent,label,disabled,action)=>{const node=document.createElement('button');node.type='button';node.className='button secondary compact';node.textContent=label;node.disabled=disabled;node.addEventListener('click',action);parent.append(node);return node;};
@@ -104,7 +156,7 @@ export function renderSourceInstrumentDetails(options) {
 
 const summaryIndexes=new WeakMap();
 /** Source-declared names are not an acoustic identity or an eligibility decision. */
-export function sourceInstrumentSummary(part,details,locale='en'){
+function sourceDeclaredNameSummary(part,details,locale='en'){
   const text=(en,zh)=>locale==='en'?en:zh,unknown=text('Original instrument: not identified · Source details','原始乐器：未识别 · 源文件详情');
   if(!details)return unknown;
   let index=summaryIndexes.get(details);
@@ -136,4 +188,23 @@ export function sourceInstrumentSummary(part,details,locale='en'){
   // A summary has a strict text budget; full source text remains paginated below.
   const limit=100,end=first.length>limit&&/[\uD800-\uDBFF]/.test(first[limit-1])&&/[\uDC00-\uDFFF]/.test(first[limit])?limit-1:limit;
   return label+text(': ','：')+first.slice(0,end)+(first.length>end?text('… (continued in details)','…（详见详情）'):'')+suffix;
+}
+
+function boundedSummaryLabel(value, text, limit=100) {
+  const label=String(value),end=label.length>limit&&/[\uD800-\uDBFF]/.test(label[limit-1])&&/[\uDC00-\uDFFF]/.test(label[limit])?limit-1:limit;
+  return label.slice(0,end)+(label.length>end?text('… (continued in details)','…（详见详情）'):'');
+}
+
+/** The trusted, source-bound index is supplied by the loader, never reconstructed from metadata. */
+export function sourceInstrumentSummary(part,details,locale='en',identityIndex=null){
+  const declared=sourceDeclaredNameSummary(part,details,locale),entry=identityIndex?.parts?.get(part.id);
+  if(!entry)return declared;
+  const text=(en,zh)=>locale==='en'?en:zh,identities=entry.identities||[],shown=identities.slice(0,3);
+  const labels=shown.map(value=>`${boundedSummaryLabel(value.label,text)} × ${value.count}`).join(' · ');
+  const more=identities.length>shown.length?text(` · ${identities.length-shown.length} more identities in details`,` · 详情中另有 ${identities.length-shown.length} 种身份`):'';
+  const heading=text('Analyzed original instrument: ','分析所得原始乐器：');
+  const status=entry.attack_count?text(`${entry.supported_count} supported · ${entry.known_unsupported_count} known unsupported · ${entry.unresolved_count} unresolved`,`${entry.supported_count} 个在支持列表内 · ${entry.known_unsupported_count} 个已知不支持 · ${entry.unresolved_count} 个未解析`):text('No source note attacks; identity unresolved','没有源音符起音；身份未解析');
+  // Keep declared file metadata separate, including its literal text and existing bounds.
+  const fileName=declared.startsWith(text('Instrument name in file','文件中的乐器名称'))?' · '+declared:text(' · Source details',' · 源文件详情');
+  return heading+(labels||text('not identified','未识别'))+more+(entry.mixed?text(' · Mixed',' · 混合'):'')+' · '+status+text(' · Informational only',' · 仅供参考')+fileName;
 }

@@ -21,6 +21,10 @@ test('unknown or failed source evidence cannot change human ownership or machine
  const before=createPartInstrumentPolicy(mod,binding);
  for(const metadata of [
   {sourceInstrumentDetailsStatus:'loading'},
+  {sourceIdentityStatus:'loading'},
+  {sourceIdentityStatus:'error',sourceIdentityError:'Optional identity route unavailable'},
+  {sourceIdentityStatus:'ready',sourceIdentityIndex:{parts:new Map(context.score.parts.map(part=>[part.id,{classification:'known_unsupported',mixed:false,attack_count:3,supported_count:0,known_unsupported_count:3,unresolved_count:0,identities:[{identity_key:'gm:violin',label:'Violin',count:3}]}]))}},
+  {sourceIdentityStatus:'ready',sourceIdentityIndex:{parts:new Map(context.score.parts.map(part=>[part.id,{classification:'unresolved',mixed:true,attack_count:3,supported_count:1,known_unsupported_count:1,unresolved_count:1,identities:[]}]))}},
   {sourceInstrumentDetailsStatus:'error',sourceInstrumentDetailsError:'Unavailable source metadata'},
   {sourceInstrumentDetailsStatus:'ready',sourceInstrumentDetails:{instrument_namespace:'unknown',parts:context.score.parts.map(part=>({part_id:part.id,selection_summary:{status:'unknown'}}))}},
  ]){
