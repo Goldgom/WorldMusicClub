@@ -98,3 +98,8 @@ Windows capture and native keyboard paging remain explicit gaps. Unit/model
 coverage is not a substitute. Differential app QA separately owns the no-extra-
 clock and input invariants: passive audio observers themselves can read clocks,
 so do not use their presence as a claim of zero extra application clock reads.
+
+Reconstructed candidate checks: the registered browser source/geometry proof,
+mandatory native strip verifier and existing complete-practice pure suite passed
+32/32 with no skips. Syntax checks passed for the browser module, registration
+and native renderer. These remain unexecuted GUI acceptance candidates.
