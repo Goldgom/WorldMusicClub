@@ -14,10 +14,14 @@ export function readPartActivityGeometry(){
  controls:Object.fromEntries(['#play-button','#reset-button','#piano-scroll','#keyboard','.performance-status'].map(selector=>[selector,box(document.querySelector(selector))])),
  notes:root?.querySelectorAll('canvas,.key,[data-note-id],.falling-note').length??0,keyboardInput:root?.dataset.keyboardInput,live:root?.getAttribute('aria-live'),pageLive:root?.querySelector('.part-activity-page-label')?.getAttribute('aria-live')};
 }
+// Match the established shared piano-stage.css keybed policy, independently of
+// activity visibility: short landscape uses 78px; desktop/portrait use at least
+// 110px. Activity may never trade accepted key height for its own strip.
+export function partActivityMinimumKeyHeight({width,height}){return height<=600&&width>=651?78:110;}
 export function assertPartActivityGeometry(s,{visible}){
  assert.ok(PART_ACTIVITY_VIEWPORTS.some(([w,h])=>w===s.width&&h===s.height));assert.ok(s.documentWidth<=s.width+1&&s.documentHeight<=s.height+1,'Document overflow hides stage controls');
  const inside=(r,label)=>{assert.ok(r&&Object.values(r).every(Number.isFinite),`${label}: missing or nonfinite rectangle at ${s.width}x${s.height}`);assert.ok(r.width>0&&r.height>0&&r.x>=-1&&r.y>=-1&&r.x+r.width<=s.width+1&&r.y+r.height<=s.height+1,`${label}: clipped or outside ${s.width}x${s.height}`);};
- for(const id of ['#play-button','#reset-button','#piano-scroll'])inside(s.controls[id],id);for(const id of ['#play-button','#reset-button'])assert.equal(s.reachable[id],true);assert.ok(s.controls['#keyboard']?.height>=80);
+ for(const id of ['#play-button','#reset-button','#piano-scroll'])inside(s.controls[id],id);for(const id of ['#play-button','#reset-button'])assert.equal(s.reachable[id],true);const keyboard=s.controls['#keyboard'];assert.ok(keyboard&&Object.values(keyboard).every(Number.isFinite)&&keyboard.width>0,'Keyboard must retain a finite, nonzero surface');assert.ok(keyboard.height>=partActivityMinimumKeyHeight(s),`Keyboard is below the accepted piano keybed height at ${s.width}x${s.height}`);
  if(!visible){assert.equal(s.host,null);assert.equal(s.strip,null);return;}
  inside(s.host,'activity host');inside(s.strip,'activity strip');inside(s.row,'activity row');assert.equal(s.host.height,56);assert.equal(s.strip.height,56);for(const r of Object.values(s.controls).filter(Boolean)){const a=s.strip;assert.ok(a.x+a.width<=r.x+1||r.x+r.width<=a.x+1||a.y+a.height<=r.y+1||r.y+r.height<=a.y+1,'Strip overlaps human controls');}assert.equal(s.notes,0);assert.equal(s.keyboardInput,'off');assert.equal(s.live,'off');assert.equal(s.pageLive,'polite');
 }
