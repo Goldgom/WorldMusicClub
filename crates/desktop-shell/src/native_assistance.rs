@@ -273,9 +273,14 @@ pub(crate) fn admit(library: &NativeLibrary, bytes: &[u8]) -> Result<Value, Libr
             ));
         }
         automatic_assistance::validate(&native, plan)
+    } else if native.receipt().source_profile == score_core::basic_keys::PROFILE {
+        // Preserve unassisted Basic practice: every selected-part attack is
+        // Human, grouped only within that scope. Coincident unselected Machine
+        // attacks do not newly block solo practice. No exclusions filter IDs.
+        automatic_assistance::original_practice(&native, &request.selection)
     } else {
-        // Original includes every attack in the selected parts. It must never
-        // silently turn unsupported attacks into accompaniment.
+        // This compatibility path is Basic-only. Other source profiles retain
+        // the endpoint's previous complete-source assistance semantics.
         automatic_assistance::original(&native, &request.selection)
     }
     .map_err(|error| {

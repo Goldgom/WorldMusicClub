@@ -36,7 +36,7 @@ export function authoredBasicDraft({sourceName='original-ceg.mid',title='Origina
 }
 export const basicKeyFile=(name='original-ceg.mid')=>{const request=JSON.parse(readFileSync(new URL('./fixtures/song-authoring/strict-request.json',import.meta.url),'utf8'));return importFile(name,Buffer.from(request.source_base64,'base64'));};
 export const packageBlob=()=>new Blob([Buffer.from('PK\x03\x04original authored transport fixture')],{type:'application/zip'});
-export async function authoringServer(){
+export async function authoringServer({legacyBasicRuntime=false}={}){
  const server=await nativeScoreServer(),drafts=new Map(),packs=new Map();let override;
  server.setRoute(async request=>{
   const custom=await override?.(request);if(custom!==undefined)return custom;
@@ -52,7 +52,7 @@ export async function authoringServer(){
    const bytes=Buffer.from(await body.arrayBuffer()),sha256=digest(bytes),pack=packs.get(sha256),mode=path.endsWith('/commit')?'commit':'preview';
    if(!pack)return nativeResponse({code:'pack_invalid',error:'Unknown test package'},422);
    if(pack.draft.state==='basic_key_candidate'){
-    const score=JSON.parse(pack.draft.package.score_json),runtime=JSON.parse(readFileSync(new URL('./fixtures/song-authoring/basic-key-runtime.json',import.meta.url),'utf8')),descriptor={version:2,content_sha256:sha256,...pack.draft.package,profile:score.performance.profile,capabilities:score.capabilities,coverage:score.coverage,notation_available:true,media:[],runtime};
+    const score=JSON.parse(pack.draft.package.score_json),runtime=JSON.parse(readFileSync(new URL(`./fixtures/song-authoring/${legacyBasicRuntime?'basic-key-runtime':'basic-key-rendition-runtime'}.json`,import.meta.url),'utf8')),descriptor={version:2,content_sha256:sha256,...pack.draft.package,profile:score.performance.profile,capabilities:score.capabilities,coverage:score.coverage,notation_available:true,media:[],runtime};
     const summary={version:2,content_sha256:sha256,profile:descriptor.profile,capabilities:descriptor.capabilities,coverage:descriptor.coverage,notation_available:true,media:[]},key=`song-${sha256}`,existing=server.records.get(key),entry={key,revision:1,title:pack.draft.title,composer:'',score_id:score.notation.id,label:pack.draft.title,score_bytes:JSON.stringify(score.notation).length,saved_at_unix_ms:1700000000000,clean_package:summary},item=importItem({title:pack.draft.title,playable:false,clean_package:summary,status:existing?'duplicate':'ready',...(existing?{entry:existing.entry}:{})});
     if(mode==='commit'&&!existing){server.records.set(key,{entry,score_json:null,clean_package:descriptor});item.status='saved';item.entry=entry;}
     return nativeResponse(importReport(body,{mode,sha256,items:[item]}));

@@ -22,10 +22,13 @@ fn mixed_files() -> BTreeMap<String, Vec<u8>> {
         0, 192, 1, 0, 144, 64, 80, 96, 128, 64, 0,
         0, 255, 47, 0,
     ];
+    files_for_events(&events, "Original CC0 admission program epochs")
+}
+fn files_for_events(events: &[u8], title: &str) -> BTreeMap<String, Vec<u8>> {
     let mut midi = b"MThd\0\0\0\x06\0\0\0\x01\0\x60MTrk".to_vec();
     midi.extend((events.len() as u32).to_be_bytes());
     midi.extend(events);
-    let score = score_core::basic_keys::convert_midi(&midi, "Original CC0 admission program epochs").unwrap();
+    let score = score_core::basic_keys::convert_midi(&midi, title).unwrap();
     let mut bytes = score_core::basic_keys::encode_json(&score).unwrap();
     bytes.extend(b"\n \t\n"); // Persisted package and normalized wire are distinct domains.
     let metadata = json!({"format":"worldmusichub-song","version":2,"id":score.notation.id,"title":score.notation.title,
@@ -155,7 +158,21 @@ fn unknown_sources_keep_original_targets_and_pitch_receipts_keep_original_eviden
     let selection = selection_for(&files);
     let old = post(&library, ORIGINAL, &json!({"source":source,"selection":selection}));
     let admitted = post(&library, ADMIT, &json!({"source":source,"pitch_mod":configuration(0),"selection":selection}));
-    assert_eq!(admitted, old);
+    assert_eq!(admitted["source"], old["source"]);
+    for field in [
+        "plan", "receipt", "human_targets", "machine_occurrence_ids", "source_ownership",
+        "coverage", "exclusion_reasons", "all_selected_human", "scored_mode_allowed",
+    ] {
+        assert_eq!(admitted["checked"][field], old["checked"][field], "{field}");
+    }
+    let scoped_diagnostics = admitted["checked"]["diagnostics"].as_array().unwrap();
+    let strict_diagnostics = old["checked"]["diagnostics"].as_array().unwrap();
+    assert_eq!(scoped_diagnostics.last().unwrap()["code"], "practice_original_scope");
+    assert_eq!(strict_diagnostics.last().unwrap()["code"], "assistance_scope_limits");
+    assert_eq!(
+        &scoped_diagnostics[..scoped_diagnostics.len() - 1],
+        &strict_diagnostics[..strict_diagnostics.len() - 1]
+    );
     assert_eq!(admitted["checked"]["all_selected_human"], true);
     let files = mixed_files();
     let source = save(&library, &files, score_core::basic_keys::PROFILE);
@@ -196,4 +213,118 @@ fn route_reloads_saved_bytes_and_preserves_transport_guards() {
         std::fs::write(&path, original).unwrap();
         post(&library, ADMIT, &body);
     }
+}
+
+#[test]
+fn single_complete_solo_native_admission_is_200_without_rewriting_its_source() {
+    let files = BTreeMap::from([
+        ("score.json".into(), include_bytes!("../../../tests/fixtures/complete-practice-acceptance/score.json").to_vec()),
+        ("metadata.json".into(), include_bytes!("../../../tests/fixtures/complete-practice-acceptance/metadata.json").to_vec()),
+    ]);
+    let sandbox = Sandbox::new();
+    let library = sandbox.library();
+    let source = save(&library, &files, score_core::basic_keys::PROFILE);
+    let before = sandbox.bytes();
+    let selection = json!({"selected_part_ids":["midi-t1-c1-r0"],"profile":{"kind":"piano","key_count":88,"lowest_midi":21}});
+    let request = json!({"source":source,"pitch_mod":configuration(0),"selection":selection});
+    let admitted = post(&library, ADMIT, &request);
+    let checked = &admitted["checked"];
+    assert_eq!(checked["plan"]["human_source_ids"], json!(["midi-t1-e2", "midi-t1-e4"]));
+    assert_eq!(checked["coverage"]["source_unit_count"], 6);
+    assert_eq!(checked["coverage"]["human_source_unit_count"], 2);
+    assert_eq!(checked["coverage"]["machine_source_unit_count"], 4);
+    assert_eq!(checked["human_targets"]["target_count"], 2);
+    assert_eq!(checked["human_targets"]["timeline"]["duration_ms"], 5000.0);
+    assert_eq!(checked["scored_mode_allowed"], true);
+    rejected(&library, ORIGINAL, &json!({"source":source,"selection":selection}), 422);
+    rejected(&library, ADMIT, &json!({"source":source,"pitch_mod":configuration(0),"selection":selection,"plan":checked["plan"]}), 422);
+    let loaded = library.load(source["key"].as_str().unwrap()).unwrap();
+    let package = loaded.clean_package.unwrap();
+    assert_eq!(package.score_json.as_bytes(), files["score.json"]);
+    assert_eq!(package.metadata_json.as_bytes(), files["metadata.json"]);
+    assert_eq!(post(&sandbox.library(), ADMIT, &request), admitted);
+    assert_eq!(sandbox.bytes(), before);
+}
+
+#[test]
+fn narrow_human_scope_can_share_a_key_with_unknown_or_unsupported_machine() {
+    for (explicit_gm, human_program, machine_program) in
+        [(false, 40, 0), (true, 0, 40), (true, 1, 40)]
+    {
+        let mut events = vec![];
+        if explicit_gm {
+            events.extend([0, 240, 5, 126, 127, 9, 1, 247]);
+        }
+        events.extend([
+            0, 192, human_program, 0, 193, machine_program,
+            0, 144, 60, 80, 0, 145, 60, 80,
+            48, 128, 60, 0, 48, 129, 60, 0, 0, 255, 47, 0,
+        ]);
+        let files = files_for_events(&events, "Original CC0 selected-scope unison");
+        let score = score_core::basic_keys::decode_json(&files["score.json"]).unwrap();
+        let human = score.performance.parts.iter().find(|part| part.channel == 0).unwrap();
+        let human_id = &score.performance.notes.iter().find(|note| note.part_id == human.id).unwrap().note_id;
+        let machine_id = &score.performance.notes.iter().find(|note| note.part_id != human.id).unwrap().note_id;
+        let sandbox = Sandbox::new();
+        let library = sandbox.library();
+        let source = save(&library, &files, score_core::basic_keys::PROFILE);
+        let before = sandbox.bytes();
+        let mut selection = selection_for(&files);
+        selection["selected_part_ids"] = json!([human.id]);
+        let admitted = post(&library, ADMIT, &json!({"source":source,"pitch_mod":configuration(0),"selection":selection}));
+        assert_eq!(admitted["checked"]["plan"]["human_source_ids"], json!([human_id]));
+        assert_eq!(admitted["checked"]["machine_occurrence_ids"], json!([machine_id]));
+        assert_eq!(admitted["checked"]["all_selected_human"], true);
+        assert_eq!(admitted["checked"]["scored_mode_allowed"], true);
+        rejected(&library, ORIGINAL, &json!({"source":source,"selection":selection}), 422);
+        rejected(&library, CREATE, &json!({"source":source,"selection":selection,"human_source_ids":[human_id]}), 422);
+        rejected(&library, VALIDATE, &json!({"source":source,"plan":admitted["checked"]["plan"]}), 422);
+        if explicit_gm {
+            let all = selection_for(&files);
+            let error = rejected(&library, ADMIT, &json!({"source":source,"pitch_mod":configuration(0),"selection":all}), 422);
+            assert_eq!(error["code"], "practice_original_instrument_unsupported");
+        }
+        assert_eq!(sandbox.bytes(), before);
+    }
+}
+
+#[test]
+fn existing_authored_package_reloads_current_runtime_without_source_conversion() {
+    // Saved package bytes are the existing public authoring fixture. Runtime
+    // snapshots are disposable; the loader recomputes v2 and eligibility.
+    let authored: Value = serde_json::from_str(include_str!("../../../tests/fixtures/song-authoring/basic-key-response.json")).unwrap();
+    let files = BTreeMap::from([
+        ("score.json".into(), authored["package"]["score_json"].as_str().unwrap().as_bytes().to_vec()),
+        ("metadata.json".into(), authored["package"]["metadata_json"].as_str().unwrap().as_bytes().to_vec()),
+    ]);
+    let sandbox = Sandbox::new();
+    let library = sandbox.library();
+    let source = save(&library, &files, score_core::basic_keys::PROFILE);
+    let before = sandbox.bytes();
+    let loaded = sandbox.library().load(source["key"].as_str().unwrap()).unwrap();
+    let package = loaded.clean_package.unwrap();
+    assert_eq!(package.score_json.as_bytes(), files["score.json"]);
+    assert_eq!(package.metadata_json.as_bytes(), files["metadata.json"]);
+    assert_eq!(package.runtime["profile"], "wmh-basic-key-practice-v2");
+    assert_eq!(package.runtime["source_eligibility"]["status"], "available");
+    assert_eq!(package.runtime["source_eligibility"]["complete_attack_count"], 3);
+    assert_eq!(package.runtime["source_sha256"], authored["source"]["sha256"]);
+    let admitted = post(&library, ADMIT, &json!({"source":source,"pitch_mod":configuration(0),"selection":selection_for(&files)}));
+    assert_eq!(admitted["checked"]["all_selected_human"], true);
+    assert_eq!(admitted["checked"]["coverage"]["human_source_unit_count"], 3);
+    assert_eq!(admitted["checked"]["receipt"]["source_eligibility"], package.runtime["source_eligibility"]["receipt"]);
+    assert_eq!(sandbox.bytes(), before);
+}
+
+#[test]
+fn canonical_admission_preserves_the_previous_strict_original_route() {
+    let sandbox = Sandbox::new();
+    let library = sandbox.library();
+    let source = save_canonical(&library);
+    let projected = post(&library, PROJECT, &json!({"source":source,"configuration":configuration(0)}));
+    let selection = fixture::selection(&projected);
+    let original = post(&library, ORIGINAL, &json!({"source":source,"selection":selection}));
+    let admitted = post(&library, ADMIT, &json!({"source":source,"pitch_mod":configuration(0),"selection":selection}));
+    assert_eq!(admitted, original);
+    assert!(admitted["checked"]["receipt"].get("source_eligibility").is_none());
 }

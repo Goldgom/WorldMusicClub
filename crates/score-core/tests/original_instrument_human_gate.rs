@@ -213,3 +213,94 @@ fn held_and_zero_length_attacks_keep_their_attack_time_program_identity() {
     assert_eq!(checked.coverage.machine_occurrence_count, 2);
     assert_eq!(source.timeline().notes.len(), 3);
 }
+
+#[test]
+fn unassisted_original_groups_only_the_chosen_human_parts() {
+    for (explicit_gm, human_program, machine_program) in
+        [(false, 40, 0), (true, 0, 40), (true, 1, 40)]
+    {
+        let mut events = vec![];
+        if explicit_gm {
+            events.extend([0, 240, 5, 126, 127, 9, 1, 247]);
+        }
+        events.extend([
+            0, 192, human_program, 0, 193, machine_program,
+            0, 144, 60, 80, 0, 145, 60, 80,
+            48, 128, 60, 0, 48, 129, 60, 0,
+        ]);
+        let score = basic(&events);
+        let before = basic_keys::encode_json(&score).unwrap();
+        let source = PracticeSource::from_basic(&score).unwrap();
+        let human_part = score.performance.parts.iter().find(|part| part.channel == 0).unwrap();
+        let mut selection = scope(&source);
+        selection.selected_part_ids = vec![human_part.id.clone()];
+        let human_id = score.performance.notes.iter()
+            .find(|note| note.part_id == human_part.id).unwrap().note_id.clone();
+        let machine_id = score.performance.notes.iter()
+            .find(|note| note.part_id != human_part.id).unwrap().note_id.clone();
+        let checked = automatic_assistance::original_practice(&source, &selection).unwrap();
+        assert_eq!(checked.plan.human_source_ids, [human_id.clone()]);
+        assert_eq!(checked.machine_occurrence_ids, [machine_id.clone()]);
+        assert_eq!(checked.coverage.source_unit_count, 2);
+        assert_eq!(checked.coverage.selected_source_unit_count, 1);
+        assert_eq!(checked.coverage.human_occurrence_count, 1);
+        assert_eq!(checked.coverage.machine_occurrence_count, 1);
+        assert_eq!(checked.human_targets.target_count, 1);
+        assert_eq!(checked.human_targets.timeline.notes[0].duration_ms, 250.0);
+        assert!(checked.all_selected_human);
+        assert!(checked.scored_mode_allowed);
+        assert_eq!(basic_keys::encode_json(&score).unwrap(), before);
+
+        // Explicit assistance retains its whole-source atom policy. A receipt
+        // from the unassisted path is never a bypass of that validation route.
+        for error in [
+            automatic_assistance::original(&source, &selection).unwrap_err(),
+            automatic_assistance::create(&source, &selection, &[human_id]).unwrap_err(),
+            automatic_assistance::validate(&source, &checked.plan).unwrap_err(),
+        ] {
+            assert_eq!(error.code, "assistance_cross_scope_physical_group");
+        }
+        let automatic = automatic_assistance::generate(&source, &selection, &permissive()).unwrap();
+        assert_eq!(automatic.coverage.human_source_unit_count, 0);
+        if explicit_gm {
+            let analysis = source_identity::analyze_basic_practice(&score).unwrap();
+            assert_eq!(analysis.known_unsupported_source_attack_ids(), &[machine_id.clone()]);
+            // Selecting both parts makes the hidden unison member Human. The
+            // supported or unknown physical leader must not conceal that ID.
+            let error = automatic_assistance::original_practice(&source, &scope(&source)).unwrap_err();
+            assert_eq!(error.code, "practice_original_instrument_unsupported");
+            assert_eq!(error.source_ids, [machine_id]);
+        } else {
+            let full = automatic_assistance::original_practice(&source, &scope(&source)).unwrap();
+            assert_eq!(full.coverage.human_source_unit_count, 2);
+            assert_eq!(full.human_targets.target_count, 1);
+            assert!(full.scored_mode_allowed);
+        }
+    }
+}
+
+#[test]
+fn single_complete_public_solo_keeps_the_preexisting_two_human_attacks() {
+    // Exact existing CC0 source; provenance is beside the complete fixture.
+    let bytes = include_bytes!("../../../tests/fixtures/complete-practice-acceptance/score.json");
+    let score = basic_keys::decode_json(bytes).unwrap();
+    let source = PracticeSource::from_basic(&score).unwrap();
+    let mut selection = scope(&source);
+    selection.selected_part_ids = vec!["midi-t1-c1-r0".into()];
+    let checked = automatic_assistance::original_practice(&source, &selection).unwrap();
+    assert_eq!(checked.plan.human_source_ids, ["midi-t1-e2", "midi-t1-e4"]);
+    assert_eq!(checked.coverage.source_unit_count, 6);
+    assert_eq!(checked.coverage.human_source_unit_count, 2);
+    assert_eq!(checked.coverage.machine_source_unit_count, 4);
+    assert_eq!(checked.human_targets.timeline.duration_ms, 5000.0);
+    assert!(checked.scored_mode_allowed);
+    let timeline = score_core::Timeline {
+        duration_ms: source.timeline().duration_ms,
+        notes: source.timeline().notes.iter()
+            .filter(|note| note.part_id == "midi-t1-c1-r0").cloned().collect(),
+    };
+    let prior = score_core::targets::plan_targets(&timeline, &selection.profile).unwrap();
+    assert_eq!(value(&checked.human_targets), value(&prior));
+    assert_eq!(automatic_assistance::original(&source, &selection).unwrap_err().code,
+        "assistance_cross_scope_physical_group");
+}

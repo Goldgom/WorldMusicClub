@@ -23,8 +23,11 @@ eligibility before projecting pitch. Neither a caller timeline, path, cached
 identity, excluded-ID list nor a caller fingerprint can authorize this operation.
 Original means every original attack in the selected parts. Any excluded Human
 source ID rejects the entire assignment. Explicit assistance may assign complete
-indivisible groups to Machine; it never splits a physical group. Original,
-create, validate and progression all enforce the same final Human-ID rule.
+indivisible groups to Machine; it never splits a full-source assistance atom.
+Unassisted Original groups only its complete selected Human scope, preserving
+prior solo practice when an unselected Machine part has a coincident note.
+Original, create, validate and progression all enforce the same final Human-ID
+rule.
 
 The response contains the existing `source` and `checked` assignment, plus the
 existing pitch identity for nonzero projection. Basic runtime receipts require
@@ -51,6 +54,19 @@ order, including unresolved-only parts. If none is available, it defaults to
 all-Machine Listen. Saved preferences and open drafts are retained unchanged;
 rejected Human assignments have an explicit Machine/Listen repair through Mod.
 Old Basic receipts must revalidate. Missing fields never mean Human approval.
+
+The archived `wmh-basic-key-practice-v1` files in consumer tests are runtime
+responses, not a separate saved music format. Accepted 727 already regenerated
+`wmh-basic-key-practice-v2` from unchanged Basic package bytes on native load.
+The authoring mock now uses its existing paired v2 response, with the same source
+SHA and all three original attacks; it retains positive save/practice/reopen
+coverage. A separate archived-response test has no current native proof and
+stays inspectable. No v1 profile blacklist was added: complete matching targets
+may still pass a fresh source-bound native check. Incomplete old projections
+cannot authorize missing attacks. Reopen the same saved song in the current
+native app to regenerate its runtime and receipt; no source conversion,
+replacement, or note deletion is needed.
+
 Optional detailed identity errors, 404/413 responses and delayed labels cannot
 change ownership or authority. Canonical imports keep their existing path.
 

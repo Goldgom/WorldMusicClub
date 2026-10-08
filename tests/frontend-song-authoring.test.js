@@ -114,15 +114,29 @@ test('recognized but undecodable VSQ distinguishes unavailable vocal inventory f
  }finally{await app.close();}
 });
 
-test('explicit basic-key authoring reviews complete coverage, saves and reopens target practice without source audio',async()=>{
- const {basicKeyFile}=await import('./song-authoring-fixtures.js'),server=await authoringServer();let app=await nativeStorageApp(server);
+for(const legacyBasicRuntime of [false,true])test(`basic-key authoring saves and reopens ${legacyBasicRuntime?'archived runtime without current native Human proof':'current complete native practice'}`,async()=>{
+ const {basicKeyFile}=await import('./song-authoring-fixtures.js'),server=await authoringServer({legacyBasicRuntime});let app=await nativeStorageApp(server);
  try{
   await start(app);app.$('authoring-intent').value='basic_keys';pick(app,[basicKeyFile()]);await app.until(()=>reviewed(app)&&row(app)?.dataset.phase==='ready');
   assert.match(row(app).querySelector('.authoring-classification').textContent,/Complete basic-key practice candidate/);assert.match(row(app).querySelector('.authoring-basic-coverage').textContent,/3 retained attacks.*3 positive determined.*0 instantaneous.*0 unresolved/);assert.match(row(app).textContent,/Source and reference audio are unavailable/);assert.equal(server.records.size,0);assert.deepEqual(app.audio(),{contexts:0,unlocks:0});assert.equal(app.requests.find(call=>call.path==='/api/clean-song/draft').body.intent,'basic_keys');
   getAppI18n(app.document).setLocale('zh-CN');assert.match(app.$('authoring-intent').textContent,/完整基础 MIDI 按键/);assert.match(row(app).querySelector('.authoring-basic-coverage').textContent,/保留 3 次按键/);assert.match(row(app).textContent,/参考音频不可用/);
   const title=row(app).querySelector('input');title.value='Original key retitle';app.emit(title,'input');app.$('authoring-intent').value='source_rendition';row(app).querySelector('[data-authoring-recheck]').click();await app.until(()=>reviewed(app)&&row(app)?.dataset.phase==='ready');assert.equal(app.requests.filter(call=>call.path==='/api/clean-song/draft').at(-1).body.intent,'basic_keys');
-  row(app).querySelector('[data-authoring-save]').click();await app.until(()=>reviewed(app)&&row(app).dataset.phase==='saved');const [key,record]=[...server.records][0];assert.equal(record.score_json,null);assert.equal(record.clean_package.profile,'wmh-basic-keys-midi1-v1');const raw=record.clean_package.score_json;
-  row(app).querySelector('[data-authoring-browse]').click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='ready'&&!app.$('start-practice').disabled);assert.equal(app.$('start-listen').disabled,true);assert.deepEqual(app.audio(),{contexts:0,unlocks:0});
-  await app.close();app=await nativeStorageApp(server);await app.until(()=>app.savedButton(key)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(key).click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='ready'&&!app.$('start-practice').disabled);assert.equal(app.$('start-listen').disabled,true);assert.equal(server.records.get(key).clean_package.score_json,raw);assert.deepEqual(app.audio(),{contexts:0,unlocks:0});
+  row(app).querySelector('[data-authoring-save]').click();await app.until(()=>reviewed(app)&&row(app).dataset.phase==='saved');const [key,record]=[...server.records][0];assert.equal(record.score_json,null);assert.equal(record.clean_package.profile,'wmh-basic-keys-midi1-v1');assert.equal(record.clean_package.runtime.profile,legacyBasicRuntime?'wmh-basic-key-practice-v1':'wmh-basic-key-practice-v2');assert.equal(Boolean(record.clean_package.runtime.rendition),!legacyBasicRuntime);const raw=record.clean_package.score_json;assert.equal(record.clean_package.runtime.source_sha256,JSON.parse(raw).source.sha256);
+  // The paired committed v2 runtime uses the exact same original source.
+  // The archived response stays inspectable when this mock native service cannot issue a current receipt.
+  const assertRetained=async()=>{
+   await app.until(()=>app.$('song-lobby').dataset.previewStatus==='ready'&&(legacyBasicRuntime?app.$('preview-gate').classList.contains('preview-blocked'):!app.$('start-practice').disabled));
+   assert.equal(app.$('start-practice').disabled,legacyBasicRuntime);assert.equal(app.$('start-listen').disabled,legacyBasicRuntime);assert.equal(app.$('open-score').disabled,false);
+   assert.ok(app.requests.some(request=>request.path==='/api/library/practice-admission'&&request.body.source.key===key));assert.equal(app.$('export-takes').disabled,true);
+   assert.equal(server.records.get(key).clean_package.score_json,raw);assert.deepEqual(app.audio(),{contexts:0,unlocks:0});
+  };
+  row(app).querySelector('[data-authoring-browse]').click();await assertRetained();
+  if(!legacyBasicRuntime){
+   await app.click('start-practice');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');await app.click('play-button');
+   const take=await app.exported('export-takes'),expected=record.clean_package.runtime.compilation.timeline.notes;
+   assert.deepEqual(take.passes[0].timeline.notes.map(note=>[note.id,note.midi,note.start_ms,note.duration_ms]),expected.map(([id,,midi,,start_ms,duration_ms])=>[id,midi,start_ms,duration_ms]));
+   assert.deepEqual(take.passes[0].inputs,[]);assert.equal(take.passes[0].interpretation.policy_id,'wmh-basic-key-rendition-fifo-v1');assert.equal(server.records.get(key).clean_package.score_json,raw);
+  }
+  await app.close();app=await nativeStorageApp(server);await app.until(()=>app.savedButton(key)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(key).click();await assertRetained();
  }finally{await app.close();}
 });

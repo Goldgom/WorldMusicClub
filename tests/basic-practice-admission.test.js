@@ -102,3 +102,15 @@ test('hot-path current bindings do not serialize or clone complete checked assig
     const binding=createBasicPracticeAdmissionBinding(value,{...options,assistance:admission.checked});assert.equal(binding.assistance,admission.checked);
   }finally{globalThis.structuredClone=clone;}
 });
+
+test('a complete archived v1 response remains usable when the same saved source receives fresh native proof',async()=>{
+  const {readFileSync}=await import('node:fs'),read=name=>JSON.parse(readFileSync(new URL(`./fixtures/song-authoring/${name}.json`,import.meta.url),'utf8'));
+  const draft=read('basic-key-response'),score=JSON.parse(draft.package.score_json),identity='a'.repeat(64);
+  const opened=withMockBasicEligibility({clean_package:{...draft.package,version:2,content_sha256:identity,profile:'wmh-basic-keys-midi1-v1',capabilities:score.capabilities,coverage:score.coverage,notation_available:true,media:[],runtime:read('basic-key-runtime')}});
+  const descriptor=opened.clean_package,song=prepareCleanSong(`native:song-${identity}`,descriptor,score.notation),value={score:song.compilation.score,compiled:song.compilation,cleanSong:song};
+  const current=withMockBasicEligibility({...opened,clean_package:{...descriptor,runtime:read('basic-key-rendition-runtime')}});
+  assert.equal(song.runtime.profile,'wmh-basic-key-practice-v1');assert.equal(current.clean_package.runtime.profile,'wmh-basic-key-practice-v2');assert.equal(current.clean_package.score_json,song.score_json);
+  const request=createBasicPracticeAdmissionRequest(value,{selection:{kind:'all',part_ids:score.notation.parts.map(p=>p.id)},profile:{kind:'piano',key_count:88,lowest_midi:21},intentToken:{},sessionToken:{}});
+  const admission=admitBasicPractice(mockBasicPracticeAdmission(request.body,current),request.binding);
+  assert.equal(admission.checked.coverage.source_unit_count,3);assert.equal(admission.checked.scored_mode_allowed,true);assert.equal(song.score_json,opened.clean_package.score_json);
+});
