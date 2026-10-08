@@ -315,11 +315,17 @@ fn overlapping_piano_import_keeps_all_targets_and_requires_explicit_wider_device
     let library = sandbox.library();
     // Newly authored isolated keys, not a transcription of user music. The
     // second attack precedes the first release at the same source tick.
-    let source = smf(&[vec![
-        0, 0xc0, 0, 0, 0x90, 50, 90, 48, 0x90, 50, 80, 0, 0x80, 50, 0, 48, 0x80, 50,
-        0, 0, 0x90, 25, 70, 48, 0x80, 25, 0, 0, 0x90, 95, 60, 48, 0x80, 95, 0, 0, 255,
-        47, 0,
-    ]]);
+    let mut track = vec![0, 0xc0, 0];
+    track.extend([0, 0x90, 50, 90]);
+    track.extend([48, 0x90, 50, 80]);
+    track.extend([0, 0x80, 50, 0]);
+    track.extend([48, 0x80, 50, 0]);
+    track.extend([0, 0x90, 25, 70]);
+    track.extend([48, 0x80, 25, 0]);
+    track.extend([0, 0x90, 95, 60]);
+    track.extend([48, 0x80, 95, 0]);
+    track.extend([0, 255, 47, 0]);
+    let source = smf(&[track]);
     let strict = practice_server::api("/api/import/midi", source.clone()).unwrap_err();
     assert!(strict.contains("Ambiguous overlapping MIDI note-ons"));
     let saved = body(&library, "/api/library/import/commit", source.clone());
