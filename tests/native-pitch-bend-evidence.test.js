@@ -215,13 +215,13 @@ test('failed live pitch capture retains receiver evidence before restoring the o
   const before={activeSources:2,receiver:{schedules:[{start:.8,end:4.55}],silences:[]}},after={activeSources:0,receiver:{schedules:before.receiver.schedules,silences:[{currentTime:1.2}]}};
   const report={variants:[{}],screenshots:{}};let captured=false,restored=false;
   const failure=Error(hostFails?'host screenshot failed':'Pitch screenshot missed sounding gates');
-  const scope={report,performance:{now:()=>1234},observe(){},play:async()=>{},until:async predicate=>assert.ok(await predicate()),audio:()=>{assert.equal(restored,false);return structuredClone(captured?after:before);},native:async()=>{captured=true;if(hostFails)throw failure;return 21;},$:id=>({dataset:{state:'error'},textContent:id.endsWith('problems')?'late_scheduler':'0:01.2 / 0:05.0'}),assert:(value,message)=>{if(!value)throw Error(message);},finish:()=>{restored=true;}};
+  const scope={report,performance:{now:()=>1234},observe(){},play:async()=>{},until:async predicate=>assert.ok(await predicate()),audio:()=>{assert.equal(restored,false);return structuredClone(captured?after:before);},native:async()=>{captured=true;if(hostFails)throw failure;return 21;},$:id=>({getAttribute:name=>name==='data-reference-failure'?'{"version":1,"code":"late_scheduler","eventIndex":3}':null,dataset:{state:'error'},textContent:id.endsWith('problems')?'late_scheduler':'0:01.2 / 0:05.0'}),assert:(value,message)=>{if(!value)throw Error(message);},finish:()=>{restored=true;}};
   vm.createContext(scope);vm.runInContext(source,scope);
   await assert.rejects(vm.runInContext('fullRun(null)',scope),new RegExp(failure.message));
   assert.equal(restored,true);
   assert.deepEqual(copy(report.variants[0].liveCapture.before),before);
   if(!hostFails)assert.deepEqual(copy(report.variants[0].liveCapture.after),after);
   assert.deepEqual(copy(report.failedRun.audio),after);
-  assert.equal(report.failedRun.state,'error');assert.equal(report.failedRun.problems,'late_scheduler');
+  assert.equal(report.failedRun.state,'error');assert.equal(report.failedRun.problems,'late_scheduler');assert.equal(JSON.parse(report.failedRun.schedulerFailure).eventIndex,3);
  }
 });

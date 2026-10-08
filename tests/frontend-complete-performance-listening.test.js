@@ -4,7 +4,7 @@ import {parseHTML} from 'linkedom';
 import {readFileSync} from 'node:fs';
 import {createI18n} from '../web/i18n.js';
 import {ScorePreview} from '../web/score-preview.js';
-import {setupCompletePerformanceListening} from '../web/complete-performance-listening.js';
+import {setupCompletePerformanceListening,serializeReferenceFailure} from '../web/complete-performance-listening.js';
 import {completePerformanceSong,completePerformanceDescriptor,PerformanceAudio,PerformanceTimers} from './complete-performance-ui-fixture.js';
 import {nativeScoreServer,nativeStorageApp,deferred,nativeResponse} from './native-storage-app-fixtures.js';
 
@@ -203,4 +203,36 @@ test('unresolved complete-event logical routes retain data and block play with a
     assert.equal(f.$('counts').dataset.eventCount,'13');assert.equal(f.$('tracks').children.length,3);f.accept();await f.play();assert.equal(f.unlocks(),0);assert.equal(f.view.snapshot().state,'stopped');
     f.i18n.setLocale('zh-CN');assert.match(f.$('problems').textContent,/逻辑设备路由无法解析/);assert.match(f.$('problems').textContent,/多条音轨共用一个通道/);assert.match(f.$('problems').textContent,/已阻止播放；所有源事件与设备名称仍完整保存/);assert.equal(f.$('play').disabled,true);assert.equal(song.score_json,before);
   }finally{f.view.destroy();}
+});
+
+test('failure serialization whitelists bounded own scalar data and preserves exact microsecond strings',()=>{
+ const source={sourceSha256:'a'.repeat(64),scoreSha256:'b'.repeat(64)},detail={phase:'pump-deadline',eventId:`midi:${'a'.repeat(64)}:t1:e42`,commandKind:'pitch_bend',eventIndex:43,sourceTrackIndex:1,sourceEventIndex:42,generation:2,anchorSeconds:-.5,scheduledAudioTimeSeconds:2,observedAudioTimeSeconds:2.1,lateSeconds:.1,exactMicroseconds:{numerator:'18446744073709551615',denominator:1000000},context:{secret:'never'},extra:'never'};
+ const value=JSON.parse(serializeReferenceFailure({code:'late_scheduler',detail},source));
+ assert.deepEqual(value.exactMicroseconds,detail.exactMicroseconds);assert.equal(value.sourceSha256,source.sourceSha256);assert.equal(value.code,'late_scheduler');assert.equal(value.context,undefined);assert.equal(value.extra,undefined);
+ for(const bad of [NaN,Infinity,-Infinity,-1,{},'2'])assert.equal(JSON.parse(serializeReferenceFailure({code:'late_scheduler',detail:{observedAudioTimeSeconds:bad}},source)).observedAudioTimeSeconds,undefined);
+ for(const bad of ['9'.repeat(21),'18446744073709551616','01','-1',{},1])assert.equal(JSON.parse(serializeReferenceFailure({code:'late_scheduler',detail:{exactMicroseconds:{numerator:bad,denominator:1}}},source)).exactMicroseconds,undefined);
+ let reads=0;const hostile={code:'late_scheduler',detail:{}};Object.defineProperty(hostile.detail,'observedAudioTimeSeconds',{get(){reads++;throw Error('Do not invoke');}});Object.defineProperty(hostile.detail,'toJSON',{get(){reads++;throw Error('Do not invoke');}});
+ assert.deepEqual(JSON.parse(serializeReferenceFailure(hostile,{})),{version:1,code:'late_scheduler'});assert.equal(reads,0);
+ assert.equal(serializeReferenceFailure({code:'x'.repeat(65),detail},source),null);
+ const malformed=JSON.parse(serializeReferenceFailure({code:'late_scheduler',detail:{eventId:'x'.repeat(100000),commandKind:'x'.repeat(100000),eventIndex:-1,generation:Infinity,phase:'arbitrary'}},source));
+ assert.deepEqual(Object.keys(malformed),['version','code','sourceSha256','scoreSha256']);
+ assert.ok(serializeReferenceFailure({code:'late_scheduler',detail},source).length<=2048);
+});
+
+test('only failures serialize diagnostic DOM; stop and new source clear it without changing visible layout',async()=>{
+ const f=viewFixture(),song=await completePerformanceSong(),status=f.$('status'),set=status.setAttribute.bind(status),remove=status.removeAttribute.bind(status);let writes=0;
+ status.setAttribute=(name,value)=>{if(name==='data-reference-failure')writes++;return set(name,value);};
+ status.removeAttribute=name=>{if(name==='data-reference-failure')writes++;return remove(name);};
+ try{
+  f.view.select(song);f.i18n.setLocale('zh-CN');f.i18n.setLocale('en');f.accept();await f.play();
+  assert.equal(writes,0);assert.equal(status.getAttribute('data-reference-failure'),null);
+  f.synth.context.currentTime=.4;for(const item of [...f.timers.pending.values()])item.fn();
+  assert.equal(f.view.snapshot().error.code,'late_scheduler');const value=JSON.parse(status.getAttribute('data-reference-failure'));
+  assert.equal(value.code,'late_scheduler');assert.equal(value.phase,'pump-deadline');assert.equal(value.sourceSha256,song.reference.sourceSha256);assert.equal(value.scoreSha256,song.reference.scoreSha256);assert.equal(writes,1);
+  const children=[...status.childNodes];f.i18n.setLocale('en');assert.equal(writes,1);assert.equal(status.children.length,0);assert.equal(children.length,status.childNodes.length);
+  f.view.stop();assert.equal(status.getAttribute('data-reference-failure'),null);assert.equal(writes,2);
+  f.view.select(await completePerformanceSong({title:'New source identity'}));assert.equal(status.getAttribute('data-reference-failure'),null);assert.equal(writes,2);
+  f.accept();await f.play();f.synth.context.currentTime=1;for(const item of [...f.timers.pending.values()])item.fn();assert.ok(status.getAttribute('data-reference-failure'));
+  f.view.select(null);assert.equal(status.getAttribute('data-reference-failure'),null);assert.equal(f.view.snapshot().error,null);
+ }finally{f.view.destroy();}
 });

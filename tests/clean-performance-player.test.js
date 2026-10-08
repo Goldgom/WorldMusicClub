@@ -1039,3 +1039,42 @@ test('diagnostic: a started pre-onset pass can fail closed with no sources after
   assert.equal(h.sources().length, 0);
   h.silent();
 });
+
+test('failure diagnostics preserve pump clock reads, callback order and the original strict cutoff',async()=>{
+  const prepared=await load(fixture([[on(0),on(200000,62),off(500000),off(500000,62)]]));
+  const trace=[];let now=0;
+  const h=harness(prepared,{onState:state=>trace.push(`state:${state.state}`),onEvent:event=>trace.push(`event:${event.eventId.split(':').at(-1)}`)});
+  Object.defineProperty(h.context,'currentTime',{get(){trace.push('clock');return now;}});
+  await h.play();trace.length=0;now=.4;h.timers.fire();
+  const failureTrace=[...trace];
+  assert.equal(h.player.snapshot().error.code,'late_scheduler');
+  const d=h.player.snapshot().error.detail;
+  assert.equal(d.phase,'pump-deadline');assert.equal(d.eventIndex,1);assert.equal(d.commandKind,'key_attack');
+  assert.equal(d.observedAudioTimeSeconds,.4);near(d.scheduledAudioTimeSeconds,.25);near(d.anchorSeconds,.05);
+  assert.deepEqual(d.exactMicroseconds,prepared.runtime.events[1].exact_microseconds);h.silent();
+  assert.deepEqual(failureTrace,['clock','clock','clock','clock','clock','clock','clock','clock','state:error']);
+});
+
+test('allocation failure diagnostics retain distinct comparison and lateness samples without changing clock order',async()=>{
+  const prepared=await load(fixture([[on(0),off(500000)]]));
+  const trace=[];let now=0,allocation=false,samples=0;
+  const h=harness(prepared,{onState:state=>trace.push(`state:${state.state}`)});
+  const original=h.context.createOscillator.bind(h.context);
+  h.context.createOscillator=()=>{allocation=true;return original();};
+  Object.defineProperty(h.context,'currentTime',{get(){trace.push('clock');if(allocation)return ++samples===1?.075:.1;return now;}});
+  await h.play();const failureTrace=[...trace],d=h.player.snapshot().error.detail;
+  assert.equal(h.player.snapshot().error.code,'late_scheduler');assert.equal(d.phase,'source-allocation');
+  assert.equal(d.observedAudioTimeSeconds,.075);assert.equal(d.latenessObservedAudioTimeSeconds,.1);near(d.lateSeconds,.05);
+  assert.equal(d.eventIndex,0);assert.equal(d.eventId,prepared.runtime.events[0].event_id);assert.equal(d.commandKind,'key_attack');
+  assert.ok(h.sources().every(source=>source.starts.length===0));h.silent();
+  assert.deepEqual(failureTrace,['clock','clock','clock','state:playing','clock','clock','clock','clock','clock','clock','clock','clock','clock','clock','clock','state:error','clock']);
+});
+
+test('healthy playback keeps its clock reads and callback order without materializing failure details',async()=>{
+  const prepared=await load(fixture([[on(0),off(500000)]])),trace=[];
+  const h=harness(prepared,{onState:state=>trace.push(`state:${state.state}`),onEvent:event=>trace.push(`event:${event.eventId.split(':').at(-1)}`)});
+  Object.defineProperty(h.context,'currentTime',{get(){trace.push('clock');return 0;}});
+  await h.play();const healthyTrace=[...trace];
+  assert.equal(h.player.snapshot().state,'playing');assert.equal(h.player.snapshot().error,null);assert.equal(h.sources().length,2);
+  assert.deepEqual(healthyTrace,['clock','clock','clock','state:playing','clock','clock','clock','clock','clock','clock','event:e0','clock','clock','clock']);h.player.stop();h.silent();
+});

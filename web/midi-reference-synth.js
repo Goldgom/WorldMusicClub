@@ -114,7 +114,14 @@ export class ReferenceAudioReceiver {
       envelope.gain.linearRampToValueAtTime(0, end);
       envelope.connect(output);
       for (const source of sources) {
-        if (start < this.context.currentTime) throw new this.ErrorType('late_scheduler', 'Audio allocation missed the scheduled onset; playback stops without catch-up.', { eventId: note.eventId, lateSeconds: this.context.currentTime - start });
+        const observedNow=this.context.currentTime; // Preserve the existing comparison read.
+        if (start < observedNow) {
+          const latenessNow=this.context.currentTime; // Preserve the distinct failure-only read.
+          throw new this.ErrorType('late_scheduler', 'Audio allocation missed the scheduled onset; playback stops without catch-up.', {
+            eventId:note.eventId,phase:'source-allocation',scheduledAudioTimeSeconds:start,
+            observedAudioTimeSeconds:observedNow,latenessObservedAudioTimeSeconds:latenessNow,lateSeconds:latenessNow-start,
+          });
+        }
         source.start(start); source.stop(end);
       }
       sources[0].onended = voice.dispose;

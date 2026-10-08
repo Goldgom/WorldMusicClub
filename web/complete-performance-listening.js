@@ -3,6 +3,30 @@ import {createCleanPerformancePlayer} from './clean-performance-player.js';
 import {cleanLogicalDeviceMapping,cleanLogicalDeviceRouteError} from './clean-song-text.js';
 import referenceSchema from './locales/reference-listening-schema.js';
 
+// A bounded, failure-only data projection. Never enumerate arbitrary error
+// details or invoke their accessors; no player/context objects leave this view.
+export function serializeReferenceFailure(error,source) {
+  const own=(value,key)=>value&&typeof value==='object'?Object.getOwnPropertyDescriptor(value,key)?.value:undefined;
+  const token=(value,max,pattern)=>typeof value==='string'&&value.length<=max&&pattern.test(value)?value:undefined;
+  try {
+    const code=token(own(error,'code'),64,/^[a-z][a-z0-9_]*$/);if(!code)return null;
+    const result={version:1,code},detail=own(error,'detail');
+    for(const key of ['sourceSha256','scoreSha256']){const value=token(own(source,key),64,/^[a-f0-9]{64}$/);if(value)result[key]=value;}
+    const phase=own(detail,'phase');if(['pump-deadline','source-allocation'].includes(phase))result.phase=phase;
+    const eventId=token(own(detail,'eventId'),160,/^midi:[a-f0-9]{64}:t[0-9]{1,3}:e[0-9]{1,6}$/);if(eventId)result.eventId=eventId;
+    const kind=token(own(detail,'commandKind'),64,/^[a-z][a-z0-9_]*$/);if(kind)result.commandKind=kind;
+    for(const [key,max]of [['eventIndex',249999],['sourceTrackIndex',127],['sourceEventIndex',249999],['generation',Number.MAX_SAFE_INTEGER]]){
+      const value=own(detail,key);if(Number.isSafeInteger(value)&&value>=0&&value<=max)result[key]=value;
+    }
+    for(const key of ['anchorSeconds','scheduledAudioTimeSeconds','observedAudioTimeSeconds','latenessObservedAudioTimeSeconds','lateSeconds']){
+      const value=own(detail,key);if(typeof value==='number'&&Number.isFinite(value)&&Math.abs(value)<=Number.MAX_SAFE_INTEGER&&(key==='anchorSeconds'||value>=0))result[key]=value;
+    }
+    const exact=own(detail,'exactMicroseconds'),numerator=token(own(exact,'numerator'),20,/^(0|[1-9][0-9]*)$/),denominator=own(exact,'denominator');
+    if(numerator!==undefined&&BigInt(numerator)<=18446744073709551615n&&Number.isSafeInteger(denominator)&&denominator>=1&&denominator<=1000000)result.exactMicroseconds={numerator,denominator};
+    const serialized=JSON.stringify(result);return serialized.length<=2048?serialized:null;
+  }catch{return null;}
+}
+
 const clock = seconds => {
   const value=Math.max(0,Number(seconds)||0),whole=Math.floor(value);
   return `${Math.floor(whole/60)}:${String(whole%60).padStart(2,'0')}.${Math.floor((value-whole)*10)}`;
@@ -37,7 +61,7 @@ export function setupCompletePerformanceListening({document,i18n,synth,host,
   const t=(key,params)=>i18n.t(`reference.${key}`,params);
   const text=(en,zh)=>i18n.locale==='en'?en:zh;
   let song=null,player=null,active=false,destroyed=false,errorCode=null,clockTimer=null,trackRows=[],programRows=[];
-  const closedWaiters=[];
+  const closedWaiters=[];let diagnosticError=null;
   const snapshot=()=>player?.snapshot()??{state:'stopped',positionSeconds:0,mutedTracks:[],error:null};
   function clearClock(){if(clockTimer!==null)timers.clearTimeout(clockTimer);clockTimer=null;}
   function refreshClock(){
@@ -83,6 +107,13 @@ export function setupCompletePerformanceListening({document,i18n,synth,host,
       row.input.disabled=!ready||!stopped||!row.independent;row.input.checked=current.mutedTracks.includes(row.index);
     }
     for(const row of programRows)row.element.textContent=t('program',{channel:row.channel,program:row.program,family:t(row.channel===9?'percussionName':`family${row.program>>3}`)});
+    // Healthy renders neither serialize nor mutate diagnostic DOM. Reuse the
+    // already-read snapshot; exposing an error adds no clock/callback activity.
+    if(current.error!==diagnosticError){
+      if(current.error){const value=serializeReferenceFailure(current.error,prepared);if(value)$('status').setAttribute('data-reference-failure',value);else $('status').removeAttribute('data-reference-failure');}
+      else if(diagnosticError)$('status').removeAttribute('data-reference-failure');
+      diagnosticError=current.error??null;
+    }
     const codes=[...new Set([errorCode,current.error?.code,...(prepared?.blockers.map(item=>item.code)||[])].filter(Boolean))];
     $('problems').hidden=!codes.length;
     $('problems').textContent=codes.map(code=>`${t('problem')} ${code}: ${code==='unresolved_logical_device_route'?cleanLogicalDeviceRouteError(i18n.locale,prepared?.logical_device_route_reason):Object.hasOwn(referenceSchema,`reference.error.${code}`)&&code!=='generic'?t(`error.${code}`):text('This reference receiver cannot apply the required command or start audio. Complete source data remains saved; stop and retry only when supported.','此参考合成器无法执行所需指令或启动音频。完整来源仍已保存；仅在支持后停止并重试。')}`).join('\n');

@@ -112,7 +112,8 @@ function observePitchBendAudio(Receiver,Mixer,root=globalThis) {
    await until(()=>$('complete-performance-status').dataset.state==='ended','complete pitch event end',9000);
    return{mutedTracks:mutedTrack===null?[]:[mutedTrack],elapsedMs:performance.now()-started,clock:$('complete-performance-clock').textContent,audio:await silence('source end cleanup')};
   }catch(error){
-   report.failedRun={mutedTracks:mutedTrack===null?[]:[mutedTrack],elapsedMs:performance.now()-started,state:$('complete-performance-status').dataset.state,clock:$('complete-performance-clock').textContent,problems:$('complete-performance-problems').textContent,audio:audio()};
+   const failure=$('complete-performance-status').getAttribute('data-reference-failure');
+   report.failedRun={schedulerFailure:typeof failure==='string'&&failure.length<=2048?failure:null,mutedTracks:mutedTrack===null?[]:[mutedTrack],elapsedMs:performance.now()-started,state:$('complete-performance-status').dataset.state,clock:$('complete-performance-clock').textContent,problems:$('complete-performance-problems').textContent,audio:audio()};
    throw error;
   }finally{finish();}
  }
@@ -156,7 +157,7 @@ function observePitchBendAudio(Receiver,Mixer,root=globalThis) {
    if(phase==='pitch-bend-seed'){checkpoint('exact-original-pitch-pack-export');closeDialogs();click('import-tools-button');click('bulk-import-history-button');if(!$('bulk-import-history').open)$('bulk-import-history').querySelector('summary').click();await until(()=>document.querySelectorAll('#bulk-import-export-songs input').length===3,'all pitch songs export selection');await native('click',$('bulk-import-export-all'));report.files.package=await download($('bulk-import-export-pack'));await native('click',$('bulk-import-done'));report.checks.push('exact-complete-pack-export');}
    else report.checks.push('fresh-process-rpn12-pitch-reconstruction');
    report.afterTakeState=takeState();assert(JSON.stringify(report.afterTakeState)===JSON.stringify(report.beforeTakeState),'Pitch reference listener changed prior take');report.files.afterTake=await take();assert(!report.requests.slice(report.referenceRequestStart).some(r=>/assess|fingering|\/api\/compile|notation-navigation|\/api\/library\/runtime/.test(r.path)),'Reference-only pitch invoked notation/target/scoring/fingering compiler');assert(report.errors.length===0,report.errors.join('; '));report.actions=sequence;report.downloads=(await json('/__desktop_smoke/state')).downloads;checkpoint('complete');report.ok=true;
-  }catch(error){report.error=String(error);report.failureStage=report.stage;if(error.nativeReferenceTransport)report.transportAdmission=error.nativeReferenceTransport;}
+  }catch(error){report.error=String(error);report.failureStage=report.stage;const failure=$('complete-performance-status')?.getAttribute('data-reference-failure');report.schedulerFailure=report.failedRun?.schedulerFailure??(typeof failure==='string'&&failure.length<=2048?failure:null);if(error.nativeReferenceTransport)report.transportAdmission=error.nativeReferenceTransport;}
   finally{if(probe){report.finalAudio=audio();probe.restore();probe=null;}report.responseObservations=responses.snapshot();responses.restore();controls.restore();observing=false;removeEventListener('error',onError);removeEventListener('unhandledrejection',onRejection);if(globalThis.fetch===observedFetch)globalThis.fetch=originalFetch;}
   try{assert(new TextEncoder().encode(JSON.stringify(report)).length<=1024*1024,'Pitch report exceeds1MiB');await json('/__desktop_smoke/report',report);}catch(error){await json('/__desktop_smoke/report',{version:1,phase,ok:false,error:'Pitch report delivery failed',failureStage:report.stage,detail:String(error).slice(0,512)});}
  },{once:true});

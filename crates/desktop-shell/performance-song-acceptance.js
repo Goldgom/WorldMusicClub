@@ -33,7 +33,8 @@ function observeCompletePerformanceAudio(root=globalThis,{contexts=new Set()}={}
 function readPerformanceReferenceState(document,audio) {
  const $=id=>document.getElementById(`complete-performance-${id}`),text=node=>String(node?.textContent??'').slice(0,2048);
  const problems=$('problems'),problemText=text(problems),visibleProblem=Boolean(problems&&!problems.hidden);
- return{state:$('status')?.dataset.state??null,status:text($('status')),clock:text($('clock')),
+ const failure=$('status')?.getAttribute('data-reference-failure');
+ return{schedulerFailure:typeof failure==='string'&&failure.length<=2048?failure:null,state:$('status')?.dataset.state??null,status:text($('status')),clock:text($('clock')),
   problems:{visible:visibleProblem,text:problemText,code:visibleProblem?(problemText.match(/\b[a-z]+(?:_[a-z0-9]+)+\b/)?.[0]??null):null},
   soundEnabled:$('sound')?.checked??null,policyAccepted:$('policy-accept')?.checked??null,
   playDisabled:$('play')?.disabled??null,pauseDisabled:$('pause')?.disabled??null,

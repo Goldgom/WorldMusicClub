@@ -218,8 +218,22 @@ export function createCleanPerformancePlayer(prepared, {
       try { receiver?.silence(); } finally { pitch = new ReferencePitchChannels(); }
     }
   };
+  // Only materialize event diagnostics after a failure; never sample a clock here.
+  const failureEventDetail = (index, failedGeneration) => {
+    const event=events[index];
+    return {eventIndex:index,eventId:event.ack.eventId,commandKind:event.ack.event.command.kind,
+      sourceTrackIndex:event.ack.event.origin.track,sourceEventIndex:event.ack.event.origin.event,
+      exactMicroseconds:event.ack.event.exact_microseconds,anchorSeconds:anchor,generation:failedGeneration};
+  };
   const abort = reason => {
+    const failedGeneration=generation;
     position = snapshot().positionSeconds; cancel(); error = reason instanceof CleanPerformanceError ? reason : new CleanPerformanceError('audio_failure', String(reason?.message || reason));
+    // Allocation failure already owns its two original clock samples. Attach
+    // source identity only after the existing cutoff, without resampling audio.
+    if(error.code==='late_scheduler'&&error.detail?.phase==='source-allocation'){
+      const index=events.findIndex(event=>event.ack.eventId===error.detail.eventId);
+      if(index>=0)Object.assign(error.detail,failureEventDetail(index,failedGeneration));
+    }
     state = 'error'; notify();
   };
   const sound = (voice, start, resumed = false) => {
@@ -239,7 +253,11 @@ export function createCleanPerformancePlayer(prepared, {
       const horizon = context.currentTime + lookaheadSeconds; receiver.prune(context.currentTime);
       while (cursor < events.length && anchor + events[cursor].seconds <= horizon) {
         const { ack, seconds } = events[cursor], at = anchor + seconds;
-        if (at < context.currentTime) fail('late_scheduler', 'An event missed its deadline; playback stopped without skipping.', { eventId: ack.eventId });
+        const observedNow=context.currentTime; // Same deadline read, in the same order.
+        if (at < observedNow) fail('late_scheduler', 'An event missed its deadline; playback stopped without skipping.', {
+          ...failureEventDetail(cursor,token),phase:'pump-deadline',scheduledAudioTimeSeconds:at,
+          observedAudioTimeSeconds:observedNow,lateSeconds:observedNow-at,
+        });
         command(ack.event.command, at);
         if (ack.voiceId && ['onset', 'layered_onset'].includes(ack.disposition)) sound(voiceById.get(ack.voiceId), at);
         cursor++;
