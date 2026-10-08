@@ -1,0 +1,666 @@
+{
+  "revision": 1,
+  "purpose": "Authored proposed-contract cases; not executable analyzer test results",
+  "program_and_channel_numbering": "zero-based",
+  "source_music": "none; mechanical note60 only",
+  "license": "CC0-1.0 for these newly authored synthetic fixture bytes and case descriptions",
+  "cases": [
+    {
+      "id": "01_no_gm_program",
+      "file": "fixtures/01_no_gm_program.mid",
+      "sha256": "bde38b620853111b6c27314c02146db83c7cef8eb52cc45dc1b1ff0d87ffa871",
+      "assertion": "PC alone does not establish GM.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 1,
+          "tick": 120,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        }
+      ]
+    },
+    {
+      "id": "02_name_not_identity",
+      "file": "fixtures/02_name_not_identity.mid",
+      "sha256": "798fc1d105fddc71fcb0c4f91cbd772d73632c987f57993172eb9871821450a7",
+      "assertion": "Instrument-name metadata supplies no identity authority.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 1,
+          "tick": 120,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        }
+      ]
+    },
+    {
+      "id": "03_gm_no_program",
+      "file": "fixtures/03_gm_no_program.mid",
+      "sha256": "49f6a50f0d808a385d5a09f152fc5ffe64d27b9d03d938d8aa4421c107c3c8b2",
+      "assertion": "No inferred default piano.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 1,
+          "tick": 120,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        }
+      ]
+    },
+    {
+      "id": "04_gm1_piano",
+      "file": "fixtures/04_gm1_piano.mid",
+      "sha256": "0bb8bd2f3042d76a0f9fa034224b7b9e839f7b936b2d46c6c6998251cd6ceb11",
+      "assertion": "Explicit GM1 plus piano0.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 2,
+          "tick": 240,
+          "channel": 0,
+          "expected_classification": "supported"
+        }
+      ]
+    },
+    {
+      "id": "05_gm1_harpsichord",
+      "file": "fixtures/05_gm1_harpsichord.mid",
+      "sha256": "9f92716f7be2da863780f6de5c7c898591675d56b56e20ed24ea0a5acd23d7c0",
+      "assertion": "Harpsichord stays distinct under product policy.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 2,
+          "tick": 240,
+          "channel": 0,
+          "expected_classification": "known_unsupported"
+        }
+      ]
+    },
+    {
+      "id": "06_gm1_clav",
+      "file": "fixtures/06_gm1_clav.mid",
+      "sha256": "d5e243c41ae8f95cbc4870716f37da8af6334f0e3e35987f2572e926ac4e7b98",
+      "assertion": "Clav is outside provisional piano policy.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 2,
+          "tick": 240,
+          "channel": 0,
+          "expected_classification": "known_unsupported"
+        }
+      ]
+    },
+    {
+      "id": "07_gm1_violin",
+      "file": "fixtures/07_gm1_violin.mid",
+      "sha256": "9f964174dfd14236b7d1c745fa86ac9bfbc19d7e51c8a6a3164d2f89cee6bc72",
+      "assertion": "No implicit violin-to-piano adaptation.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 2,
+          "tick": 240,
+          "channel": 0,
+          "expected_classification": "known_unsupported"
+        }
+      ]
+    },
+    {
+      "id": "08_gm1_guitar",
+      "file": "fixtures/08_gm1_guitar.mid",
+      "sha256": "e33db8deb47b61b4bbbccdd7a692b5a1493b3037d6de382d519ec405bfe8226c",
+      "assertion": "Explicit base guitar.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 2,
+          "tick": 240,
+          "channel": 0,
+          "expected_classification": "supported"
+        }
+      ]
+    },
+    {
+      "id": "09_gm_off_clears",
+      "file": "fixtures/09_gm_off_clears.mid",
+      "sha256": "2cea092a1d7b4e3eb9861d104bfd7e63250143d985efc3a079b57ba6be5a3ab1",
+      "assertion": "Off clears namespace; later PC cannot restore it.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 2,
+          "tick": 240,
+          "channel": 0,
+          "expected_classification": "supported"
+        },
+        {
+          "track": 0,
+          "event": 6,
+          "tick": 720,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        }
+      ]
+    },
+    {
+      "id": "10_on_clears_program",
+      "file": "fixtures/10_on_clears_program.mid",
+      "sha256": "df40a91f0765cab540db9328416b37b6fcb4907b52e2407bd775026963d5193e",
+      "assertion": "New On clears evidence program; reset default is not explicit PC.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 2,
+          "tick": 240,
+          "channel": 0,
+          "expected_classification": "supported"
+        },
+        {
+          "track": 0,
+          "event": 5,
+          "tick": 600,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        }
+      ]
+    },
+    {
+      "id": "11_gm2_base",
+      "file": "fixtures/11_gm2_base.mid",
+      "sha256": "9aa6d3a74884ac4a955850ef93d9c1bd726ee659c8447a15996134f0c311b7dd",
+      "assertion": "Exact reviewed GM2 base tuple.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 4,
+          "tick": 480,
+          "channel": 0,
+          "expected_classification": "supported"
+        }
+      ]
+    },
+    {
+      "id": "12_ukulele",
+      "file": "fixtures/12_ukulele.mid",
+      "sha256": "69545b2f9affe7b2a31a798ffa7a0af09281d99bf6a5398f5a44f26971e49dce",
+      "assertion": "121/1/24 is ukulele, never inferred guitar.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 4,
+          "tick": 480,
+          "channel": 0,
+          "expected_classification": "known_unsupported"
+        }
+      ]
+    },
+    {
+      "id": "13_mandolin",
+      "file": "fixtures/13_mandolin.mid",
+      "sha256": "970b78969073ce972fa8d03f6f74729b864092b0a4599933ef6d4d40b05abd30",
+      "assertion": "121/2/25 is mandolin, never inferred guitar.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 4,
+          "tick": 480,
+          "channel": 0,
+          "expected_classification": "known_unsupported"
+        }
+      ]
+    },
+    {
+      "id": "14_unknown_variant",
+      "file": "fixtures/14_unknown_variant.mid",
+      "sha256": "138f69c7f6d6bc487928acffa330647ca3c372a57e1c75819b71881a9626a3c1",
+      "assertion": "Undefined tuple cannot inherit fallback guitar identity.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 4,
+          "tick": 480,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        }
+      ]
+    },
+    {
+      "id": "15_missing_lsb",
+      "file": "fixtures/15_missing_lsb.mid",
+      "sha256": "439e12a14b5f0148d94a190a682c9990de38478b37dd9ef4731f820531fd8b60",
+      "assertion": "Missing LSB cannot silently become zero.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 3,
+          "tick": 360,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        }
+      ]
+    },
+    {
+      "id": "16_bank_after_program",
+      "file": "fixtures/16_bank_after_program.mid",
+      "sha256": "4c5c73ffb28f203386dfd4633222fee5f7234b1c944cb7c663293e8b3a60945f",
+      "assertion": "Bank-only updates wait for subsequent Program Change.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 4,
+          "tick": 480,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        },
+        {
+          "track": 0,
+          "event": 7,
+          "tick": 840,
+          "channel": 0,
+          "expected_classification": "supported"
+        }
+      ]
+    },
+    {
+      "id": "17_pending_bank_keeps_previous",
+      "file": "fixtures/17_pending_bank_keeps_previous.mid",
+      "sha256": "a541f0eda4b42a06526a20b831a6ab3927b67696f083e2f6e6115c39c5c57d7b",
+      "assertion": "Pending ukulele bank does not rename already committed guitar.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 4,
+          "tick": 480,
+          "channel": 0,
+          "expected_classification": "supported"
+        },
+        {
+          "track": 0,
+          "event": 7,
+          "tick": 840,
+          "channel": 0,
+          "expected_classification": "supported"
+        },
+        {
+          "track": 0,
+          "event": 10,
+          "tick": 1200,
+          "channel": 0,
+          "expected_classification": "known_unsupported"
+        }
+      ]
+    },
+    {
+      "id": "18_gm1_drums_pc_piano",
+      "file": "fixtures/18_gm1_drums_pc_piano.mid",
+      "sha256": "8558d299596471a8f7204c0e0bb57f2db99205559dcec9723198a5c8834b537a",
+      "assertion": "GM1 channel10 is percussion, not piano from PC0.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 2,
+          "tick": 240,
+          "channel": 9,
+          "expected_classification": "known_unsupported"
+        }
+      ]
+    },
+    {
+      "id": "19_gm2_channel10_melodic",
+      "file": "fixtures/19_gm2_channel10_melodic.mid",
+      "sha256": "bb4c9bef43849844dee4a1946b27f9ba908d9d3f06b180d0ae4170d6baa9080f",
+      "assertion": "GM2 explicit melody on channel10 is not blanket percussion.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 4,
+          "tick": 480,
+          "channel": 9,
+          "expected_classification": "supported"
+        }
+      ]
+    },
+    {
+      "id": "20_gm2_channel11_drums",
+      "file": "fixtures/20_gm2_channel11_drums.mid",
+      "sha256": "0b4fe9796f5f0f7abf80db6f8f2151e6586418d42452fc12eff13c5bd31c7347",
+      "assertion": "Explicit supported drum route is known unsupported practice instrument.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 4,
+          "tick": 480,
+          "channel": 10,
+          "expected_classification": "known_unsupported"
+        }
+      ]
+    },
+    {
+      "id": "21_optional_other_channel_drums",
+      "file": "fixtures/21_optional_other_channel_drums.mid",
+      "sha256": "054410e181856662592e3adfe6113932a58509e6486337113d39712222a548d3",
+      "assertion": "Optional drum-channel behavior outside10/11 cannot be assumed.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 4,
+          "tick": 480,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        }
+      ]
+    },
+    {
+      "id": "22_targeted_on",
+      "file": "fixtures/22_targeted_on.mid",
+      "sha256": "995b57647baecf4d7b5ae4e23736f7ea339cf063768ff1205fe793ef0a31fbbc",
+      "assertion": "Device-targeted On has no verified receiver association.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 2,
+          "tick": 240,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        }
+      ]
+    },
+    {
+      "id": "23_split_on",
+      "file": "fixtures/23_split_on.mid",
+      "sha256": "c5d831d20a15dd90343217724b2701cd529d235f0583f0cea6e99895362842bd",
+      "assertion": "Fragments are not reassembled into admitted declarations.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 3,
+          "tick": 360,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        }
+      ]
+    },
+    {
+      "id": "24_opaque_then_reset_sticky",
+      "file": "fixtures/24_opaque_then_reset_sticky.mid",
+      "sha256": "4ced003882cb5cbaf8a83bf9ff866564d23c66ecd9f19265b3355dcd9bbac568",
+      "assertion": "Opaque boundary stays unresolved even after apparent reset.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 3,
+          "tick": 360,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        }
+      ]
+    },
+    {
+      "id": "25_port_zero_out_of_scope",
+      "file": "fixtures/25_port_zero_out_of_scope.mid",
+      "sha256": "41b1d418483bdc311a6ce68092666761ece5df00938649838e6d10daa9992034",
+      "assertion": "Explicit port zero is not the implicit route.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 3,
+          "tick": 360,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        }
+      ]
+    },
+    {
+      "id": "26_device_name_out_of_scope",
+      "file": "fixtures/26_device_name_out_of_scope.mid",
+      "sha256": "b6d2e7dd07a583cc25df32625c53385c927ecc4bd4fbb7a3aee6545ad1f029d4",
+      "assertion": "Explicit device route is recorded but not admitted in v1.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 3,
+          "tick": 360,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        }
+      ]
+    },
+    {
+      "id": "27_same_track_same_tick",
+      "file": "fixtures/27_same_track_same_tick.mid",
+      "sha256": "88cb9b008f85ad51feca8c90c4910e8561c8509430fc9f9c29791636d1390471",
+      "assertion": "Single-track source order is definite at one tick.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 4,
+          "tick": 0,
+          "channel": 0,
+          "expected_classification": "supported"
+        }
+      ]
+    },
+    {
+      "id": "28_foreign_program_attack_tie",
+      "file": "fixtures/28_foreign_program_attack_tie.mid",
+      "sha256": "7a893fdfd6640659abb3f3b001dbc4c75bfbe3668550748f132dd780b6bbcb67",
+      "assertion": "Foreign program tie taints current and future attack identity.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 2,
+          "tick": 240,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        },
+        {
+          "track": 0,
+          "event": 4,
+          "tick": 480,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        }
+      ]
+    },
+    {
+      "id": "29_foreign_reset_attack_tie",
+      "file": "fixtures/29_foreign_reset_attack_tie.mid",
+      "sha256": "05f32557745c32466c05d0fd421fad258ead3883a2337ffa22e5e8f56715d97d",
+      "assertion": "Cross-track mode tie is sticky; subsequent PC does not repair it.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 1,
+          "tick": 120,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        },
+        {
+          "track": 0,
+          "event": 4,
+          "tick": 480,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        }
+      ]
+    },
+    {
+      "id": "30_foreign_earlier_reset",
+      "file": "fixtures/30_foreign_earlier_reset.mid",
+      "sha256": "622325cc7f600cfc5e1a4a8622f237b9f0714a4ce423d48c264258fff8f54b36",
+      "assertion": "Separate reset-only track is valid when implicit route and earlier tick are clear.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 1,
+          "tick": 240,
+          "channel": 0,
+          "expected_classification": "supported"
+        }
+      ]
+    },
+    {
+      "id": "31_program_changes_per_attack",
+      "file": "fixtures/31_program_changes_per_attack.mid",
+      "sha256": "a72330d308282d9c2deb3ad0df9851c20d852c952310f16a40f0a59f2e605205",
+      "assertion": "Mixed part retains two original identities, not last-program relabeling.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 2,
+          "tick": 240,
+          "channel": 0,
+          "expected_classification": "supported"
+        },
+        {
+          "track": 0,
+          "event": 5,
+          "tick": 600,
+          "channel": 0,
+          "expected_classification": "known_unsupported"
+        }
+      ]
+    },
+    {
+      "id": "32_held_note_snapshot",
+      "file": "fixtures/32_held_note_snapshot.mid",
+      "sha256": "d7c61520542036268f41e240d7850f6ad13c504438e7a4a986497499d7b2f28a",
+      "assertion": "Later program does not change earlier attack snapshot.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 2,
+          "tick": 240,
+          "channel": 0,
+          "expected_classification": "supported"
+        },
+        {
+          "track": 0,
+          "event": 5,
+          "tick": 600,
+          "channel": 0,
+          "expected_classification": "known_unsupported"
+        }
+      ]
+    },
+    {
+      "id": "33_zero_duration_attack",
+      "file": "fixtures/33_zero_duration_attack.mid",
+      "sha256": "d8135599fe229d55fc41c977b0e382e7e9547ad2eab8efd553298ffd5a1c5c36",
+      "assertion": "Every attack counted even when absent from positive-duration notation.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 2,
+          "tick": 240,
+          "channel": 0,
+          "expected_classification": "supported"
+        }
+      ]
+    },
+    {
+      "id": "34_velocity_zero_not_attack",
+      "file": "fixtures/34_velocity_zero_not_attack.mid",
+      "sha256": "0237490c3596f5cb42c86127427de8caf48b56b07a42cd6088d3b755b3c804d0",
+      "assertion": "Velocity-zero Note On contributes no extra attack.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 2,
+          "tick": 240,
+          "channel": 0,
+          "expected_classification": "supported"
+        }
+      ]
+    },
+    {
+      "id": "35_bank_reset_epoch",
+      "file": "fixtures/35_bank_reset_epoch.mid",
+      "sha256": "849cbd5f7a40706d85b681068fe6d692ac2150c9f95b388bbbc58774f573603b",
+      "assertion": "Banks from old epoch cannot fill new explicit pair.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 4,
+          "tick": 480,
+          "channel": 0,
+          "expected_classification": "supported"
+        },
+        {
+          "track": 0,
+          "event": 8,
+          "tick": 960,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        }
+      ]
+    },
+    {
+      "id": "36_opaque_after_attack",
+      "file": "fixtures/36_opaque_after_attack.mid",
+      "sha256": "6b3b65911f1644a9ac25b8435dfaa40e3e639e6930250018f3c8cefb6a2de11d",
+      "assertion": "Earlier source-order attack remains classified; later attack unresolved.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 2,
+          "tick": 240,
+          "channel": 0,
+          "expected_classification": "supported"
+        },
+        {
+          "track": 0,
+          "event": 5,
+          "tick": 600,
+          "channel": 0,
+          "expected_classification": "unresolved"
+        }
+      ]
+    },
+    {
+      "id": "37_other_channel_tie",
+      "file": "fixtures/37_other_channel_tie.mid",
+      "sha256": "8df4c238d2fa9bfdee1fea4bb2dcabe2ee73c16ff79fca5cfd3e9cd520e9426f",
+      "assertion": "Other-channel program must not taint channel0.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 2,
+          "tick": 240,
+          "channel": 0,
+          "expected_classification": "supported"
+        }
+      ]
+    },
+    {
+      "id": "38_gm2_default_drums_not_inferred",
+      "file": "fixtures/38_gm2_default_drums_not_inferred.mid",
+      "sha256": "f4958967f55bc35edf81e921e8f8e0c996f5c00808ec9aebf868a80d83aa2351",
+      "assertion": "No particular GM2 kit from uncommitted default state.",
+      "attacks": [
+        {
+          "track": 0,
+          "event": 1,
+          "tick": 120,
+          "channel": 9,
+          "expected_classification": "unresolved"
+        }
+      ]
+    }
+  ],
+  "additional_non_smf_cases": [
+    "Legacy-compatible invalid program byte >=128: unresolved, never clamped",
+    "DTO cannot Deserialize; cannot become a runtime receipt",
+    "Tampered compact event stream invalidates binding",
+    "Budget failures leave practice and source unchanged",
+    "Notation continuations reference original attack identity",
+    "Mixed part summary preserves all per-status counts",
+    "Explicit route in metadata-only track prevents implicit-route admission",
+    "Large cross-track ties remain bounded without enumerating permutations"
+  ]
+}
