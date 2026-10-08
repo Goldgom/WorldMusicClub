@@ -76,7 +76,8 @@ export function createPartActivityView({document, parent, i18n}) {
     setText(subset, selected.machineSubset ? t('subset') : ''); setHidden(subset, !selected.machineSubset);
     setText(status, t(state)); setAttribute(row, 'data-state', state);
     setAttribute(row, 'data-part-id', safeText(selected.partId, 160));
-    setText(previous, t('previous')); setText(next, t('next'));
+    setText(previous, '‹'); setText(next, '›');
+    setAttribute(previous, 'title', t('previous')); setAttribute(next, 'title', t('next'));
     setAttribute(previous, 'aria-label', t('previous')); setAttribute(next, 'aria-label', t('next'));
     setText(counter, t('page', {page: page + 1, pages: rows.length}));
     const focused = document.activeElement;
