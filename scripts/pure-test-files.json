@@ -261,5 +261,6 @@
   "tests/independent-part-activity-geometry.test.js",
   "tests/independent-part-activity-native-sources.test.js",
   "tests/independent-part-activity-replay.test.js",
-  "tests/independent-part-activity-stage.test.js"
+  "tests/independent-part-activity-stage.test.js",
+  "tests/part-activity-browser-navigation.test.js"
 ]
