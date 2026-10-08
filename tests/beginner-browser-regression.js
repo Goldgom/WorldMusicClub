@@ -121,7 +121,8 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui,setSession
       assert.deepEqual({width:settled.width,height:settled.height},viewport,JSON.stringify(samples));
       assert.deepEqual({compact:settled.compact,guide:settled.guideCompact,reference:settled.referenceInHelp,footer:settled.footerInSettings,statusHidden:settled.statusHidden,notation:settled.notationCompact},
         {compact,guide:guideCompact,reference:guideCompact,footer:compact,statusHidden:!compact,notation:compact||settled.notationOverlay},`All responsive handlers finish before the first rendered frame: ${JSON.stringify(samples)}`);
-      assert.equal(settled.guideParent,guideCompact?'stage-heading':'play-panel panel',JSON.stringify(samples));
+      const expectedParentClasses=guideCompact?['stage-heading','has-beginner-controls']:['play-panel','panel'];
+      for(const name of expectedParentClasses)assert.ok(settled.guideParent.split(/\s+/).includes(name),JSON.stringify(samples));
       assert.equal(samples.filter(sample=>sample.phase==='media-change').length,Number(before.compact!==compact),`Observe the actual breakpoint notification: ${JSON.stringify(samples)}`);
       return samples;
     } finally {
@@ -145,7 +146,7 @@ export function registerBeginnerBrowserRegressions({test, getPage, ui,setSession
     for(const control of [...layout.controls,...layout.panControls])assert.ok(control.width>0&&control.height>0&&control.x>=0&&control.y>=0&&control.right<=layout.viewport.width+1&&control.bottom<=layout.viewport.height+1&&control.reachable,`Compact control remains visible and clickable: ${JSON.stringify(control)}`);
     for(const control of layout.panControls)assert.ok(control.width>=40&&control.height>=34,`Compact panning retains its full arrow target: ${JSON.stringify(control)}`);
     if(layout.notice)assert.ok(layout.controls.find(control=>control.selector==='#notice-dismiss').height>=34,'Compact notices keep their existing dismissal target');
-    assert.equal(layout.stagePanel,'stage-heading');assert.match(layout.range,/C2.*A♯5/);
+    for(const name of ['stage-heading','has-beginner-controls'])assert.ok(layout.stagePanel.split(/\s+/).includes(name),JSON.stringify(layout));assert.match(layout.range,/C2.*A♯5/);
   }
 
   test('real initial compact guide stays on stage through tall and short resizes without losing held input or playfield space',{timeout:60_000},async()=>{
