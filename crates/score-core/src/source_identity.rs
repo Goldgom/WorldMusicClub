@@ -13,13 +13,38 @@ pub const PRODUCT_POLICY_ID: &str = "wmc-provisional-piano-guitar-v1";
 pub const MAX_DISCLOSURE_BYTES: usize = 32 * 1024 * 1024;
 
 /// Informational, source-bound output; never an accepted input or capability.
+///
+/// The exported disclosure type supports serialization. This positive example
+/// also binds both public types used by the negative examples below, so an
+/// unresolved type path cannot masquerade as a protected API boundary.
+/// ```
+/// use score_core::{source_identity::SourceIdentityDisclosure, Score};
+///
+/// fn serialize(disclosure: &SourceIdentityDisclosure) -> serde_json::Result<String> {
+///     serde_json::to_string(disclosure)
+/// }
+/// let _: fn(&SourceIdentityDisclosure) -> serde_json::Result<String> = serialize;
+/// let _: Option<Score> = None;
+/// ```
+///
+/// A serialized disclosure cannot be reintroduced as trusted input:
 /// ```compile_fail
 /// let _: score_core::source_identity::SourceIdentityDisclosure =
 ///     serde_json::from_str("{}").unwrap();
 /// ```
+///
+/// A disclosure is not a canonical score:
 /// ```compile_fail
-/// let identity: score_core::source_identity::SourceIdentityDisclosure = todo!();
-/// let _: score_core::Score = identity;
+/// fn as_score(identity: score_core::source_identity::SourceIdentityDisclosure) {
+///     let _: score_core::Score = identity;
+/// }
+/// ```
+///
+/// Its source-bound fields cannot be rewritten by callers:
+/// ```compile_fail
+/// fn rewrite(identity: &mut score_core::source_identity::SourceIdentityDisclosure) {
+///     identity.original_midi_sha256 = String::new();
+/// }
 /// ```
 #[derive(Debug, Serialize)]
 pub struct SourceIdentityDisclosure {

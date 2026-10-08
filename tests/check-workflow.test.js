@@ -67,6 +67,64 @@ test('both Rust platforms remain mandatory while a failed peer cannot cancel the
   assert.equal(step(workflow, 'rust', "python -m unittest discover -s tests -p 'test_*.py'").if, undefined);
 });
 
+function validateRustTestGate(document) {
+  const rust = document.jobs.rust;
+  assert.deepEqual(rust.strategy.matrix.os, ['ubuntu-latest', 'windows-latest']);
+  assert.equal(rust['runs-on'], '${{ matrix.os }}');
+  assert.equal(rust.if, undefined);
+  assert.equal(rust['continue-on-error'], undefined);
+  const commands = [
+    'cargo fmt --all --check',
+    'cargo test --workspace --all-targets --locked',
+    'cargo test --workspace --doc --locked',
+    'cargo clippy --workspace --all-targets --locked -- -D warnings',
+    'cargo build -p practice-server --locked',
+  ];
+  let previous = -1;
+  for (const command of commands) {
+    const rows = rust.steps.filter(row => row.run === command);
+    assert.equal(rows.length, 1, `${command} must remain a distinct mandatory step`);
+    const row = rows[0];
+    assert.equal(row.if, undefined);
+    assert.equal(row['continue-on-error'], undefined);
+    assert.ok(rust.steps.indexOf(row) > previous, command);
+    previous = rust.steps.indexOf(row);
+  }
+}
+
+test('Verify explicitly runs workspace doctests on both Rust platforms without replacing existing gates', () => {
+  validateRustTestGate(workflow);
+  for (const command of [
+    'cargo fmt --all --check',
+    'cargo test --workspace --all-targets --locked',
+    'cargo test --workspace --doc --locked',
+    'cargo clippy --workspace --all-targets --locked -- -D warnings',
+    'cargo build -p practice-server --locked',
+  ]) {
+    for (const mutate of [
+      doc => { doc.jobs.rust.steps = doc.jobs.rust.steps.filter(row => row.run !== command); },
+      doc => { step(doc, 'rust', command).if = 'false'; },
+      doc => { step(doc, 'rust', command)['continue-on-error'] = true; },
+      doc => { step(doc, 'rust', command).run += ' || true'; },
+    ]) {
+      const changed = structuredClone(workflow);
+      mutate(changed);
+      assert.throws(() => validateRustTestGate(changed), command);
+    }
+  }
+  for (const mutate of [
+    doc => { doc.jobs.rust.strategy.matrix.os = ['ubuntu-latest']; },
+    doc => { doc.jobs.rust['runs-on'] = 'ubuntu-latest'; },
+    doc => { step(doc, 'rust', 'cargo test --workspace --doc --locked').run = 'cargo test --workspace --lib --locked'; },
+    doc => { step(doc, 'rust', 'cargo test --workspace --doc --locked').run = 'cargo test -p score-core --doc --locked'; },
+    doc => { step(doc, 'rust', 'cargo test --workspace --doc --locked').run = 'cargo test --workspace --doc'; },
+  ]) {
+    const changed = structuredClone(workflow);
+    mutate(changed);
+    assert.throws(() => validateRustTestGate(changed));
+  }
+});
+
 function validateParallelGate(document) {
   assert.deepEqual(document.on, {push: {branches: ['main', 'validation/**']}, pull_request: null, workflow_dispatch: null});
   assert.deepEqual(document.permissions, {contents: 'read'});
