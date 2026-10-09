@@ -434,7 +434,10 @@ fn assert_eligibility_matches(
         disclosure.identity_table_revision
     );
     assert_eq!(result.product_policy_id(), disclosure.product_policy_id);
-    assert_eq!(result.eligibility_policy_id(), PRACTICE_ELIGIBILITY_POLICY_ID);
+    assert_eq!(
+        result.eligibility_policy_id(),
+        PRACTICE_ELIGIBILITY_POLICY_ID
+    );
     assert_eq!(result.source_profile(), disclosure.source_profile);
     assert_eq!(result.source_binding(), &disclosure.source_binding);
     assert_eq!(
@@ -483,7 +486,10 @@ fn eligibility_excludes_only_known_unsupported_attacks_in_a_mixed_part() {
     let rendition = rendition_snapshot(&source);
     let disclosure = describe_basic(&source).unwrap();
     let result = assert_eligibility_matches(&source, &disclosure);
-    assert_eq!(disclosure.parts[0].classification, Classification::Unresolved);
+    assert_eq!(
+        disclosure.parts[0].classification,
+        Classification::Unresolved
+    );
     assert_eq!(result.parts().len(), 1);
     let part = &result.parts()[0];
     assert_eq!(part.attack_count(), 3);
@@ -650,7 +656,10 @@ fn eligibility_is_complete_at_the_admitted_event_bound() {
         events.push((0, vec![144, 60, 64]));
     }
     let source = convert(&[events]);
-    assert_eq!(source.coverage.source_events, crate::midi_events::MAX_EVENTS);
+    assert_eq!(
+        source.coverage.source_events,
+        crate::midi_events::MAX_EVENTS
+    );
     let result = analyze_basic_practice(&source).unwrap();
     assert_eq!(result.complete_attack_count(), count);
     assert_eq!(result.known_unsupported_source_attack_ids().len(), count);

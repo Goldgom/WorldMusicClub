@@ -1,0 +1,36 @@
+name: Original Rust golden generation (non-acceptance)
+on:
+  push:
+    branches: ['diagnostic/original-golden-generation']
+  workflow_dispatch:
+permissions:
+  contents: read
+# Original public fixtures only. No secrets, auto-commit, release or main promotion.
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: '1.99.0'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - name: Test collector safety contracts
+        run: python -m unittest discover -s tests -p test_original_golden_generation.py
+      - name: Sequential genuine Rust producers with source and output hashes
+        env:
+          GOLDEN_OUTPUT: ${{ runner.temp }}/original-golden-candidates
+        run: python scripts/regenerate-original-goldens.py "$GOLDEN_OUTPUT" "$GITHUB_SHA" "$(git rev-parse 'HEAD^{tree}')"
+      - name: Retain only bounded fixture candidates and provenance after successful generation
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: original-golden-candidates-${{ github.sha }}
+          path: ${{ runner.temp }}/original-golden-candidates/
+          if-no-files-found: error
+          retention-days: 7
