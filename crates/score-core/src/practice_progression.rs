@@ -371,6 +371,9 @@ fn generate_with_budget(
             !ids.is_empty()
                 && !groups.cross_scope.contains(atom)
                 && !ids.iter().any(|id| source.keyboard_excluded.contains(id))
+                && !ids
+                    .iter()
+                    .any(|id| source.original_instrument_excluded.contains(id))
         })
         .map(|(atom, _)| atom)
         .collect();

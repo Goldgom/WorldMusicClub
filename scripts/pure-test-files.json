@@ -266,5 +266,18 @@
   "tests/complete-practice-muted-reset.test.js",
   "tests/part-activity-labels.test.js",
   "tests/part-activity-lifecycle.test.js",
-  "tests/android-bridge.test.js"
+  "tests/android-bridge.test.js",
+  "tests/source-identity-loader.test.js",
+  "tests/source-identity-details-view.test.js",
+  "tests/frontend-source-identity.test.js",
+  "tests/source-identity-proof.test.js",
+  "tests/source-identity-backend-retention.test.js",
+  "tests/canonical-action-timing.test.js",
+  "tests/basic-human-admission-fixtures.test.js",
+  "tests/basic-practice-admission.test.js",
+  "tests/source-human-admission-proof.test.js",
+  "tests/frontend-basic-human-admission.test.js",
+  "tests/engraving-systems.test.js",
+  "tests/notation-row-window.test.js",
+  "tests/complete-score-reader.test.js"
 ]

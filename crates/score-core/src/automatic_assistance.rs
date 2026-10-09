@@ -161,6 +161,23 @@ pub fn original(
 ) -> Result<CheckedPracticeAssistance, PracticeAssistanceError> {
     build(source, selection, AssistanceMode::Original, None, None)
 }
+/// Unassisted Basic practice preserves the existing selected-part semantics:
+/// every attack in those parts is Human, and physical targets are formed only
+/// inside that Human scope. Unselected accompaniment cannot enlarge its atoms.
+/// This is not an assistance plan-validation path; explicitly chosen plans keep
+/// the complete-source cross-scope rules in `original`, `create` and `validate`.
+pub fn original_practice(
+    source: &PracticeSource,
+    selection: &AssistanceSelection,
+) -> Result<CheckedPracticeAssistance, PracticeAssistanceError> {
+    if source.receipt().source_profile != crate::basic_keys::PROFILE {
+        return Err(PracticeAssistanceError::new(
+            "practice_original_profile",
+            "Selected-scope Original admission requires a trusted Basic source",
+        ));
+    }
+    build_with_scope(source, selection, AssistanceMode::Original, None, None, true)
+}
 pub fn create(
     source: &PracticeSource,
     selection: &AssistanceSelection,
@@ -240,6 +257,14 @@ pub(crate) fn groups(
     selection: &AssistanceSelection,
     allow_empty: bool,
 ) -> Result<(AssistanceSelection, Groups), PracticeAssistanceError> {
+    groups_with_scope(source, selection, allow_empty, false)
+}
+fn groups_with_scope(
+    source: &PracticeSource,
+    selection: &AssistanceSelection,
+    allow_empty: bool,
+    selected_scope_only: bool,
+) -> Result<(AssistanceSelection, Groups), PracticeAssistanceError> {
     if (!allow_empty && selection.selected_part_ids.is_empty())
         || selection.selected_part_ids.len() > 128
     {
@@ -277,8 +302,18 @@ pub(crate) fn groups(
     };
     let selected = plan_targets(&timeline, &selection.profile)
         .map_err(|e| PracticeAssistanceError::new("assistance_target_plan", e))?;
-    let complete = plan_targets(&source.timeline, &selection.profile)
-        .map_err(|e| PracticeAssistanceError::new("assistance_target_plan", e))?;
+    // Only a trusted-source unassisted request can choose the narrower scope.
+    // Every selected source ID remains present, including non-leaders of
+    // coincident physical groups; no notes are filtered by eligibility.
+    let complete = if selected_scope_only {
+        None
+    } else {
+        Some(
+            plan_targets(&source.timeline, &selection.profile)
+                .map_err(|e| PracticeAssistanceError::new("assistance_target_plan", e))?,
+        )
+    };
+    let grouping = complete.as_ref().unwrap_or(&selected);
     let indices: HashMap<_, _> = source
         .units
         .iter()
@@ -293,7 +328,7 @@ pub(crate) fn groups(
         }
         i
     }
-    for group in &complete.groups {
+    for group in &grouping.groups {
         let first = indices[group.source_note_ids[0].as_str()];
         for id in &group.source_note_ids {
             let (a, b) = (
@@ -374,6 +409,16 @@ fn automatic_selection(
         .filter(|(_, ids)| ids.iter().any(|id| source.keyboard_excluded.contains(id)))
         .map(|(atom, _)| (atom, "percussion_selector"))
         .collect();
+    for (atom, ids) in groups.atoms.iter().enumerate() {
+        if ids
+            .iter()
+            .any(|id| source.original_instrument_excluded.contains(id))
+        {
+            // An explicitly chosen automatic plan may move the entire
+            // indivisible atom to Machine, never only its unsupported member.
+            rejected.insert(atom, "original_instrument_unsupported");
+        }
+    }
     for atom in &groups.cross_scope {
         rejected.insert(*atom, "cross_scope_physical_group");
     }
@@ -468,7 +513,22 @@ fn build(
     settings: Option<&AutomaticSettings>,
     explicit: Option<&[String]>,
 ) -> Result<CheckedPracticeAssistance, PracticeAssistanceError> {
-    let (selection, groups) = groups(source, selection, mode == AssistanceMode::Original)?;
+    build_with_scope(source, selection, mode, settings, explicit, false)
+}
+fn build_with_scope(
+    source: &PracticeSource,
+    selection: &AssistanceSelection,
+    mode: AssistanceMode,
+    settings: Option<&AutomaticSettings>,
+    explicit: Option<&[String]>,
+    selected_scope_only: bool,
+) -> Result<CheckedPracticeAssistance, PracticeAssistanceError> {
+    let (selection, groups) = groups_with_scope(
+        source,
+        selection,
+        mode == AssistanceMode::Original,
+        selected_scope_only,
+    )?;
     let selected_parts: HashSet<_> = selection
         .selected_part_ids
         .iter()
@@ -552,6 +612,18 @@ fn build(
             (human, reasons)
         }
     };
+    let mut unsupported_human: Vec<_> = human
+        .intersection(&source.original_instrument_excluded)
+        .cloned()
+        .collect();
+    if !unsupported_human.is_empty() {
+        unsupported_human.sort();
+        return Err(PracticeAssistanceError {
+            code: "practice_original_instrument_unsupported".into(),
+            message: "Known unsupported original instruments cannot be assigned to Human practice; choose different parts or explicitly select assistance that assigns the complete affected atoms to Machine".into(),
+            source_ids: unsupported_human,
+        });
+    }
     exclusion_reasons.sort_by(|a, b| a.source_ids.cmp(&b.source_ids));
     let mut human_occurrences = HashSet::new();
     for group in &groups.selected.groups {
@@ -627,7 +699,15 @@ fn build(
     };
     plan.selection_digest = hash(&plan)?;
     let mut diagnostics = source.diagnostics.clone();
-    diagnostics.push(Diagnostic::warning("assistance_scope_limits", "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.", None));
+    if selected_scope_only {
+        diagnostics.push(Diagnostic::warning(
+            "practice_original_scope",
+            "Unassisted Original practice retains every attack in the selected Human parts and groups physical targets within that scope. Unselected accompaniment stays Machine. Known unsupported original instruments assigned Human are rejected; physical playability is checked independently.",
+            None,
+        ));
+    } else {
+        diagnostics.push(Diagnostic::warning("assistance_scope_limits", "Automatic keyboard v1 is a deterministic subset using exact onset spacing, chord size, held-key count and total held pitch span. It is not a skill grade, musical optimum, hand/finger assignment, independent-release certification or guitar physical feasibility proof. Original mode retains every selected target even if infeasible, provided the selection does not split a cross-scope physical group.", None));
+    }
     let result = CheckedPracticeAssistance {
         all_selected_human: !selected_ids.is_empty()
             && plan.human_source_ids.len() == selected_ids.len(),

@@ -62,7 +62,7 @@ test('catalog config and before snapshot remain bounded process-owner evidence r
 
 test('catalog application screenshots capture exactly the actual client pixels without changing picker captures',()=>{
   const capture=host.slice(host.indexOf('function Capture-Handle('),host.indexOf('function Find-Control('));
-  assert.match(capture,/function Capture-Handle\(\[IntPtr\]\$Handle,\[string\]\$Name,\[switch\]\$ClientOnly,\[string\]\$GeometryFile\)/);
+  assert.match(capture,/function Capture-Handle\(\[IntPtr\]\$Handle,\[string\]\$Name,\[switch\]\$ClientOnly,\[string\]\$GeometryFile,\[switch\]\$ObserveActionTiming\)/);
   assert.match(capture,/\$printFlags=2/);
   assert.match(capture,/if\(\$ClientOnly\) \{\s*if\(\$Scenario -cnotin @\('library-catalog','complete-practice','canonical-practice'\)\)\{throw/);
   assert.match(capture,/GetClientRect\(\$Handle,\[ref\]\$rectangle\)/);
@@ -93,8 +93,8 @@ test('native source allowlist import cannot accidentally invoke the verifier CLI
   assert.equal(result.status,0,result.stderr);
   assert.equal(result.stderr,'');
   const files=JSON.parse(result.stdout);
-  assert.ok(Array.isArray(files));assert.equal(files.length,57);assert.equal(new Set(files).size,57);
-  assert.match(host,/\$sourceNames\.Count -ne 57 -or @\(\$sourceNames \| Sort-Object -Unique\)\.Count -ne 57\)\{throw 'Catalog source allowlist must contain exactly 57 distinct modules'/);
+  assert.ok(Array.isArray(files));assert.equal(files.length,58);assert.equal(new Set(files).size,58);
+  assert.match(host,/\$sourceNames\.Count -ne 58 -or @\(\$sourceNames \| Sort-Object -Unique\)\.Count -ne 58\)\{throw 'Catalog source allowlist must contain exactly 58 distinct modules'/);
   assert.ok(files.includes('scripts/verify-library-catalog-acceptance.mjs'));
   assert.ok(files.includes('scripts/windows-desktop-acceptance.ps1'));
 });

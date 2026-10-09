@@ -251,9 +251,9 @@ test('original overlapping piano raw import separates a complete save from range
   assert.match(app.$('preview-gate').textContent,/Selected notes outside this instrument range: 1/);
   assert.equal(app.$('preview-range-repair').textContent,'Use 88 keys');
   const i18n=getAppI18n(app.document);i18n.setLocale('zh-CN');assert.equal(app.$('preview-range-repair').textContent,'使用 88 键');assert.match(app.$('notice-message').textContent,/源文件已保存.*练习是否就绪/);i18n.setLocale('en');
-  const before=app.requests.filter(row=>row.path==='/api/practice-targets').length;
+  const before=app.requests.filter(row=>row.path==='/api/library/practice-admission').length;
   await app.click('preview-range-repair');await app.until(()=>!app.$('start-performance').disabled);
-  assert.ok(app.requests.filter(row=>row.path==='/api/practice-targets').length>before,'Range repair rechecks targets; it never overrides admission');
+  assert.ok(app.requests.filter(row=>row.path==='/api/library/practice-admission').length>before,'Range repair rechecks targets; it never overrides admission');
   assert.equal(app.$('key-count').value,'88');assert.equal(app.$('preview-range-repair').hidden,true);assert.equal(app.document.body.dataset.screen,'library');
   await app.click('start-performance');await app.until(()=>app.$('clean-song-stage').dataset.rendererState==='playing');await app.click('play-button');
   const take=await app.exported('export-takes');assert.deepEqual(take.passes[0].timeline.notes.map(note=>note.midi),[50,50,25,95]);assert.equal(take.passes[0].inputs.length,0);assert.equal(take.passes[0].interpretation.policy_id,'wmh-basic-key-rendition-fifo-v1');

@@ -125,3 +125,16 @@ test('a resized viewport invalidates follow geometry even when minimum scale and
   fit.measure();assert.equal(plans.length,3,'Stable geometry does not repeatedly read current-note bounds');
  }finally{fit.destroy();}
 });
+
+test('two-row mode restores full-size SVG paint after fitting and remains stable on Android dimensions',()=>{
+ const {document,window}=parseHTML('<html><body><div id="viewport"><div id="surface"><svg width="1000" height="800"><ellipse class="note-head"/></svg></div></div></body></html>');
+ const viewport=document.getElementById('viewport'),surface=document.getElementById('surface'),svg=surface.firstElementChild;
+ const scale=()=>parseFloat(svg.style.width)/1000||1;
+ viewport.getBoundingClientRect=()=>({width:1000,height:300});surface.getBoundingClientRect=()=>({width:1000,height:800*scale()});svg.getBoundingClientRect=()=>({width:1000*scale(),height:800*scale()});svg.firstElementChild.getBoundingClientRect=()=>({height:10*scale()});window.getComputedStyle=()=>({});
+ const fit=setupNotationFit({viewport,getSurface:()=>surface,window});try{
+  assert.equal(fit.measure().scale,.75);assert.equal(svg.style.width,'750px');
+  viewport.dataset.notationRows='2';assert.equal(fit.measure().status,'rows');assert.equal(svg.style.width,'1000px');assert.equal(svg.style.height,'800px');assert.equal(svg.style.zoom,undefined);
+  assert.equal(fit.measure().scale,1);assert.equal(svg.style.width,'1000px');
+  delete viewport.dataset.notationRows;assert.equal(fit.measure().scale,.75);assert.equal(svg.style.height,'600px');
+ }finally{fit.destroy();}assert.equal(svg.style.width,'');assert.equal(svg.style.height,'');
+});

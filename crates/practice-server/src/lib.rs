@@ -5,6 +5,7 @@ pub mod build_identity;
 mod clean_draft_api;
 pub mod pitch_mod_api;
 mod song_api;
+mod source_identity_api;
 mod source_instrument_api;
 pub use song_api::{
     api_response, is_song_api_route, request_limit_response, song_api_error, ApiResponse,
@@ -67,7 +68,10 @@ fn json_input_error(context: &str, error: serde_json::Error) -> String {
 }
 
 pub fn content_type_allowed(path: &str, content_type: &str) -> bool {
-    if path.starts_with("/api/pitch-mod/") || path.starts_with("/api/source-instrument-details/") {
+    if path.starts_with("/api/pitch-mod/")
+        || path.starts_with("/api/source-instrument-details/")
+        || path.starts_with("/api/source-identity/")
+    {
         return content_type.split(';').next().unwrap_or("").trim() == "application/json";
     }
     if path == "/api/midi/events" {

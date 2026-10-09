@@ -1,3 +1,4 @@
+import {sourceEligibilitySummary} from './source-practice-eligibility.js';
 import {pitchMidi} from './music.js';
 import {loadCleanPerformance} from './clean-performance-player.js';
 import {BASIC_KEY_RUNTIME_PROFILE,decodeBasicKeyRuntime,validateBasicKeyRendition} from './basic-key-rendition.js';
@@ -32,10 +33,11 @@ export function basicKeysParts(song) {
   if(!isBasicKeysSong(song))return [];
   if(basicPartInventories.has(song))return basicPartInventories.get(song);
   const tracks=new Map(song.score.performance.tracks.map(track=>[track.id,track]));
+  const eligibility=sourceEligibilitySummary(song.runtime,song.score.performance.parts),eligibleParts=new Map((eligibility?.parts||[]).map(part=>[part.part_id,part]));
   const targets=new Map();for(const note of song.compilation?.timeline.notes||[])targets.set(note.part_id,(targets.get(note.part_id)||0)+1);
   const result=song.score.performance.parts.map(part=>{
-    const inventory=song.runtime.parts.find(item=>item.id===part.id);
-    return {...part,...inventory,name:song.notation.parts.find(item=>item.id===part.id)?.name||part.id,track_name:tracks.get(part.track_id)?.name||part.track_id,practice_targets:targets.get(part.id)||0,practice_available:hasBasicKeyRendition(song)?(targets.get(part.id)||0)>0:Boolean(song.compilation)&&!inventory.percussion&&inventory.positive>0};
+    const inventory=song.runtime.parts.find(item=>item.id===part.id),sourceEligibility=eligibleParts.get(part.id)||null;
+    return {...part,...inventory,source_eligibility:sourceEligibility,original_practice_available:Boolean(sourceEligibility&&sourceEligibility.attack_count>0&&sourceEligibility.known_unsupported_count===0&&(targets.get(part.id)||0)>0),name:song.notation.parts.find(item=>item.id===part.id)?.name||part.id,track_name:tracks.get(part.track_id)?.name||part.track_id,practice_targets:targets.get(part.id)||0,practice_available:hasBasicKeyRendition(song)?(targets.get(part.id)||0)>0:Boolean(song.compilation)&&!inventory.percussion&&inventory.positive>0};
   });
   basicPartInventories.set(song,freeze(result));return result;
 }
@@ -56,6 +58,10 @@ export function preparePitchModSong(song,response){
   if(!runtime||runtime.profile!==song.runtime.profile||runtime.source_sha256!==song.runtime.source_sha256)fail('The shifted runtime belongs to another native source.');
   if(isBasicKeysSong(song)){
     const previous={...song.runtime},next={...runtime};delete previous.compilation;delete next.compilation;
+    // Byte-bound fallback may omit this optional summary from either response.
+    // Keep the original view's metadata; only mandatory receipts bind policy.
+    delete previous.source_eligibility;delete next.source_eligibility;
+    if(Object.hasOwn(song.runtime,'source_eligibility'))runtime.source_eligibility=structuredClone(song.runtime.source_eligibility);else delete runtime.source_eligibility;
     // Range is descriptive, source evidence and coverage must remain exact.
     previous.parts=previous.parts.map(({range,...part})=>part);next.parts=next.parts.map(({range,...part})=>part);
     if(stable(previous)!==stable(next))fail('A pitch view changed the Basic FIFO interpretation or source evidence.');

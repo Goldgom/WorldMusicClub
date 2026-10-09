@@ -18,10 +18,10 @@ const rootDefault=fileURLToPath(new URL('../',import.meta.url)),hash=bytes=>crea
 const parse=bytes=>JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes).replace(/^\uFEFF/,''));
 export const NATIVE_PITCH_MOD_CLAIMS=Object.freeze({native_window:true,canonical_projection:true,trusted_keyboard_mapping:true,literal_d4_keyboard:true,machine_d4_audio_ledger_pcm:true,check_does_not_play:true,saved_mod_process_restart:true,original_source_export:true,physical_audio:false,physical_midi:false,basic_native_runtime:false,vsq_native_runtime:false,full_acceptance:false,release_ready:false});
 export const PITCH_MOD_SOURCE_FILES=Object.freeze([...new Set([...CANONICAL_PRACTICE_SOURCE_FILES,
- 'crates/score-core/src/pitch_projection.rs','crates/score-core/src/pitch_projection/tests.rs','crates/score-core/src/practice_source.rs',
+ 'crates/score-core/src/pitch_projection.rs','crates/score-core/src/pitch_projection/tests.rs','crates/score-core/src/source_identity.rs','crates/score-core/src/source_identity/eligibility.rs','crates/score-core/src/source_identity/tests.rs','crates/score-core/src/practice_source.rs',
  'crates/practice-server/src/pitch_mod_api.rs','crates/practice-server/tests/pitch_mod_api.rs',
  'crates/desktop-shell/src/native_pitch_mod.rs','crates/desktop-shell/tests/native_pitch_mod.rs','crates/desktop-shell/tests/support/pitch_mod_fixture.rs',
- 'web/pitch-mod.js','web/pitch-mod-view.js','web/pitch-mod-context.js','web/app-assistance.js',
+ 'web/pitch-mod.js','web/pitch-mod-view.js','web/pitch-mod-context.js','web/basic-practice-admission.js','web/source-practice-eligibility.js','web/app-assistance.js',
  '.github/workflows/native-pitch-mod.yml','scripts/native-pitch-mod-fixtures.mjs','scripts/native-pitch-mod-input.cs',
  'scripts/native-pitch-mod-renderer.js','scripts/verify-native-pitch-mod-evidence.mjs','scripts/native-pitch-mod-contract.ps1',
  'tests/pitch-mod-browser-proof.js','tests/fixtures/pitch-mod-original-c4.json','tests/native-pitch-mod-evidence.test.js',

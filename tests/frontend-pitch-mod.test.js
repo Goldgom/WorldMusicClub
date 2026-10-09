@@ -1,3 +1,4 @@
+import {withMockBasicEligibility} from './basic-human-admission-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -5,7 +6,7 @@ import {nativeScoreServer,nativeStorageApp,nativeResponse,deferred} from './nati
 import {preparePitchModView,pitchViewContext,originalPitchContext,PitchModStore,PITCH_MOD_STORAGE_PREFIX} from '../web/pitch-mod.js';
 import {buildCanonicalAudioPlan} from '../web/canonical-audio-plan.js';
 
-const vectors=JSON.parse(readFileSync(new URL('./fixtures/pitch-mod-handler-vectors.json',import.meta.url))).vectors;
+const vectors=withMockBasicEligibility(JSON.parse(readFileSync(new URL('./fixtures/pitch-mod-handler-vectors.json',import.meta.url)))).vectors;
 const canonical=vectors.canonical_api;
 const original=()=>({score:structuredClone(canonical.original.score),compiled:structuredClone(canonical.zero.compilation),cleanSong:null});
 

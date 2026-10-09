@@ -1,3 +1,4 @@
+import {mockBasicEligibilityReceipt,mockUnresolvedBasicSummary} from './basic-human-admission-fixtures.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -26,6 +27,7 @@ function extremeRangeFixture(){
   descriptor.score_json=JSON.stringify(score);
   metadata.score={...metadata.score,sha256:digest(descriptor.score_json),bytes:Buffer.byteLength(descriptor.score_json)};
   descriptor.metadata_json=JSON.stringify(metadata);descriptor.content_sha256=digest(descriptor.metadata_json+descriptor.score_json);
+  descriptor.runtime.source_eligibility=mockUnresolvedBasicSummary(descriptor.runtime,mockBasicEligibilityReceipt(descriptor.score_json));
   return opened;
 }
 async function setup(){
@@ -85,7 +87,10 @@ for(const [partIndex,midi]of [[1,16],[2,109]])test(`lobby MIDI ${midi}: 61 to 88
     const take=await app.exported('export-takes');assert.equal(take.score_id,score.id);assert.equal(take.practice_part,selected);assert.deepEqual(take.passes[0].timeline.notes.map(note=>[note.id,note.midi]),[[score.parts[partIndex].notes[0].id,midi]]);assert.deepEqual(take.passes[0].inputs,[]);
     assert.match(app.$('song-complete-range-text').textContent,/5 eligible targets.*0 targets outside/);assert.equal(app.$('clean-song-target').value,selected);
     const expected=descriptor.runtime.compilation.timeline.notes.map(([id,part_id,midi])=>({id,part_id,midi}));
-    for(const request of app.requests.filter(request=>request.path==='/api/practice-targets'&&request.body.timeline.notes.some(note=>note.id.startsWith('midi-'))))for(const note of request.body.timeline.notes)assert.deepEqual({id:note.id,part_id:note.part_id,midi:note.midi},expected.find(item=>item.id===note.id));
+    const admissions=app.requests.filter(request=>request.path==='/api/library/practice-admission');assert.ok(admissions.length>0,'Basic range repair rechecks native original-source eligibility');
+    for(const request of admissions){assert.equal(request.body.source.content_sha256,descriptor.content_sha256);assert.deepEqual(request.body.pitch_mod,{format:'wmc-pitch-mod',version:1,semitones:0});assert.equal('timeline' in request.body,false);}
+    const rangeChecks=app.requests.filter(request=>request.path==='/api/instrument-check'&&request.body.timeline.notes.some(note=>note.id.startsWith('midi-')));assert.ok(rangeChecks.length>0);
+    for(const request of rangeChecks)for(const note of request.body.timeline.notes)assert.deepEqual({id:note.id,part_id:note.part_id,midi:note.midi},expected.find(item=>item.id===note.id));
     assert.equal(descriptor.score_json,source);assert.equal(app.requests.some(request=>/transpose|adapt|library\/save/.test(request.path)),false);
   }finally{await app.close();}
 });

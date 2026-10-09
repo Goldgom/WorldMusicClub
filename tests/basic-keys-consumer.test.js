@@ -1,3 +1,4 @@
+import {withMockBasicEligibility} from './basic-human-admission-fixtures.js';
 import {basicKeyNotationRequest,basicKeyNotationPage} from '../web/basic-key-notation.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,7 +15,7 @@ import {nativeScoreServer,nativeStorageApp,nativeResponse} from './native-storag
 import {createBulkImportTransport} from '../web/bulk-import.js';
 import {importFile,importReport,importItem} from './bulk-import-fixtures.js';
 import {fakeAudio} from './clean-song-fixtures.js';
-const opened=()=>JSON.parse(readFileSync(new URL('./fixtures/basic-keys-native-open.json',import.meta.url),'utf8'));
+const opened=()=>withMockBasicEligibility(JSON.parse(readFileSync(new URL('./fixtures/basic-keys-native-open.json',import.meta.url),'utf8')));
 function source(value=opened()){const descriptor=value.clean_package,score=JSON.parse(descriptor.score_json).notation,key=`native:song-${descriptor.content_sha256}`;return{value,descriptor,score,key};}
 function admitted(){const {descriptor,score,key}=source();return prepareCleanSong(key,descriptor,score);}
 async function nativeFixture(openValue){
@@ -51,21 +52,21 @@ test('basic-key saved and duplicate rows are recognized without claiming automat
   for(const status of ['saved','duplicate']){let complete=summary;const transport=createBulkImportTransport({origin:'https://wmh.localhost',fetcher:async()=>nativeResponse(importReport(file,{mode:'commit',items:[importItem({status,playable:false,entry:{key:entry.key},clean_package:complete})]}))});assert.equal((await transport.commit(file)).items[0].playable,false);complete={...summary,coverage:{...summary.coverage,represented_events:0}};await assert.rejects(transport.commit(file),{code:'pack_invalid_response'});}
 });
 
-test('ordinary app shows every key part and exact coverage, then grades only selected human targets without machine audio',async()=>{
+test('legacy incomplete Basic runtime retains inspection but cannot authorize a Human take',async()=>{
   const {server,storageKey}=await nativeFixture(),app=await nativeStorageApp(server);
   try{
-    await app.until(()=>app.savedButton(storageKey)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(storageKey).click();await app.until(()=>app.$('song-lobby').dataset.previewStatus==='ready'&&!app.$('start-practice').disabled);
+    await app.until(()=>app.savedButton(storageKey)&&!app.$('start-listen').disabled);await app.click('home-single-player');app.savedButton(storageKey).click();
+    await app.until(()=>server.requests.some(request=>request.path==='/api/library/practice-admission')&&app.$('song-lobby').dataset.previewStatus!=='loading');
     const inventory=basicKeysParts(admitted()),percussion=inventory.find(part=>part.percussion);
+    assert.equal(app.$('start-practice').disabled,true,'Two legacy projected notes cannot authorize five original source attacks');
     assert.equal(app.$('start-listen').disabled,true);assert.equal(app.$('preview-part').children.length,inventory.length);assert.equal(app.$('preview-part').querySelector(`option[value="${percussion.id}"]`).disabled,true);assert.match(app.$('clean-song-preview-status').textContent,/5 attacks.*3 positive determined.*1 instantaneous.*1 unresolved/);assert.match(app.$('clean-song-rendition').textContent,/120 BPM/);assert.equal(app.$('clean-song-tracks').children.length,4);
+    assert.equal(app.$('export-takes').disabled,true);assert.equal(app.audioNodes.some(node=>node.kind==='audio-worklet'||node.kind==='oscillator'),false);
     getAppI18n(app.document).setLocale('zh-CN');assert.match(app.$('clean-song-rendition').textContent,/参考音频不可用/);assert.match(app.$('clean-song-preview-status').textContent,/未确定/);
-    await app.click('start-practice');await app.until(()=>app.document.body.dataset.screen==='stage'&&app.$('clean-song-stage').dataset.rendererState==='key-practice-running');
-    assert.equal(app.$('count-in').disabled,true);assert.equal(app.$('tempo').value,'120');assert.match(app.$('score-key').textContent,/源拍号未确定/);assert.equal(app.$('notation-part').value,inventory[0].id);assert.equal(app.document.querySelectorAll('#clean-song-parts input').length,inventory.length);assert.ok([...app.document.querySelectorAll('#clean-song-parts input')].every(input=>input.disabled));assert.equal(app.audioNodes.filter(node=>node.kind==='oscillator'&&!node.disconnected).length,0);
-    await app.click('play-button');const take=await app.exported('export-takes');assert.equal(take.passes[0].timeline.notes.length,1);assert.equal(take.passes[0].timeline.notes[0].midi,60);assert.deepEqual(take.passes[0].inputs,[]);assert.equal(server.requests.filter(request=>request.path==='/api/library/runtime').length,0);
     const page=JSON.parse(readFileSync(new URL('./fixtures/basic-keys-notation-page.json',import.meta.url),'utf8'));server.setRoute(({path})=>path==='/api/library/basic-keys/notation'?nativeResponse(page.missing):undefined);
-    const unlocks=app.audio().unlocks;await app.click('back-to-library');app.savedButton(storageKey).click();await app.until(()=>!app.$('open-score').disabled);await app.click('open-score');await app.until(()=>app.document.body.dataset.screen==='stage'&&app.$('workspace').dataset.scoreState==='inspection');
-    const reopened=await app.exported('export-takes');assert.deepEqual(reopened.passes,take.passes,'Opening the same saved score retains the paused take');assert.equal(app.audio().unlocks,unlocks,'Inspection does not unlock or resume audio');
+    const unlocks=app.audio().unlocks;await app.until(()=>!app.$('open-score').disabled);await app.click('open-score');await app.until(()=>app.document.body.dataset.screen==='stage'&&app.$('workspace').dataset.scoreState==='inspection');
+    assert.equal(app.audio().unlocks,unlocks,'Legacy source inspection does not unlock or resume audio');
     assert.equal(app.$('export-jianpu').disabled,true);await app.click('export-jianpu');assert.equal(server.requests.filter(request=>request.path==='/api/export/jianpu').length,0);
-    await app.click('reset-button');assert.equal(app.audioNodes.filter(node=>node.kind==='oscillator'&&!node.disconnected).length,0);
+    assert.equal(server.requests.some(request=>request.path==='/api/assess'),false);assert.equal(app.audioNodes.some(node=>node.kind==='audio-worklet'||node.kind==='oscillator'),false);
   }finally{await app.close();}
 });
 
@@ -90,7 +91,7 @@ test('Open score admits a no-clock source for paused inspection without timeline
   assert.equal(app.$('start-practice').disabled,true);assert.equal(app.$('start-listen').disabled,true);const before=server.requests.length;
   await app.click('open-score');await app.until(()=>app.document.body.dataset.screen==='stage'&&server.requests.some(request=>request.path==='/api/library/basic-keys/notation'));
   assert.equal(app.$('workspace').dataset.scoreState,'inspection');assert.equal(app.$('play-button').disabled,true);assert.equal(app.$('assess-button').disabled,true);assert.equal(app.$('progress').disabled,true);assert.match(app.$('time-label').textContent,/Source clock unavailable/);assert.match(app.$('stage-subtitle').textContent,/Score inspection/);assert.equal(app.audio().unlocks,0);
-  assert.ok(server.requests.slice(before).every(request=>!['/api/compile','/api/assess','/api/practice-targets','/api/instrument-check','/api/export/musicxml'].includes(request.path)));
+  assert.ok(server.requests.slice(before).every(request=>!['/api/compile','/api/assess','/api/practice-targets','/api/library/practice-admission','/api/instrument-check','/api/export/musicxml'].includes(request.path)));
  }finally{await app.close();}
 });
 

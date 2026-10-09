@@ -18,16 +18,19 @@ export class ScorePreview {
         this.publish({status:'performance',identity,part:null,cleanSong,score:null,compiled:null,compatibility:{status:'blocked',reason:'Notation and practice targets are unavailable for independent performance events.'}});
         return valid();
       }
-      if(cleanSong&&part===null)part=(isBasicKeysSong(cleanSong)?basicKeysParts(cleanSong).find(part=>part.practice_available&&!part.percussion)?.id:cleanSong.notation.parts[0]?.id)||cleanSong.notation.parts[0]?.id||null;
+      const freshBasic=isBasicKeysSong(cleanSong)&&part===null&&practiceSelection===undefined;
+      const eligibleBasic=freshBasic?basicKeysParts(cleanSong).find(part=>part.original_practice_available):null;
+      const defaultListen=freshBasic&&!eligibleBasic;
+      if(cleanSong&&part===null)part=(freshBasic?eligibleBasic?.id:cleanSong.notation.parts[0]?.id)||null;
       if(isBasicKeysSong(cleanSong)&&!cleanSong.compilation){this.publish({status:'inspection',identity,part,cleanSong,score,compiled:null,compatibility:{status:'blocked',reason:'The complete source is retained, but an unambiguous practice clock is unavailable.'}});return valid();}
       if(cleanSong&&!cleanSong.compilation){this.publish({status:'choice',identity,part,cleanSong,score,compiled:null,compatibility:{status:'pending',reason:'Choose base-note instrumental practice.'}});return valid();}
       let compiled=cleanSong?cleanSong.compilation:await this.compile(score,controller.signal);if(!valid())return false;
-      const prepared=await this.prepareView({score:compiled.score,compiled,cleanSong,identity,part,practiceSelection,practiceLayout,showOthers},controller.signal);if(!valid())return false;
+      const prepared=await this.prepareView({score:compiled.score,compiled,cleanSong,identity,part,practiceSelection,practiceLayout,showOthers,defaultListen},controller.signal);if(!valid())return false;
       compiled=prepared.compiled;cleanSong=prepared.cleanSong;
       practiceSelection=resolvePracticeSelection(compiled.score.parts,practiceSelection??(part===null?{kind:'all'}:{kind:'parts',part_ids:[part]}));
       const overrides=this.resolveOptions({...prepared,score:compiled.score,compiled,cleanSong,identity,part,practiceSelection,practiceLayout,showOthers});
       if(overrides){part=overrides.part;practiceSelection=resolvePracticeSelection(compiled.score.parts,overrides.practiceSelection);practiceLayout=overrides.practiceLayout;showOthers=overrides.showOthers;}
-      const candidate={status:'ready',identity,part,practiceSelection,practiceLayout,showOthers,...(prepared.pitchView?{pitchView:prepared.pitchView}:{}),...(overrides?.songMod?{songMod:overrides.songMod}:{}),cleanSong,score:compiled.score,compiled,compatibility:{status:'pending',reason:'Checking selected pitches with your instrument…'}};
+      const candidate={status:'ready',identity,part,practiceSelection,practiceLayout,showOthers,defaultListen:defaultListen&&!overrides,...(prepared.pitchView?{pitchView:prepared.pitchView}:{}),...(overrides?.songMod?{songMod:overrides.songMod}:{}),cleanSong,score:compiled.score,compiled,compatibility:{status:'pending',reason:'Checking selected pitches with your instrument…'}};
       if(isBasicKeysSong(cleanSong)&&!hasBasicKeyRendition(cleanSong)&&practiceSelection.part_ids.some(id=>!basicKeysParts(cleanSong).some(item=>item.id===id&&item.practice_available))){this.publish({...candidate,compatibility:{status:'blocked',reason:'This retained part has no supported positive-duration melodic MIDI-key targets.'}});return valid();}
       this.publish(candidate);
       // Same-version view and playback-mix edits may update the candidate while
@@ -66,6 +69,7 @@ export class ScorePreview {
       const selection=assistance?{kind:'parts',part_ids:assistance.plan.selection.selected_part_ids}:muted.length?(excluded.length?{kind:'parts',part_ids:excluded}:null):mode==='practice'?(value.practiceSelection??value.part):null;
       if(value.compiled&&(hasBasicKeyRendition(value.cleanSong)||isVsqSong(value.cleanSong))&&referencePreviewBudget(value.compiled.timeline.notes,selection,value.cleanSong.runtime.rendition,assistance?{assistance,assistanceContext:this.assistanceContext,sourceToken:value.cleanSong,mutedParts:muted}:undefined)>BASIC_KEY_MAX_VOICES)return false;
       if(mode==='practice'&&assistance&&!assistance.scored_mode_allowed)return false;
+      if(mode==='practice'&&isBasicKeysSong(value.cleanSong)&&value.defaultListen&&!value.songMod?.config.parts.some(part=>part.performer==='human'))return false;
       return value.status==='ready'&&(!isBasicKeysSong(value.cleanSong)||mode==='listen'&&hasBasicKeyRendition(value.cleanSong)||mode==='practice'&&[...humanPracticePartIds(value.score.parts,{practiceSelection:value.practiceSelection,targetPart:value.part})].some(id=>basicKeysParts(value.cleanSong).some(part=>part.id===id&&part.practice_available)))&&(mode==='listen'||value.compatibility.status==='ready');
     }catch{return false;}
   }

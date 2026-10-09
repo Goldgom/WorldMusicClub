@@ -44,8 +44,9 @@ export function setupNotationFit({viewport,getSurface,getReservedHeight=()=>0,on
     // Part headings, wrapper margins and quiet-part text stay at normal size.
     // Deduct their measured height instead of pretending it scales with SVGs.
     const unscaledHeight=Math.max(0,surfaceRect.height-paddingY-paintedHeight),reservedHeight=Math.max(0,getReservedHeight())+unscaledHeight;
-    const plan=planNotationFit({width:Math.max(0,Math.min(rect.width,surfaceRect.width)-paddingX),height:Math.max(1,rect.height-paddingY-reservedHeight),
+    let plan=planNotationFit({width:Math.max(0,Math.min(rect.width,surfaceRect.width)-paddingX),height:Math.max(1,rect.height-paddingY-reservedHeight),
       contentWidth:Math.max(...widths),contentHeight:heights.reduce((sum,height)=>sum+height,0),glyphSize:glyphs.length?Math.min(...glyphs):mode==='jianpu'?25:10,mode});
+    if(viewport.dataset.notationRows)plan={...plan,scale:1,status:'rows',glyphSize:glyphs.length?Math.min(...glyphs):mode==='jianpu'?25:10};
     // Old Android WebView reports pre-zoom SVG rectangles while painting zoomed
     // glyphs. Resizing the SVG viewport keeps fitting and note reveal in the same
     // coordinate system on both old and current engines.

@@ -126,13 +126,13 @@ async function observeBasicKeyEngraving(document) {
  },restore:()=>ownership.restore()};
 }
 /* Preserve every application request across bootstrap and selected-source work.
- * The two JSON observations read only values consumed by the application. */
+ * Bootstrap and native admission JSON observations read only application-consumed values. */
 function createBasicKeyRequestObserver(document,{onError}) {
  const evidence={version:1,rows:[],events:0,bootstrap:null,selection:null,restored:false},paths=[];
  const check=(value,message)=>{if(!value)throw Error(message);},tick=()=>++evidence.events;
  const preview=()=>{const lobby=document.getElementById('song-lobby');return{previewId:lobby.dataset.previewId,previewStatus:lobby.dataset.previewStatus,practiceDisabled:document.getElementById('start-performance').disabled};};
  let expectedKey=null,bodyBytes=0;
- const consumed=createVsqJsonObserver({maxRows:2,onError,onValue:value=>{const row=evidence.rows[value.requestIndex];check(new TextEncoder().encode(JSON.stringify(value.body)).length<=32768,'Bootstrap response bound');row.consumed=tick();row.response=value.path==='/api/compile'?{score:value.body.score}:value.body;}});
+ const consumed=createVsqJsonObserver({maxRows:128,onError,onValue:value=>{const row=evidence.rows[value.requestIndex];check(new TextEncoder().encode(JSON.stringify(value.body)).length<=32768,'Bootstrap/admission response bound');row.consumed=tick();row.response=value.path==='/api/compile'?{score:value.body.score}:value.body;}});
  function observe(path,options,promise){
   check(paths.length<160,'API bound');const body=options?.body;
   check(body===undefined||typeof body==='string'||body instanceof Blob,'Unsupported request evidence body');
@@ -141,7 +141,7 @@ function createBasicKeyRequestObserver(document,{onError}) {
   const row={index:paths.length,path,method:options?.method||'GET',started:tick(),settled:null,status:null,scope:evidence.selection?'selected':'bootstrap',previewId:preview().previewId||'',requestBody,...(body instanceof Blob?{file:{name:body.name,size:body.size,type:body.type}}:{})};
   paths.push(path);evidence.rows.push(row);
   Reflect.apply(Promise.prototype.then,promise,[response=>{row.status=response.status;row.settled=tick();},error=>{row.error=String(error).slice(0,512);row.signalAborted=options?.signal?.aborted===true;row.settled=tick();}]);
-  if(['/api/catalog/score/first-steps','/api/compile'].includes(path))consumed.observe(path,promise,row.index);
+  if(['/api/catalog/score/first-steps','/api/compile','/api/library/practice-admission'].includes(path))consumed.observe(path,promise,row.index);
   return promise;
  }
  function select(event){

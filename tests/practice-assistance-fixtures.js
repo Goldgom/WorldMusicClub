@@ -1,3 +1,4 @@
+import {mockBasicEligibilityReceipt} from './basic-human-admission-fixtures.js';
 import {createHash} from 'node:crypto';
 import {defaultAssistanceSettings} from '../web/practice-assistance-receipt.js';
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -10,7 +11,7 @@ export function assistanceBinding(context,options={}){return{...context,mode:'au
 export function assistanceResponse(context,{mode='automatic',settings=mode==='automatic'?defaultAssistanceSettings():null,selection=context.selection}={}){
   selection=structuredClone(selection);selection.selected_part_ids.sort();
   const domain=context.source?.profile==='wmh-basic-keys-midi1-v1'?'wmc-basic-complete-serde-json':context.source?.profile==='wmh-vsq-clean-v1'?'wmc-vsq-complete-serde-json':'wmc-canonical-score-serde-json';
-  const receipt={source_binding:{domain,serialization_revision:1,digest:'b'.repeat(64)},saved_package_sha256:context.source?.content_sha256??null,source_profile:context.source?.profile??'wmc-canonical-score-v1',runtime_policy:context.source?.runtime_policy??'wmc-canonical-practice-v1',choice:context.source?.choice??null,runtime_digest:'c'.repeat(64)};
+  const receipt={source_binding:{domain,serialization_revision:1,digest:'b'.repeat(64)},saved_package_sha256:context.source?.content_sha256??null,source_profile:context.source?.profile??'wmc-canonical-score-v1',runtime_policy:context.source?.runtime_policy??'wmc-canonical-practice-v1',choice:context.source?.choice??null,runtime_digest:'c'.repeat(64),...(context.source?.profile==='wmh-basic-keys-midi1-v1'?{source_eligibility:mockBasicEligibilityReceipt()}: {})};
   const sources=[['a','piano'],['unison','piano'],['b','piano'],['bass','bass']],human=new Set(sources.filter(([id,part])=>selection.selected_part_ids.includes(part)&&(mode==='original'||id==='a'||id==='unison')).map(([id])=>id));
   const occurrences=[['a@1',['a','unison'],['a@1','unison@1'],'piano',60,0],['b@1',['b'],['b@1'],'piano',64,100],['bass@1',['bass'],['bass@1'],'bass',48,0],['a@2',['a','unison'],['a@2','unison@2'],'piano',60,500]];
   const retained=occurrences.filter(([,ids])=>human.has(ids[0]));

@@ -1,3 +1,4 @@
+import {runtimeReceiptFields} from './source-practice-eligibility.js';
 // A projection is admitted only after the Rust response and its complete source
 // correspondence have been checked by preparePitchModView. Preferences cannot
 // manufacture this runtime token by deserializing the same JSON.
@@ -24,7 +25,7 @@ export function pitchModOriginalSource(view){
 }
 function validOriginalReceipt(receipt,source){
   const profile=source?.profile||'wmc-canonical-score-v1',expected=profiles[profile];
-  return expected&&fields(receipt,['source_binding','saved_package_sha256','source_profile','runtime_policy','choice','runtime_digest'])&&fields(receipt.source_binding,['domain','serialization_revision','digest'])&&receipt.source_binding.domain===expected[1]&&receipt.source_binding.serialization_revision===1&&hash(receipt.source_binding.digest)&&receipt.saved_package_sha256===(source?.content_sha256??null)&&receipt.source_profile===profile&&receipt.runtime_policy===expected[0]&&receipt.choice===expected[2]&&hash(receipt.runtime_digest)&&(!source||source.runtime_policy===expected[0]&&source.choice===expected[2]&&hash(source.content_sha256)&&source.key===`song-${source.content_sha256}`);
+  return expected&&runtimeReceiptFields(receipt,profile)&&fields(receipt.source_binding,['domain','serialization_revision','digest'])&&receipt.source_binding.domain===expected[1]&&receipt.source_binding.serialization_revision===1&&hash(receipt.source_binding.digest)&&receipt.saved_package_sha256===(source?.content_sha256??null)&&receipt.source_profile===profile&&receipt.runtime_policy===expected[0]&&receipt.choice===expected[2]&&hash(receipt.runtime_digest)&&(!source||source.runtime_policy===expected[0]&&source.choice===expected[2]&&hash(source.content_sha256)&&source.key===`song-${source.content_sha256}`);
 }
 function sourceResponse(source,receipt){return source||{kind:'canonical',source_binding:receipt.source_binding,profile:receipt.source_profile,choice:receipt.choice,runtime_policy:receipt.runtime_policy};}
 export function admitPitchModView(view,responseSource){

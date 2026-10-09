@@ -43,6 +43,6 @@ test('Windows passive dispatch skips ordinary input and PrintWindow, with separa
  const host=await readFile(new URL('../scripts/windows-desktop-acceptance.ps1',import.meta.url),'utf8'),start=host.indexOf('function Capture-PassiveClient('),end=host.indexOf('function Find-Control(',start),passive=host.slice(start,end);
  assert.match(passive,/CopyFromScreen/);assert.match(passive,/FileMode\]::CreateNew/);assert.match(passive,/ValidatePassiveCapturePixels/);assert.match(passive,/copy_started_ms/);assert.match(passive,/copy_finished_ms/);assert.match(passive,/png_saved_ms/);
  assert.doesNotMatch(passive,/PrintWindow|SetForegroundWindow|SetCursorPos|ClickPositioned|Start-Sleep|::Key\(/);
- const dispatch=host.indexOf("if($Action.kind -ceq 'capture')"),ordinary=host.indexOf('[NativeAcceptance]::SetForegroundWindow($window) | Out-Null',dispatch);assert.ok(dispatch>0&&ordinary>dispatch);assert.match(host,/Native-Action \$app \$action \$result;if\(\$action.kind -cne 'capture'/);
+ const dispatch=host.indexOf("if($Action.kind -ceq 'capture')"),ordinary=host.indexOf('[NativeAcceptance]::SetForegroundWindow($window) | Out-Null',dispatch);assert.ok(dispatch>0&&ordinary>dispatch);assert.match(host,/Native-Action \$app \$action \$result;Record-NativeActionTiming \$actionTiming 'input-completed';if\(\$action.kind -cne 'capture'/);
  const renderer=await readFile(new URL('../crates/desktop-shell/vsq-song-acceptance.js',import.meta.url),'utf8');assert.match(renderer,/report\.screenshots\.following=await native\('capture',\$\('notation-lane-overlay'\)\)/);
 });

@@ -41,7 +41,7 @@ export function registerAboveKeyboardBrowserRegressions({test,getPage,ui,setSess
     await page.waitForFunction(()=>Number(document.querySelector('#written-cursor-status').dataset.sourceMeasureIndex)>=8);
     await page.locator('#play-button').click();await waitForEngraving();
     const expected=await page.locator('.engraving-expected-cue:not([hidden])').count();assert.equal(expected,2,'Both original staff voices retain exact current-note cues');
-    assert.match(await page.locator('#engraving-range').textContent(),/9/,'Automatic following crosses the eight-measure page boundary');
+    const range=(await page.locator('#engraving-range').textContent()).match(/(\d+)–(\d+)|(\d+)～(\d+)/);assert.ok(range&&Number(range[1]||range[3])<=9&&Number(range[2]||range[4])>=9,'Overlapping row window contains the current ninth measure');
     const cues=await actualMarkerVisibility('.engraving-expected-cue:not([hidden])');
     assert.ok(cues.every(cue=>cue.painted&&cue.fraction>=.9),'Both staff cues remain inside the readable falling-lane overlay');
     // Pausing closes the input grace period; assessment remains an explicit

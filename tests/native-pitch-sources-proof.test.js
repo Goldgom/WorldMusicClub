@@ -5,16 +5,28 @@ import assert from 'node:assert/strict';
 import {mkdtemp, readFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {nativePitchSourcesFixture, prepareNativePitchSourcesFixture, pitchSourcesVectors, PITCH_SOURCES_NATIVE_PHASES, PITCH_SOURCES_HUMAN_PARTS} from '../scripts/native-pitch-sources-fixtures.mjs';
-import {nativePitchSourceProjection, validateNativePitchConsumed, validateNativePitchSourceLoad,
-  validateNativePitchSourceProjection, validateNativePitchSourceAudio,
-  validateNativePitchSourceTargets, validateNativePitchSourceAssessment, validateNativePitchSourceChoice,
-  validateNativeBasicPitchNotation, validateNativePitchSourceCase} from '../scripts/native-pitch-sources-proof.mjs';
+import {nativePitchSourcesFixture, prepareNativePitchSourcesFixture, pitchSourcesVectors as retainedPitchSourcesVectors, PITCH_SOURCES_NATIVE_PHASES, PITCH_SOURCES_HUMAN_PARTS} from '../scripts/native-pitch-sources-fixtures.mjs';
+import {nativePitchSourceProjection as retainedPitchSourceProjection, validateNativePitchConsumed, validateNativePitchSourceLoad as retainedPitchSourceLoad,
+  validateNativePitchSourceProjection as retainedPitchProjection, validateNativePitchSourceAudio,
+  validateNativePitchSourceTargets as retainedPitchTargets, validateNativePitchSourceAssessment, validateNativePitchSourceChoice,
+  validateNativeBasicPitchNotation as retainedPitchNotation, validateNativePitchSourceCase as retainedPitchCase,
+  validateNativePitchSourceTake as retainedPitchTake} from '../scripts/native-pitch-sources-proof.mjs';
 import {expectedBasicKeySchedules} from '../scripts/basic-key-rendition-proof.mjs';
 import {syntheticAudioThreadRun, syntheticAudioThreadStatus} from './audio-thread-proof-fixtures.js';
 import {syntheticVsqAudioThreadRun} from './vsq-audio-thread-proof-fixtures.js';
+import {withMockBasicEligibility, mockBasicPracticeAdmission} from './basic-human-admission-fixtures.js';
 
 const copy = value => structuredClone(value);
+// Explicit consumer-test boundary only. Retained native loaders and Rust
+// goldens are not modified; these synthetic receipts are never run evidence.
+const pitchSourcesVectors = () => withMockBasicEligibility(retainedPitchSourcesVectors());
+const nativePitchSourceProjection = (kind, semitones) => retainedPitchSourceProjection(kind, semitones, {vectors: pitchSourcesVectors()});
+const validateNativePitchSourceLoad = (value, kind) => retainedPitchSourceLoad(value, kind, {vectors: pitchSourcesVectors()});
+const validateNativePitchSourceProjection = (value, kind, semitones, options) => retainedPitchProjection(value, kind, semitones, {...options, vectors: pitchSourcesVectors()});
+const validateNativePitchSourceTargets = (value, kind, semitones, options) => retainedPitchTargets(value, kind, semitones, {...options, vectors: pitchSourcesVectors()});
+const validateNativeBasicPitchNotation = (value, semitones) => retainedPitchNotation(value, semitones, {vectors: pitchSourcesVectors()});
+const validateNativePitchSourceCase = value => retainedPitchCase(value, {vectors: pitchSourcesVectors()});
+const targetResponse = row => row.path === '/api/library/practice-admission' ? row.response.checked.human_targets : row.response;
 function syntheticConsumed(path, request, response, sequence = 1) {
   return {path, request: copy(request), response: copy(response), status: 200, observation: 'consumed',
     started: {actionSequence: sequence}, settled: {actionSequence: sequence}, canceled: false, signalAborted: false, signalAbortedAtStart: false};
@@ -34,6 +46,12 @@ function syntheticTargets(kind, semitones, targetPart = PITCH_SOURCES_HUMAN_PART
   if (targetPart === null) for (const note of response.timeline.notes) note.midi = sourceTimeline.notes.find(source => source.id === note.id).midi;
   const diagnosticCodes = kind === 'basic' ? ['piano_overlapping_key_gates'] : targetPart === null ? ['piano_unison_targets'] : [];
   response.diagnostics = diagnosticCodes.map(code => ({code, severity: 'warning', note_id: null, message: 'Synthetic validator record'}));
+  if (kind === 'basic') {
+    const request = {source: projected.source, pitch_mod: projected.configuration, selection: {selected_part_ids: [...new Set(sourceTimeline.notes.map(note => note.part_id))].sort(), profile: {kind: 'piano', key_count: 88, lowest_midi: 21}}};
+    const admitted = mockBasicPracticeAdmission(request, vector.original.opened, {projection: projected});
+    admitted.checked.human_targets.diagnostics = copy(response.diagnostics);
+    return syntheticConsumed('/api/library/practice-admission', request, admitted);
+  }
   return syntheticConsumed('/api/practice-targets', {timeline: sourceTimeline, profile: {kind: 'piano', key_count: 88, lowest_midi: 21}}, response);
 }
 function syntheticAssessment(targets) {
@@ -69,7 +87,7 @@ function syntheticCase(kind, semitones) {
     applied: {semitones: String(semitones), digest: projected.identity?.digest || ''},
     ...(kind === 'vsq' ? {vsqChoice: syntheticChoice(), humanChoice: syntheticChoice(1, 8)} : {}),
     machine: {audio: syntheticAudio(kind, semitones), ended: copy(ended), assessmentRequests: []},
-    human: {targetPart, targets, assessment: syntheticAssessment(targets.response), audio: syntheticAudio(kind, semitones, targetPart), ended: copy(ended)}};
+    human: {targetPart, targets, assessment: syntheticAssessment(targetResponse(targets)), audio: syntheticAudio(kind, semitones, targetPart), ended: copy(ended)}};
 }
 function syntheticBasicPages(semitones) {
   return Object.values(pitchSourcesVectors().basic.notation).map(entry => syntheticConsumed('/api/library/basic-keys/notation',
@@ -173,13 +191,13 @@ for (const kind of ['basic', 'vsq']) for (const semitones of [2, 0]) {
   test(`${kind} ${semitones}: human selection and no-input assessment retain the effective pitch and exact IDs`, () => {
     const targets = syntheticTargets(kind, semitones);
     rejectMutations(targets, value => validateNativePitchSourceTargets(value, kind, semitones), [
-      ['stale source pitch', value => {value.request.timeline.notes[0].midi++;}],
-      ['source gate changed', value => {value.response.timeline.notes[0].duration_ms++;}],
-      ['missing source mapping', value => {value.response.groups[0].source_note_ids = [];}],
-      ['invented target', value => {value.response.target_count++;}],
+      ['stale source pitch', value => {if (kind === 'basic') value.request.pitch_mod.semitones++; else value.request.timeline.notes[0].midi++;}],
+      ['source gate changed', value => {targetResponse(value).timeline.notes[0].duration_ms++;}],
+      ['missing source mapping', value => {targetResponse(value).groups[0].source_note_ids = [];}],
+      ['invented target', value => {targetResponse(value).target_count++;}],
     ]);
-    const assessment = syntheticAssessment(targets.response);
-    rejectMutations(assessment, value => validateNativePitchSourceAssessment(value, targets.response), [
+    const assessment = syntheticAssessment(targetResponse(targets));
+    rejectMutations(assessment, value => validateNativePitchSourceAssessment(value, targetResponse(targets)), [
       ['invented input', value => {value.request.inputs.push({midi: 62, at_ms: 0, velocity: 90});}],
       ['invented hit', value => {value.response.hits.push({midi: 62});}],
       ['lost miss', value => {value.response.misses.pop();}],
@@ -277,4 +295,52 @@ test('reopened VSQ choices permit earlier completed runtime requests but need a 
   const prior = syntheticChoice(3, 24);
   prior.before.startDisabled = false;
   assert.throws(() => validateNativePitchSourceChoice(prior));
+});
+
+test('Basic Human admission rejects generic targets, caller authority, stale eligibility and lost full-source clocks', () => {
+  for (const semitones of [0, 2]) {
+    const row = syntheticTargets('basic', semitones);
+    rejectMutations(row, value => validateNativePitchSourceTargets(value, 'basic', semitones), [
+      ['legacy generic route', value => {value.path = '/api/practice-targets';}],
+      ['caller timeline authority', value => {value.request.timeline = nativePitchSourceProjection('basic', semitones).compilation.timeline;}],
+      ['partial descriptor', value => {delete value.request.source.runtime_policy;}],
+      ['foreign saved source', value => {value.request.source.content_sha256 = 'a'.repeat(64);}],
+      ['other profile', value => {value.request.selection.profile.key_count = 61;}],
+      ['different selected part', value => {value.request.selection.selected_part_ids = ['midi-t1-c10-r0'];}],
+      ['unchecked supplied plan', value => {value.request.plan = copy(value.response.checked.plan);}],
+      ['missing eligibility', value => {delete value.response.checked.receipt.source_eligibility; delete value.response.checked.plan.receipt.source_eligibility;}],
+      ['stale original eligibility', value => {for (const receipt of [value.response.checked.receipt, value.response.checked.plan.receipt]) receipt.source_eligibility.fingerprint = 'a'.repeat(64);}],
+      ['lost source occurrence', value => {value.response.checked.source_ownership.pop();}],
+      ['lost machine complement', value => {value.response.checked.machine_occurrence_ids = [];}],
+      ['target clock trimmed to Human tail', value => {targetResponse(value).timeline.duration_ms = 520;}],
+      ['source and target counts conflated', value => {value.response.checked.coverage.source_unit_count = targetResponse(value).target_count;}],
+      ['original pitch leaked into shifted target', value => {targetResponse(value).timeline.notes[0].midi++;}],
+      ['wrong pitch identity', value => {value.response.pitch_mod = null;}],
+    ]);
+    const legacy = pitchSourcesVectors();
+    delete legacy.basic.original.opened.clean_package.runtime.source_eligibility;
+    assert.throws(() => retainedPitchTargets(row, 'basic', semitones, {vectors: legacy}), /Original native source eligibility receipt/);
+  }
+});
+
+test('source takes bind mandatory Basic admission while preserving optional-assistance-off and VSQ targets', () => {
+  for (const kind of ['basic', 'vsq']) for (const semitones of [0, 2]) {
+    const item = syntheticCase(kind, semitones), projected = nativePitchSourceProjection(kind, semitones), targets = targetResponse(item.human.targets);
+    const interpretation = {source_revision: {songId: pitchSourcesVectors()[kind].original.score.notation.id, sourceRevision: {kind: 'clean-package-sha256', value: projected.source.content_sha256}}};
+    if (kind === 'basic') interpretation.basic_practice_admission = {receipt: copy(item.human.targets.response.checked.receipt), selection_digest: item.human.targets.response.checked.plan.selection_digest};
+    if (semitones) interpretation.pitch_mod = copy(projected.identity);
+    const take = {passes: [{inputs: [], captures: [], timeline: copy(targets.timeline), assessment: copy(item.human.assessment.response), pending: false, revision: 1, assessed_revision: 1, interpretation}],
+      target_plan: copy(targets), practice_assistance: null, practice_progression: null, practice_selection: {kind: 'parts', part_ids: [item.human.targetPart]}, song_mod: {config: {parts: [{partId: item.human.targetPart, performer: 'human'}]}}, ...(semitones ? {pitch_mod: copy(projected.identity)} : {})};
+    rejectMutations(take, value => retainedPitchTake(value, item, {vectors: pitchSourcesVectors()}), [
+      ['different target denominator', value => {value.target_plan.source_note_count++;}],
+      ['trimmed complete clock', value => {value.passes[0].timeline.duration_ms--;}],
+      ['different take source', value => {value.passes[0].interpretation.source_revision.sourceRevision.value = 'a'.repeat(64);}],
+      ['mandatory admission confused with optional assistance', value => {value.practice_assistance = item.human.targets.response;}],
+      [kind === 'basic' ? 'lost mandatory admission' : 'invented Basic authority', value => {if (kind === 'basic') delete value.passes[0].interpretation.basic_practice_admission; else value.passes[0].interpretation.basic_practice_admission = {};}],
+    ]);
+    if (kind === 'basic') {
+      take.passes[0].interpretation.basic_practice_admission.receipt.source_eligibility.fingerprint = 'a'.repeat(64);
+      assert.throws(() => retainedPitchTake(take, item, {vectors: pitchSourcesVectors()}));
+    }
+  }
 });

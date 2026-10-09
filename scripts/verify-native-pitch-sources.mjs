@@ -11,12 +11,13 @@ import {buildDiagnosticsExecutableBinding, canonicalWindowsExecutablePath} from 
 import {passivePngPixels} from './native-passive-capture-evidence.mjs';
 import {validateOwnedPickerGestures} from './verify-native-vsq-song-evidence.mjs';
 import {nativePitchSourcesFixture, PITCH_SOURCES_NATIVE_FIXTURE, PITCH_SOURCES_NATIVE_PHASES, PITCH_SOURCES_KINDS} from './native-pitch-sources-fixtures.mjs';
-import {nativePitchSourceProjection, validateNativePitchSourceCase, validateNativeBasicPitchNotation} from './native-pitch-sources-proof.mjs';
+import {nativePitchSourceProjection, validateNativePitchSourceCase, validateNativePitchSourceTake, validateNativeBasicPitchNotation} from './native-pitch-sources-proof.mjs';
+import {BASIC_ADMISSION_PROOF_SOURCE_FILES} from './basic-practice-admission-proof.mjs';
 
 const rootDefault=fileURLToPath(new URL('../',import.meta.url)),hash=bytes=>createHash('sha256').update(bytes).digest('hex'),positive=value=>Number.isSafeInteger(value)&&value>0;
 const parse=bytes=>JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes).replace(/^\uFEFF/,''));
 export const PITCH_SOURCES_CLAIMS=Object.freeze({native_window:true,complete_basic_fifo_percussion:true,semantic_vsq_explicit_choice:true,vsq_rational_zero_origin:true,pitch_plus_two_and_zero:true,actual_receiver_ledger_pcm:true,source_bound_no_input_assessment:true,native_notation_source_ids:true,original_clean_package_bytes_preserved:true,saved_plus_two_restart:true,saved_zero_restart:true,physical_audio:false,physical_midi:false,source_specific_trusted_hits:false,raw_vsq_import:false,original_singing_voice:false,full_acceptance:false,release_ready:false});
-export const PITCH_SOURCES_SOURCE_FILES=Object.freeze([...new Set([...ASSISTANCE_SOURCE_FILES,...PITCH_MOD_SOURCE_FILES,
+export const PITCH_SOURCES_SOURCE_FILES=Object.freeze([...new Set([...ASSISTANCE_SOURCE_FILES,...PITCH_MOD_SOURCE_FILES,...BASIC_ADMISSION_PROOF_SOURCE_FILES,
  '.github/workflows/native-pitch-sources.yml','scripts/native-pitch-sources-fixtures.mjs','scripts/native-pitch-sources-proof.mjs',
  'scripts/native-pitch-sources-renderer.js','scripts/native-pitch-sources-input.cs','scripts/native-pitch-sources-contract.ps1',
  'scripts/verify-native-pitch-sources.mjs','tests/native-pitch-sources-proof.test.js','tests/native-pitch-sources-evidence.test.js',
@@ -104,10 +105,7 @@ export async function verifyNativePitchSources(directory,{sourceRoot=rootDefault
   assert.deepEqual(report.cases.map(item=>[item.kind,item.semitones]),PITCH_SOURCES_KINDS.map(kind=>[kind,index<2?2:0]));assert.equal(Object.keys(report.files).length,2);
   for(const item of report.cases){
    validateNativePitchSourceCase(item);validatePitchSourceNotation(item);
-   const file=item.human.takeFile;assert.equal(report.files[`${item.kind}-${item.semitones}-human`],file);assert.match(file,new RegExp(`^${host.phase}-(?:[1-9]|1[0-6])\\.json$`));const take=await json(`downloads/${file}`),projected=nativePitchSourceProjection(item.kind,item.semitones);assert.equal(take.passes.length,1);const pass=take.passes[0];assert.deepEqual(pass.inputs,[]);assert.deepEqual(pass.captures,[]);assert.deepEqual(pass.timeline,item.human.targets.response.timeline);assert.deepEqual(pass.assessment,item.human.assessment.response);assert.deepEqual(take.target_plan,item.human.targets.response);assert.equal(pass.pending,false);assert.equal(pass.revision,pass.assessed_revision);assert.equal(take.practice_assistance,null);assert.equal(take.practice_progression,null);
-   assert.deepEqual(take.practice_selection,{kind:'parts',part_ids:[item.human.targetPart]});assert.deepEqual(take.song_mod.config.parts.filter(part=>part.performer==='human').map(part=>part.partId),[item.human.targetPart]);
-   if(item.semitones){assert.deepEqual(take.pitch_mod,projected.identity);assert.deepEqual(pass.interpretation.pitch_mod,projected.identity);}else{assert.equal(take.pitch_mod,undefined);assert.equal(pass.interpretation.pitch_mod,undefined);}
-   assert.deepEqual(pass.interpretation.source_revision,{songId:fixture.sources[item.kind].score.notation.id,sourceRevision:{kind:'clean-package-sha256',value:projected.source.content_sha256}});
+   const file=item.human.takeFile;assert.equal(report.files[`${item.kind}-${item.semitones}-human`],file);assert.match(file,new RegExp(`^${host.phase}-(?:[1-9]|1[0-6])\\.json$`));validateNativePitchSourceTake(await json(`downloads/${file}`),item);
    for(const run of [item.machine,item.human])for(const sequence of Object.values(run.notation.screenshots))passivePngPixels(await read(`native-action-${host.phase}-${sequence}.png`,16*1024*1024));
   }
   const actions=[],results=[];for(let n=1;n<=report.actions;n++){actions.push(await json(`action-${host.phase}-${n}.json`,65536));results.push(await json(`result-${host.phase}-${n}.json`,65536));}validateNativePitchSourcesActions(report,host,actions,results);passivePngPixels(await read(`native-${host.phase}.png`,16*1024*1024));

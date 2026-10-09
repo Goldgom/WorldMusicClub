@@ -1,6 +1,6 @@
 /* Observe only the JSON promise the application consumes. A cloned fetch body
  * can abort after successful adoption; it is not authoritative product evidence. */
-function createNativeAssistanceRequestObserver({fetchOwner,onRequest,onError,readContext,includeOrdinary=()=>false,maxRows=40}) {
+function createNativeAssistanceRequestObserver({fetchOwner,onRequest,onError,readContext,includeOrdinary=()=>false,maxRows=128}) {
  const original=fetchOwner.fetch,rows=[],restores=new Set(),signals=new WeakMap();let stopped=false,nextSignal=0;
  const context=()=>structuredClone(readContext()),notify=error=>{try{onError(String(error?.message||error).slice(0,1024));}catch{}};
  const failure=(row,options,phase,error)=>{if(stopped)return;row.observation=phase;row.errorName=String(error?.name||'Error');row.error=String(error).slice(0,512);row.signalAborted=options?.signal?.aborted===true;row.settled=context();row.canceled=row.signalGeneration!==null&&row.signalAborted&&row.errorName==='AbortError'&&['fetch-rejected','body-rejected'].includes(phase);if(!row.canceled)notify(`${row.path} ${phase}: ${row.error}`);};
@@ -8,7 +8,7 @@ function createNativeAssistanceRequestObserver({fetchOwner,onRequest,onError,rea
   const promise=Reflect.apply(original,this,args);
   try{
    const input=args[0],options=args[1]||{},path=typeof input==='string'?input:input.url;
-   if(stopped||!(path.startsWith('/api/library/assistance/')||path.startsWith('/api/library/progression/')||path==='/api/assess'||path==='/api/library/runtime'||includeOrdinary()&&['/api/practice-targets','/api/instrument-check'].includes(path)))return promise;
+   if(stopped||!(path.startsWith('/api/library/assistance/')||path.startsWith('/api/library/progression/')||path==='/api/library/practice-admission'||path==='/api/assess'||path==='/api/library/runtime'||includeOrdinary()&&['/api/practice-targets','/api/instrument-check'].includes(path)))return promise;
    if(rows.length>=maxRows)throw Error('Bounded assistance requests exceeded');
    const signal=options.signal;if(signal&&!signals.has(signal))signals.set(signal,++nextSignal);
    const row={path,request:JSON.parse(options.body),status:null,response:null,observation:'fetching',signalGeneration:signal?signals.get(signal):null,signalAbortedAtStart:signal?.aborted===true,signalAborted:false,canceled:false,started:context(),settled:null};rows.push(row);onRequest(row);

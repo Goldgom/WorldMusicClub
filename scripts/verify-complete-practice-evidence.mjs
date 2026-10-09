@@ -13,6 +13,7 @@ import {validateCleanScreenshot} from './verify-native-clean-song-evidence.mjs';
 import {validateOwnedFilePickers} from './verify-native-vsq-song-evidence.mjs';
 import {validateAudioThreadRuns} from './audio-thread-rendition-proof.mjs';
 import {validateVsqAudioThreadRuns,expectedVsqAudioPlan} from './vsq-audio-thread-proof.mjs';
+import {basicAdmissionSource,basicAdmissionTimeline,validateBasicPracticeAdmissionEvidence} from './basic-practice-admission-proof.mjs';
 const human=['midi-t1-c1-r0','midi-t2-c2-r0'],sorted=a=>[...a].sort();
 export const COMPLETE_SCREENSHOTS=Object.freeze({
  'complete-practice-seed':['multi-visible','cancel','multi-hidden','multi-restored','reset','active-human','human-ended','all-blocked','single-complete','reapplied','labels-enabled'],
@@ -69,18 +70,34 @@ export function validateCompletePracticeAudio(r,f=completePracticeFixture()){
  assert.equal(r.audio.length,3,'Retain cold start, human capture and explicit resumed ledgers');assert.deepEqual(r.audio.map(run=>run.terminals[0].record.type),['canceled','canceled','ended']);assert.equal(r.audio[0].positionFrame,0);assert.equal(r.audio[1].positionFrame,0);
  const resumed=r.audio[2],paused=r.samples['active-human'];assert.equal(paused.audioPrepared,2);assert.equal(r.samples['human-ended'].audioPrepared,3);assert.equal(resumed.positionFrame,Math.round(paused.position*resumed.plan.sampleRate/1000),'Resume must use the actual paused source position');
 }
+export function validateCompleteBasicAdmission(r,index,parts){
+ validateCompleteOpened(r.opened);
+ const request=r.requests[index],responses=r.responses.filter(row=>row.requestIndex===index);
+ assert.equal(responses.length,1,'Each Basic request needs its actual consumed response');const response=responses[0];
+ assert.equal(request?.path,'/api/library/practice-admission');assert.equal(response.path,request.path);
+ const checked=validateBasicPracticeAdmissionEvidence({path:request.path,status:response.status,request:request.body,response:response.body},{
+  source:basicAdmissionSource(r.opened),timeline:basicAdmissionTimeline(r.opened),
+  selection:{selected_part_ids:sorted(parts),profile:{kind:'piano',key_count:61,lowest_midi:null}},
+  eligibilityReceipt:r.opened.clean_package.runtime.source_eligibility?.receipt,
+ });
+ assert.equal(checked.all_selected_human,true,'Original admission must preserve the full selected source set');
+ assert.deepEqual(checked.plan.human_source_ids,basicAdmissionTimeline(r.opened).notes.filter(note=>parts.includes(note.part_id)).map(note=>note.id).sort());
+ return checked;
+}
 export function validateCompleteModReadiness(r){
  const expected={'all-blocked':COMPLETE_PARTS,'single-complete':[human[0]],reapplied:human};
  assert.deepEqual(Object.keys(r.modReadiness).sort(),Object.keys(expected).sort());let previousCheck=-1;
  for(const [name,parts]of Object.entries(expected)){
   const value=r.modReadiness[name],target=r.responses.find(row=>row.requestIndex===value.targetRequestIndex),check=r.responses.find(row=>row.requestIndex===value.checkRequestIndex);
   assert.ok(Number.isSafeInteger(value.requestStart)&&value.requestStart>previousCheck&&value.targetRequestIndex>=value.requestStart&&value.checkRequestIndex>value.targetRequestIndex);previousCheck=value.checkRequestIndex;
-  assert.deepEqual(sorted(value.humanParts),sorted(parts));assert.equal(target?.path,'/api/practice-targets');assert.equal(target?.status,200);assert.equal(check?.path,'/api/instrument-check');assert.equal(check?.status,200);
-  assert.equal(r.requests[value.targetRequestIndex].path,'/api/practice-targets');assert.equal(r.requests[value.checkRequestIndex].path,'/api/instrument-check');const requested=r.requests[value.targetRequestIndex].body.timeline.notes,checked=r.requests[value.checkRequestIndex].body.timeline.notes;
-  assert.deepEqual(sorted([...new Set(requested.map(note=>note.part_id))]),sorted(parts));assert.deepEqual(checked,requested);assert.deepEqual(sorted([...new Set(target.body.groups.flatMap(group=>group.part_ids))]),sorted(parts));
+  assert.deepEqual(sorted(value.humanParts),sorted(parts));assert.equal(target?.path,'/api/library/practice-admission');assert.equal(target?.status,200);assert.equal(check?.path,'/api/instrument-check');assert.equal(check?.status,200);
+  const admission=validateCompleteBasicAdmission(r,value.targetRequestIndex,parts),targets=admission.human_targets;
+  assert.equal(r.requests[value.checkRequestIndex].path,'/api/instrument-check');const requested=basicAdmissionTimeline(r.opened).notes.filter(note=>parts.includes(note.part_id)),checked=r.requests[value.checkRequestIndex].body.timeline.notes;
+  assert.deepEqual(r.requests[value.checkRequestIndex].body,{timeline:{duration_ms:5000,notes:requested},profile:{kind:'piano',key_count:61,lowest_midi:null}});
+  assert.deepEqual(sorted([...new Set(requested.map(note=>note.part_id))]),sorted(parts));assert.deepEqual(checked,requested);assert.deepEqual(sorted([...new Set(targets.groups.flatMap(group=>group.part_ids))]),sorted(parts));
   assert.deepEqual(sorted(check.body.note_options.map(note=>note.note_id)),sorted(requested.map(note=>note.id)));
   assert.deepEqual(value.outsideSourceIds,check.body.note_options.filter(note=>!note.playable).map(note=>note.note_id));assert.deepEqual(value.outsideSourceIds,name==='all-blocked'?['midi-t3-e2']:[]);
-  assert.equal(value.retryDisabled,false);assert.equal(value.gateHidden,name!=='all-blocked');assert.equal(value.playDisabled,name==='all-blocked');assert.equal(r.samples[name].playDisabled,value.playDisabled);assert.equal(target.body.playable,name!=='all-blocked');
+  assert.equal(value.retryDisabled,false);assert.equal(value.gateHidden,name!=='all-blocked');assert.equal(value.playDisabled,name==='all-blocked');assert.equal(r.samples[name].playDisabled,value.playDisabled);assert.equal(targets.playable,name!=='all-blocked');
  }
 }
 export function validateCompletePracticeRenderer(r,f=completePracticeFixture(),{expectedOrigin=NATIVE_PROTOCOL_ORIGIN}={}){
@@ -116,7 +133,13 @@ export function validateCompletePracticeRenderer(r,f=completePracticeFixture(),{
 }
 export function validateCompletePracticeTakes(takes,r,f=completePracticeFixture()){
  assert.deepEqual(Object.keys(takes).sort(),r.phase==='complete-practice-seed'?['human','machine']:['solo','vsqAll','vsqMixed'],'Every mandatory native take must be retained exactly once');
- const check=(take,partIds,ids,kind='parts')=>{assert.deepEqual(take.practice_selection,{kind,part_ids:partIds});assert.ok(take.passes.length>0);assert.deepEqual(take.target_plan.timeline.notes.map(n=>n.id),ids);for(const pass of take.passes){assert.deepEqual(pass.interpretation.practice_selection,take.practice_selection);assert.deepEqual(pass.timeline.notes.map(n=>n.id),ids);assert.ok(pass.inputs.every(n=>n.midi!==60&&n.midi!==115));}return take;};
+ const check=(take,partIds,ids,kind='parts')=>{assert.deepEqual(take.practice_selection,{kind,part_ids:partIds});assert.ok(take.passes.length>0);assert.deepEqual(take.target_plan.timeline.notes.map(n=>n.id),ids);for(const pass of take.passes){assert.deepEqual(pass.interpretation.practice_selection,take.practice_selection);assert.deepEqual(pass.timeline.notes.map(n=>n.id),ids);assert.ok(pass.inputs.every(n=>n.midi!==60&&n.midi!==115));
+  if(partIds.every(part=>COMPLETE_PARTS.includes(part))){
+   const saved=pass.interpretation.basic_practice_admission;assert.ok(saved,'Every Basic take needs its mandatory native admission');
+   const response=r.responses.findLast(row=>row.path==='/api/library/practice-admission'&&row.status===200&&row.body?.checked?.plan.selection_digest===saved.selection_digest);assert.ok(response,'Basic take has no consumed admission response');
+   const checked=validateCompleteBasicAdmission(r,response.requestIndex,partIds);assert.deepEqual(saved,{receipt:checked.receipt,selection_digest:checked.plan.selection_digest});assert.deepEqual(take.target_plan,checked.human_targets);assert.deepEqual(pass.timeline,checked.human_targets.timeline);assert.equal(take.practice_assistance,null);assert.equal(take.practice_progression,null);
+  }else assert.equal(pass.interpretation.basic_practice_admission,undefined);
+ }return take;};
  if(r.phase==='complete-practice-seed'){
   const machine=check(takes.machine,human,f.manifest.target_ids),humanTake=check(takes.human,human,f.manifest.target_ids);assert.equal(machine.view_configuration.practice_layout,'complete');assert.ok(machine.passes.every(p=>p.inputs.length===0&&(p.assessment?.hits||[]).length===0));assert.equal(humanTake.target_plan.source_note_count,4);assert.equal(humanTake.target_plan.target_count,3);const group=humanTake.target_plan.groups.find(g=>g.target_id==='midi-t1-e2');assert.deepEqual(group,{target_id:'midi-t1-e2',source_occurrence_ids:['midi-t1-e2','midi-t2-e1'],source_note_ids:['midi-t1-e2','midi-t2-e1'],part_ids:human});
   const target=humanTake.target_plan.timeline.notes[0];assert.equal(target.midi,72);assert.equal(target.start_ms,1500);assert.equal(target.duration_ms,1000);assert.equal(target.velocity,90);assert.equal(humanTake.passes.length,1,'Pause and resume must preserve one human take');const pass=humanTake.passes.find(p=>p.inputs.length);assert.ok(pass);assert.equal(pass.timeline.duration_ms,5000);assert.equal(pass.clock_segments.length,2);assert.equal(pass.clock_segments[0].positionStart,0);assert.equal(pass.clock_segments[1].positionStart,r.audio[2].started.positionMs,'Resumed take must share the real receiver source anchor');assert.equal(pass.inputs.length,1);assert.equal(pass.inputs[0].midi,72);assert.deepEqual(pass.interpretation.source_target_ids,f.manifest.human_source_ids);assert.equal(pass.interpretation.source_sha256,f.manifest.source.sha256);assert.equal(pass.assessment.hits.length,1);assert.equal(pass.assessment.hits[0].note_id,'midi-t1-e2');assert.equal(pass.assessment.misses.length,2);assert.deepEqual(pass.assessment.extras,[]);assert.ok(Math.abs(pass.assessment.hits[0].delta_ms)<=180);

@@ -274,6 +274,8 @@ test('Verify preserves complete screenshot, storage and six bounded artifact con
     assert.equal(row.with['compression-level'], 0);
   }
   for (const row of artifacts) {
+    // Separately guarded, bounded diagnostics are not acceptance evidence.
+    if (row.with.name === 'source-identity-backends-linux-${{ github.sha }}') continue;
     assert.equal(row.if, 'always()');
     assert.equal(row.with['if-no-files-found'], 'ignore');
   }

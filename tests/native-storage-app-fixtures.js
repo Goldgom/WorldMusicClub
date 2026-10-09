@@ -1,3 +1,4 @@
+import {mockBasicPracticeAdmission,withMockBasicEligibility} from './basic-human-admission-fixtures.js';
 import {basicKeyAudioHarness} from './basic-key-audio-harness.js';
 import {LiveToneCore, LIVE_TONE_PROTOCOL} from '../web/live-tone-core.js';
 import {CanonicalAudioCore} from '../web/canonical-audio-core.js';
@@ -21,8 +22,8 @@ export const authoredScore=(overrides={})=>({...structuredClone(fixture),...over
 export const nativeResponse=(value,status=200)=>({ok:status>=200&&status<300,status,redirected:false,url:origin,json:async()=>structuredClone(value)});
 
 /** In-memory native protocol fixture. Never opens an app-data directory or server. */
-export async function nativeScoreServer({scores=[],directory='C:\\Test-only\\WorldMusicHub\\Scores',issues=[]}={}) {
-  const base=await fixtureScoreServer(),records=new Map(),requests=[];
+export async function nativeScoreServer({scores=[],directory='C:\\Test-only\\WorldMusicHub\\Scores',issues=[],mockLegacyBasicEligibility=true}={}) {
+  const base=await fixtureScoreServer(),records=new Map(),requests=[],checkedResponses=[],projections=new Map();
   let route=null;
   function seed(score,raw=JSON.stringify(score)) {
     const score_json=raw,key=`song-${createHash('sha256').update(JSON.stringify(score)).digest('hex')}`;
@@ -33,10 +34,14 @@ export async function nativeScoreServer({scores=[],directory='C:\\Test-only\\Wor
   function defaultReply(path,body) {
     if(path==='/api/health')return nativeResponse({name:'WorldMusicHub',engine:'rust',network:'native-protocol-no-listener',score_format_version:1});
     if(path==='/api/library/list')return nativeResponse({storage:'native-filesystem',library_format_version:1,directory,entries:[...records.values()].map(row=>row.entry),issues});
+    if(path==='/api/library/practice-admission'){
+      try{return nativeResponse(mockBasicPracticeAdmission(body,records.get(body?.source?.key),{projection:projections.get(`${body?.source?.key}:${body?.pitch_mod?.semitones}`),checkedResponses}));}
+      catch(error){return nativeResponse({code:error.code||'mock_practice_admission_invalid',error:error.message},422);}
+    }
     if(path==='/api/library/load'||path==='/api/library/export') {
       const record=records.get(body.key);
       if(!record)return nativeResponse({code:'library_not_found',error:'The selected saved copy no longer exists'},404);
-      return nativeResponse(path.endsWith('/export')?{format:'worldmusichub-native-score-backup',version:1,...record}:record);
+      return nativeResponse(path.endsWith('/export')?{format:'worldmusichub-native-score-backup',version:1,...record}:mockLegacyBasicEligibility?withMockBasicEligibility(record):record);
     }
     if(path==='/api/library/save') {
       const score=JSON.parse(body.score_json),existing=[...records.values()].find(row=>JSON.stringify(JSON.parse(row.score_json))===JSON.stringify(score));
@@ -50,13 +55,21 @@ export async function nativeScoreServer({scores=[],directory='C:\\Test-only\\Wor
   async function fetcher(path,options={}) {
     const body=typeof options.body==='string'&&options.headers?.['Content-Type']==='application/json'?JSON.parse(options.body):options.body??null;
     const request={path,body,options};requests.push(request);
+    if(path==='/api/library/practice-admission'&&options.method!=='POST')return nativeResponse({code:'mock_practice_admission_invalid',error:'Practice admission requires POST'},405);
     const response=route?await route({...request,defaultReply:()=>defaultReply(path,body)}):undefined;
     if(response===undefined&&path==='/api/canonical-audio-profile'){
       const compiled=(route?await route({...request,path:'/api/compile',defaultReply:()=>defaultReply('/api/compile',body)}):undefined)??defaultReply('/api/compile',body);
       if(!compiled.ok)return compiled;
       return nativeResponse(syntheticCanonicalProfile(await compiled.json()));
     }
-    return response??defaultReply(path,body);
+    const result=response??defaultReply(path,body);
+    if(result.ok&&(path.startsWith('/api/library/assistance/')||path.startsWith('/api/library/progression/')||path==='/api/library/pitch-mod/project')){
+      const value=await result.json();
+      if(value.checked?.plan)checkedResponses.push(value);
+      if(value.checked?.assistance)checkedResponses.push({source:value.source,checked:value.checked.assistance,...(value.pitch_mod?{pitch_mod:value.pitch_mod}:{})});
+      if(value.configuration&&value.source?.key)projections.set(`${value.source.key}:${value.configuration.semitones}`,value);
+    }
+    return result;
   }
   return{fetcher,requests,records,seed,directory,issues,setRoute:handler=>{route=handler;}};
 }

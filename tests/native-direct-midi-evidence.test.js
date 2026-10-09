@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFile, access} from 'node:fs/promises';
 import {directMidiFixtures,directMidiDigest as hash,DIRECT_MIDI_POLICY} from '../scripts/prepare-direct-midi-fixtures.mjs';
+import {withMockBasicEligibility} from './basic-human-admission-fixtures.js';
+import {mockNativeBasicAdmission} from './native-basic-admission-fixtures.js';
 import {directMidiFixtureMetadata} from '../scripts/direct-midi-proof.mjs';
-import {DIRECT_MIDI_NATIVE_PHASES,DIRECT_MIDI_NATIVE_CLAIMS,DIRECT_MIDI_NATIVE_SOURCE_FILES,validateDirectMidiNativeActions,validateDirectMidiNativeRequests,validateDirectMidiNativeRenderer} from '../scripts/verify-native-direct-midi-evidence.mjs';
+import {DIRECT_MIDI_NATIVE_PHASES,DIRECT_MIDI_NATIVE_CLAIMS,DIRECT_MIDI_NATIVE_SOURCE_FILES,validateDirectMidiNativeActions,validateDirectMidiNativeRequests,validateDirectMidiNativeTake,validateDirectMidiNativeRenderer} from '../scripts/verify-native-direct-midi-evidence.mjs';
 
 // Explicitly constructed validator unit inputs. They establish rejection
 // contracts only, never Windows, real picker, process, playback or audio success.
@@ -12,7 +14,7 @@ const fixture=directMidiFixtures().boundary,archiveKey=`pack-${fixture.manifest.
 function opened(){
  const source={format:'midi',bytes:fixture.bytes.length,sha256:fixture.manifest.sha256},coverage={source_tracks:1,source_events:fixture.manifest.source_events,represented_events:fixture.manifest.source_events,key_attacks:4,key_releases:4};
  const score={source,performance:{source_format:0,ppq:384,tracks:fixture.tracks.map((events,source_index)=>({events:structuredClone(events),source_index}))},coverage},score_json=JSON.stringify(score),metadata=directMidiFixtureMetadata(score_json,fixture),metadata_json=JSON.stringify(metadata),identity=hash(JSON.stringify(metadata)),key=`song-${identity}`;
- return{entry:{key},clean_package:{profile:'wmh-basic-keys-midi1-v1',content_sha256:identity,score_json,metadata_json,coverage,runtime:{profile:'wmh-basic-key-practice-v2',source_sha256:source.sha256,rendition:{policy_id:DIRECT_MIDI_POLICY,coverage:{source_attacks:4},duration_ms:2000,notes:[[],[],[],[]]},compilation:{timeline:{duration_ms:2000,note_columns:['id','part_id','midi','velocity','start_ms','duration_ms'],notes:fixture.expectedNotes.map(n=>[n.id,'midi-t1-c1-r0',n.midi,n.velocity,n.start_ms,n.duration_ms])}}}}};
+ return withMockBasicEligibility({entry:{key},clean_package:{profile:'wmh-basic-keys-midi1-v1',content_sha256:identity,score_json,metadata_json,coverage,runtime:{profile:'wmh-basic-key-practice-v2',parts:[{id:'midi-t1-c1-r0',attacks:4}],source_sha256:source.sha256,rendition:{policy_id:DIRECT_MIDI_POLICY,coverage:{source_attacks:4},duration_ms:2000,notes:[[],[],[],[]]},compilation:{timeline:{duration_ms:2000,note_columns:['id','part_id','midi','velocity','start_ms','duration_ms'],notes:fixture.expectedNotes.map(n=>[n.id,'midi-t1-c1-r0',n.midi,n.velocity,n.start_ms,n.duration_ms])}}}}});
 }
 const identity=opened().clean_package.content_sha256,key=`song-${identity}`;
 function importReport(mode){return{format:'worldmusichub-import-report',version:1,mode,source:{filename:fixture.filename,bytes:fixture.bytes.length,sha256:fixture.manifest.sha256,retained:mode==='commit',...(mode==='commit'?{archive_key:archiveKey}:{})},items:[{status:mode==='commit'?'saved':'ready',...(mode==='commit'?{entry:{key}}:{}),clean_package:{profile:'wmh-basic-keys-midi1-v1',content_sha256:identity,coverage:{key_attacks:4}}}],warnings:['Explicit FIFO rendition retained']};}
@@ -23,7 +25,8 @@ function renderer(phase='direct-midi-seed'){
  const value={version:1,scenario:'direct-midi',phase,ok:true,origin:'https://wmh.localhost',actions:6,key,archiveKey,opened:opened(),profileMarkerAbsent:true,requestsRestored:true,errors:[],initialInventory:{entries:phase.endsWith('seed')?[]:[{key}]},inventory:{entries:[{key}],issues:[]},preview:{id:`native:${key}`,status:'ready',screen:'library',startDisabled:false,bulkDialog:false,notice:'Complete MIDI source saved. Disclosed FIFO interpretation',clock:{version:1,available:false,positionMs:0,transportPositionMs:0,durationMs:0,rangeStartMs:0,rangeEndMs:0,running:false,completed:false,phase:'unavailable'}},ended:{screen:'stage',mode:'practice',renderer:'ended',captured:'0',clock:{version:1,available:true,positionMs:2000,transportPositionMs:2000,durationMs:2000,rangeStartMs:0,rangeEndMs:2000,running:false,completed:true,phase:'ended'}},files:{raw:'raw.mid',take:'take.json'},screenshots:{preview:4,ended:6},pickerAction:3,startAction:5,requests:[]};
  if(phase.endsWith('seed'))value.requests.push(observed('/api/import/midi',{error:'Strict overlap rejected'},{status:400}),observed('/api/library/import/preview',importReport('preview')),observed('/api/library/import/commit',importReport('commit')));
  if(phase.endsWith('restart')){value.startAction=4;value.screenshots.preview=3;delete value.pickerAction;}
- for(const sequence of [phase.endsWith('seed')?3:2,value.startAction])value.requests.push(observed('/api/library/load',structuredClone(value.opened),{sequence,request:{key}}),observed('/api/practice-targets',targetPlan(),{sequence,request:{timeline:timeline(),profile:{kind:'piano',key_count:61,lowest_midi:null}}}));
+ const selection={selected_part_ids:['midi-t1-c1-r0'],profile:{kind:'piano',key_count:61,lowest_midi:null}},response=mockNativeBasicAdmission(value.opened,selection,targetPlan()),request={source:response.source,pitch_mod:{format:'wmc-pitch-mod',version:1,semitones:0},selection};
+ for(const sequence of [phase.endsWith('seed')?3:2,value.startAction])value.requests.push(observed('/api/library/load',structuredClone(value.opened),{sequence,request:{key}}),observed('/api/library/practice-admission',structuredClone(response),{sequence,screen:sequence===value.startAction?'stage':'library',request:structuredClone(request)}));
  value.requests.push(observed('/api/assess',{accuracy_percent:0,hits:[],extras:[],misses:fixture.expectedNotes.map(n=>n.id)},{sequence:value.startAction,screen:'stage',request:{inputs:[],timeline:timeline()}}));return value;
 }
 test('native direct MIDI renderer validator binds default Start, complete source and fresh restart',()=>{
@@ -32,7 +35,7 @@ test('native direct MIDI renderer validator binds default Start, complete source
 });
 test('request proof rejects missing strict fallback, hand-triggered commit and truncated default targets',()=>{
  validateDirectMidiNativeRequests(renderer());
- for(const change of [r=>r.requests.shift(),r=>r.requests[0].status=200,r=>r.requests[1].response.source.sha256='0'.repeat(64),r=>r.requests[2].started.sequence=4,r=>r.requests[2].response.items[0].entry.key='other',r=>r.requests[2].response.source.archive_key='other',r=>r.requests[3].response={entry:{key:'other'}},r=>r.requests.at(-1).observation='awaiting-json',r=>r.requests.at(-1).request.inputs.push({midi:60}),r=>r.requests.at(-1).request.timeline.notes=r.requests.at(-1).request.timeline.notes.slice(0,3),r=>r.requests.at(-1).response.accuracy_percent=100,r=>r.requests.at(-1).response.misses.pop(),r=>r.requests[4].response.target_count=3]){const r=structuredClone(renderer());change(r);assert.throws(()=>validateDirectMidiNativeRequests(r));}
+ for(const change of [r=>r.requests.shift(),r=>r.requests[0].status=200,r=>r.requests[1].response.source.sha256='0'.repeat(64),r=>r.requests[2].started.sequence=4,r=>r.requests[2].response.items[0].entry.key='other',r=>r.requests[2].response.source.archive_key='other',r=>r.requests[3].response={entry:{key:'other'}},r=>r.requests.at(-1).observation='awaiting-json',r=>r.requests.at(-1).request.inputs.push({midi:60}),r=>r.requests.at(-1).request.timeline.notes=r.requests.at(-1).request.timeline.notes.slice(0,3),r=>r.requests.at(-1).response.accuracy_percent=100,r=>r.requests.at(-1).response.misses.pop(),r=>r.requests[4].response.checked.human_targets.target_count=3]){const r=structuredClone(renderer());change(r);assert.throws(()=>validateDirectMidiNativeRequests(r));}
  const r=renderer('direct-midi-restart');r.requests.unshift(observed('/api/library/import/commit',importReport('commit')));assert.throws(()=>validateDirectMidiNativeRequests(r));
 });
 // Suffix positions describe application fetch order, not a helper-created load.
@@ -57,8 +60,8 @@ test('load proof rejects missing preview, missing Start, delayed settlement and 
   ['Start load settles late',(r,rows)=>rows[2].settled.sequence++],
   ['missing settled sequence',(r,rows)=>delete rows[2].settled.sequence],
   ['fractional settled sequence',(r,rows)=>rows[2].settled.sequence+=0.5],
-  ['duplicate preview',(r,rows)=>r.requests.splice(r.requests.indexOf(rows[0]),0,structuredClone(rows[0]))],
-  ['duplicate Start',(r,rows)=>r.requests.splice(r.requests.indexOf(rows[2]),0,structuredClone(rows[2]))],
+  ['contradictory repeat preview',(r,rows)=>{const extra=structuredClone(rows[0]);extra.request.key='different';r.requests.splice(r.requests.indexOf(rows[0]),0,extra);}],
+  ['contradictory repeat Start',(r,rows)=>{const extra=structuredClone(rows[2]);extra.request.key='different';r.requests.splice(r.requests.indexOf(rows[2]),0,extra);}],
   ['unrelated load before preview',(r,rows)=>{const extra=structuredClone(rows[0]);extra.request.key='unrelated';r.requests.splice(r.requests.indexOf(rows[0]),0,extra);}],
   ['contradictory load after Start',(r,rows)=>{const extra=structuredClone(rows[2]);extra.response.entry.key='different';r.requests.push(extra);}],
  ];
@@ -81,25 +84,26 @@ test('both load observations bind consumed success, library context and exact co
 });
 test('each load is followed by its own complete plan with exact identities, source clock and order',()=>{
  const changes=[
-  ['missing plan',(r,row)=>removeRow(r,row)],['failed plan',(_,row)=>row.status=500],['unplayable plan',(_,row)=>row.response.playable=false],
-  ['wrong source count',(_,row)=>row.response.source_note_count=3],['wrong target count',(_,row)=>row.response.target_count=3],
-  ['delayed plan',(_,row)=>row.settled.sequence++],['plan wrong preview',(_,row)=>row.started.previewId='different'],['plan on stage',(_,row)=>row.settled.screen='stage'],
-  ['missing group',(_,row)=>row.response.groups.pop()],['wrong source group',(_,row)=>row.response.groups[0].source_note_ids=['other']],
-  ...['request','response'].flatMap(side=>[
-   [`${side} missing target`,(_,row)=>row[side].timeline.notes.pop()],
-   [`${side} changed pitch`,(_,row)=>row[side].timeline.notes[0].midi++],
-   [`${side} changed velocity`,(_,row)=>row[side].timeline.notes[0].velocity++],
-   [`${side} changed part`,(_,row)=>row[side].timeline.notes[0].part_id='different'],
-   [`${side} changed source identity`,(_,row)=>row[side].timeline.notes[0].source_note_id='different'],
-   [`${side} changed target clock`,(_,row)=>row[side].timeline.notes[3].start_ms-=100],
-   [`${side} changed note duration`,(_,row)=>row[side].timeline.notes[3].duration_ms-=100],
-   [`${side} changed source duration`,(_,row)=>row[side].timeline.duration_ms=1000],
+  ['missing plan',(r,row)=>removeRow(r,row)],['failed plan',(_,row)=>row.status=500],['unplayable plan',(_,row)=>row.response.checked.human_targets.playable=false],
+  ['wrong source count',(_,row)=>row.response.checked.human_targets.source_note_count=3],['wrong target count',(_,row)=>row.response.checked.human_targets.target_count=3],
+  ['delayed plan',(_,row)=>row.settled.sequence++],['plan wrong preview',(_,row)=>row.started.previewId='different'],['plan inconsistent screen',(_,row)=>row.settled.screen='home'],
+  ['wrong saved source',(_,row)=>row.request.source.key='other'],['caller timeline authority',(_,row)=>row.request.timeline=timeline()],['missing eligibility',(_,row)=>delete row.response.checked.receipt.source_eligibility],['wrong eligibility binding',(_,row)=>row.response.checked.receipt.source_eligibility.fingerprint='f'.repeat(64)],
+  ['missing group',(_,row)=>row.response.checked.human_targets.groups.pop()],['wrong source group',(_,row)=>row.response.checked.human_targets.groups[0].source_note_ids=['other']],
+  ...[row=>row.response.checked.human_targets].flatMap(side=>[
+   [`${side} missing target`,(_,row)=>side(row).timeline.notes.pop()],
+   [`${side} changed pitch`,(_,row)=>side(row).timeline.notes[0].midi++],
+   [`${side} changed velocity`,(_,row)=>side(row).timeline.notes[0].velocity++],
+   [`${side} changed part`,(_,row)=>side(row).timeline.notes[0].part_id='different'],
+   [`${side} changed source identity`,(_,row)=>side(row).timeline.notes[0].source_note_id='different'],
+   [`${side} changed target clock`,(_,row)=>side(row).timeline.notes[3].start_ms-=100],
+   [`${side} changed note duration`,(_,row)=>side(row).timeline.notes[3].duration_ms-=100],
+   [`${side} changed source duration`,(_,row)=>side(row).timeline.duration_ms=1000],
   ]),
  ];
  for(const phase of DIRECT_MIDI_NATIVE_PHASES)for(const index of [1,3])for(const [label,change]of changes){const r=renderer(phase);change(r,sourceRows(r)[index]);assert.throws(()=>validateDirectMidiNativeRequests(r),`${phase} plan ${index}: ${label}`);}
  for(const phase of DIRECT_MIDI_NATIVE_PHASES){
   for(const [left,right]of [[0,1],[2,3],[3,4]]){const r=renderer(phase),rows=sourceRows(r),a=r.requests.indexOf(rows[left]),b=r.requests.indexOf(rows[right]);[r.requests[a],r.requests[b]]=[r.requests[b],r.requests[a]];assert.throws(()=>validateDirectMidiNativeRequests(r),`${phase}: out-of-order load, plan or assessment`);}
-  const r=renderer(phase);sourceRows(r)[3].request.profile.key_count=49;assert.throws(()=>validateDirectMidiNativeRequests(r),'Start cannot silently change preview profile');
+  const r=renderer(phase);sourceRows(r)[3].request.selection.profile.key_count=49;assert.throws(()=>validateDirectMidiNativeRequests(r),'Start cannot silently change preview profile');
   const extra=renderer(phase);extra.requests.push(structuredClone(sourceRows(extra)[3]));assert.throws(()=>validateDirectMidiNativeRequests(extra),'Additional target plan must not be filtered away');
  }
 });
@@ -190,4 +194,13 @@ test('exact injected helper composition parses without starting other scenario r
  const read=path=>readFile(new URL('../'+path,import.meta.url),'utf8');
  const [wait,reference,vsq,canonical,renderer]=await Promise.all(['crates/desktop-shell/acceptance-wait.js','crates/desktop-shell/reference-acceptance.js','crates/desktop-shell/vsq-song-acceptance.js','crates/desktop-shell/canonical-practice-acceptance.js','scripts/native-direct-midi-renderer.js'].map(read));
  const script=[wait,reference,vsq.split('(() => {')[0],canonical.split('(() => {')[0],renderer].join('\n');assert.doesNotThrow(()=>new vm.Script(script));assert.equal((script.match(/addEventListener\('DOMContentLoaded'/g)||[]).length,1);assert.doesNotMatch(script,/scenario:'(?:pitch-mod|assistance)'/);
+});
+
+test('repeat native admissions retain the original preview, reload, transport and assessment boundaries',()=>{
+ for(const phase of DIRECT_MIDI_NATIVE_PHASES){const r=renderer(phase),rows=sourceRows(r);r.requests.splice(r.requests.indexOf(rows[2]),0,{...structuredClone(rows[1]),started:{...rows[1].started,sequence:r.startAction},settled:{...rows[1].settled,sequence:r.startAction}});r.requests.splice(r.requests.indexOf(rows[4]),0,structuredClone(rows[3]));validateDirectMidiNativeRequests(r);}
+});
+test('direct native take must retain its actually consumed source eligibility and selection digest',()=>{
+ const report=renderer(),admission=sourceRows(report)[3].response.checked,assessment=sourceRows(report)[4],make=()=>({target_plan:structuredClone(admission.human_targets),passes:[{inputs:[],captures:[],timeline:structuredClone(assessment.request.timeline),assessment:structuredClone(assessment.response),interpretation:{policy_id:DIRECT_MIDI_POLICY,basic_practice_admission:{receipt:structuredClone(admission.receipt),selection_digest:admission.plan.selection_digest}}}]});
+ validateDirectMidiNativeTake(make(),report);
+ for(const mutate of [t=>delete t.passes[0].interpretation.basic_practice_admission,t=>t.passes[0].interpretation.basic_practice_admission.receipt.source_eligibility.fingerprint='f'.repeat(64),t=>t.passes[0].interpretation.basic_practice_admission.selection_digest='f'.repeat(64),t=>t.target_plan.groups[0].source_occurrence_ids=[]]){const take=make();mutate(take);assert.throws(()=>validateDirectMidiNativeTake(take,report));}
 });
