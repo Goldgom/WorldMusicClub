@@ -40,7 +40,11 @@ def git(root, *args):
 def digest(path):
     if path.is_symlink() or not path.is_file():
         raise RuntimeError(f'Not a regular file: {path}')
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    result = hashlib.sha256()
+    with path.open('rb') as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+            result.update(chunk)
+    return result.hexdigest()
 
 
 def snapshot(root, paths):
@@ -103,6 +107,12 @@ def generate(root, destination, expected_sha, expected_tree):
         env[flag] = '1'
         command = ['cargo', 'test', '-p', package, '--test', test, '--locked']
         subprocess.run(command, cwd=root, env=env, check=True, timeout=900)
+        for p in allowed:
+            path = root / p
+            if path.is_symlink() or not path.is_file():
+                raise RuntimeError('Output is not a regular file')
+            if path.stat().st_size > MAX_OUTPUT_BYTES:
+                raise RuntimeError('Output exceeds bounded size')
         after = snapshot(root, paths)
         verify_changes(before, after, allowed)
         if git(root, 'ls-files', '--others', '--exclude-standard'):
@@ -110,8 +120,6 @@ def generate(root, destination, expected_sha, expected_tree):
         if git(root, 'diff', '--cached', '--name-only'):
             raise RuntimeError('Producer modified index')
         for p in allowed:
-            if (root / p).stat().st_size > MAX_OUTPUT_BYTES:
-                raise RuntimeError('Output exceeds bounded size')
             json.loads((root / p).read_text())
         records.append({'command': command, 'update_flag': flag,
                         'output_sha256': {p: after[p] for p in allowed}})

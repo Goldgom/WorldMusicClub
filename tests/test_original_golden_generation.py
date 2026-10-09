@@ -124,7 +124,12 @@ class CollectorTests(unittest.TestCase):
             G.generate(self.root, self.root / 'out', self.sha, self.tree)
 
     def test_oversize_output_rejected(self):
-        with patch.object(G, 'MAX_OUTPUT_BYTES', 1):
+        real_digest = G.digest
+        def guard(path):
+            if self.calls and path.stat().st_size > 1:
+                raise AssertionError('Oversized output hashed before size rejection')
+            return real_digest(path)
+        with patch.object(G, 'MAX_OUTPUT_BYTES', 1), patch.object(G, 'digest', side_effect=guard):
             with self.assertRaisesRegex(RuntimeError, 'bounded size'):
                 self.generate()
         self.assertFalse(self.output.exists())
