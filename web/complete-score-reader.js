@@ -40,6 +40,7 @@ export function setupCompleteScoreReader({document=globalThis.document,getScore,
  const sections=el('div','complete-score-reader-sections',scroller),sentinel=el('div','complete-score-reader-sentinel',scroller),more=el('button','complete-score-reader-more',sentinel);more.type='button';
  let session=null,disposed=false,generation=0,observer=null,returnFocus=null,restoredInert=[],scrollLock=null,adapter=null,localeUnsubscribe=null;
  const current=s=>session===s&&!s.controller.signal.aborted&&getScore()===s.ownerScore&&getCleanSong()===s.ownerSong;
+ const publish=(s,operation)=>admission.prepareVisual(()=>current(s)?operation():null,s.controller.signal);
  const state=()=>{
   const s=session;if(!s)return{open:false,status:'closed'};
   const exhausted=s.parts.every(part=>part.done),done=s.parts.length>0&&s.parts.every(part=>part.traversed),seen=new Set(s.parts.flatMap(part=>[...part.seen])),events=new Set(s.parts.flatMap(part=>[...part.events]));
@@ -95,12 +96,11 @@ export function setupCompleteScoreReader({document=globalThis.document,getScore,
  async function render(s,row,exported,identity,partIds,from,to){
   try{
   if(!adapter)adapter=await admission.prepareVisual(loadAdapter,s.controller.signal);if(!current(s)||!adapter)return false;
-  const result=await adapter.renderEngravedStaff(row.mount,exported.xml,{i18n,cooperative:true,responsive:true,compactHeader:true,dark:document.documentElement.dataset.theme==='dark',fromMeasure:from,toMeasure:to,partIds,identity,onError:error=>{if(current(s)&&row.root.dataset.status!=='unavailable'){unavailable(s,row,'failed',error?.message);paint();}}},s.controller.signal);
+  const result=await adapter.renderEngravedStaff(row.mount,exported.xml,{i18n,cooperative:true,responsive:true,compactHeader:true,dark:document.documentElement.dataset.theme==='dark',fromMeasure:from,toMeasure:to,partIds,identity,onError:error=>{void publish(s,()=>{if(row.root.dataset.status!=='unavailable'){unavailable(s,row,'failed',error?.message);paint();}}).catch(()=>{});}},s.controller.signal);
   if(!current(s)){result?.dispose?.();return false;}
   if(result?.dispose)s.renderers.push(result);
-  if(!result?.ok){unavailable(s,row,'failed',result?.message);return false;}
-  row.root.dataset.status='ready';row.key='ready';return true;
-  }catch(error){if(!current(s))return false;adapter?.disposeEngravedStaff?.(row.mount);row.mount.replaceChildren();unavailable(s,row,'failed',error?.message);return false;}
+  return await publish(s,()=>{if(!result?.ok){unavailable(s,row,'failed',result?.message);return false;}row.root.dataset.status='ready';row.key='ready';return true;});
+  }catch(error){await publish(s,()=>{adapter?.disposeEngravedStaff?.(row.mount);row.mount.replaceChildren();unavailable(s,row,'failed',error?.message);});return false;}
  }
  function eventRows(s,row,part,page,staffReady){
   const rows=new Map(),put=(note,kind)=>rows.set(note.note_id,{note,kind});
@@ -123,35 +123,38 @@ export function setupCompleteScoreReader({document=globalThis.document,getScore,
   }
   if(!current(s))return;
   const amount=Number.isSafeInteger(page.measure_count)&&page.measure_count>0?page.measure_count:0,total=page.total_measures;
-  const row=addRow(s,[part],from,amount?from+amount-1:from);part.pendingRow=row;part.reached=true;s.loaded++;
-  diagnostics(row,[...(page.diagnostics||[]),...(page.musicxml?.diagnostics||[])]);
+  const row=await publish(s,()=>{const row=addRow(s,[part],from,amount?from+amount-1:from);part.pendingRow=row;part.reached=true;s.loaded++;diagnostics(row,[...(page.diagnostics||[]),...(page.musicxml?.diagnostics||[])]);return row;});if(!current(s)||!row)return;
   let staffReady=false;
   if(page.status==='ready'){
    if(page.score.parts[0].notes.length){const mapped=page.musicxml.part_id_map?.[part.part.id];if(typeof mapped!=='string'||!mapped)throw new Error('Native notation part identity is missing.');staffReady=await render(s,row,page.musicxml,basicKeyEngravingIdentity(s.song,page),[mapped],1,page.score.measures.length);}
-   else{row.key='quiet';row.root.dataset.status='ready';staffReady=true;}
-  }else if(['empty_page','onset_page','percussion_selectors'].includes(page.status)){row.key='quiet';row.root.dataset.status='events';}
-  else unavailable(s,row,messages.en[page.status]?page.status:'failed');
-  if(!current(s))return;
+   else staffReady=true;
+  }
+  await publish(s,()=>{
+  if(page.status==='ready'&&!page.score.parts[0].notes.length){row.key='quiet';row.root.dataset.status='ready';}
+  else if(['empty_page','onset_page','percussion_selectors'].includes(page.status)){row.key='quiet';row.root.dataset.status='events';}
+  else if(page.status!=='ready')unavailable(s,row,messages.en[page.status]?page.status:'failed');
   eventRows(s,row,part,page,staffReady);translateSection(row);
   if(Number.isSafeInteger(total)&&total>=0&&amount>0){part.next=from+amount;part.done=part.next>total;part.traversed=part.done;}
   else{part.done=true;part.traversed=page.status==='empty_page'&&Number.isSafeInteger(total)&&from>total;if(!['display_meter_required','percussion_mapping_required','page_limit'].includes(page.status)&&!(page.status==='empty_page'&&Number.isSafeInteger(total)&&from>total)&&row.root.dataset.status!=='unavailable')unavailable(s,row,'failed','Native source measure coverage is unavailable.');}
   part.pendingRow=null;
+  });
  }
  async function canonicalBatch(s,parts){
-  const from=parts[0].next,to=Math.min(s.score.measures.length,from+measureCount-1),row=addRow(s,parts,from,to||from);s.loaded++;for(const part of parts)part.reached=true;
-  if(!to){unavailable(s,row,'noMeasures');for(const part of parts)part.done=true;return;}
+  const from=parts[0].next,to=Math.min(s.score.measures.length,from+measureCount-1),row=await publish(s,()=>{const row=addRow(s,parts,from,to||from);s.loaded++;for(const part of parts)part.reached=true;return row;});if(!current(s)||!row)return;
+  if(!to){await publish(s,()=>{unavailable(s,row,'noMeasures');for(const part of parts)part.done=true;});return;}
   if(!s.exported){s.exported=await json('/api/export/musicxml',s.score,s);if(!current(s))return;if(typeof s.exported?.xml!=='string'||!s.exported.part_id_map)throw new Error('Native MusicXML export is incomplete.');}
   const exported=s.exported,mapped=parts.map(part=>exported.part_id_map[part.part.id]);if(mapped.some(id=>typeof id!=='string'||!id))throw new Error('Native notation part identity is missing.');
-  diagnostics(row,exported.diagnostics);await render(s,row,exported,{score:s.score,noteMap:exported.note_id_map,partIdMap:exported.part_id_map,voiceIdMap:exported.voice_id_map},mapped,from,to);
-  if(!current(s))return;for(const part of parts){part.next=to+1;part.done=to===s.score.measures.length;part.traversed=part.done;}
+  await publish(s,()=>diagnostics(row,exported.diagnostics));if(!current(s))return;await render(s,row,exported,{score:s.score,noteMap:exported.note_id_map,partIdMap:exported.part_id_map,voiceIdMap:exported.voice_id_map},mapped,from,to);
+  await publish(s,()=>{for(const part of parts){part.next=to+1;part.done=to===s.score.measures.length;part.traversed=part.done;}});
  }
  async function loadMore(){
   const s=session;if(!s||!current(s)||s.loading)return false;const pending=s.parts.filter(part=>!part.done).sort((a,b)=>a.next-b.next||a.index-b.index);if(!pending.length)return false;
-  const first=pending[0].next,batch=pending.filter(part=>part.next===first).slice(0,maxParts);s.loading=true;paint();
+  const first=pending[0].next,batch=pending.filter(part=>part.next===first).slice(0,maxParts);s.loading=true;
   try{
-   if(s.basic){for(const part of batch){try{await basicPart(s,part);}catch(error){if(!current(s))return false;const row=part.pendingRow||addRow(s,[part],part.next,part.next);if(!part.pendingRow)s.loaded++;part.pendingRow=null;part.reached=true;part.done=true;unavailable(s,row,'error',error?.message);}if(!current(s))return false;}}
-   else{try{await canonicalBatch(s,batch);}catch(error){if(!current(s))return false;const row=s.rows.at(-1);unavailable(s,row,'error',error?.message);for(const part of batch)part.done=true;}}
-  }finally{if(current(s)){s.loading=false;paint();}}
+   await publish(s,paint);if(!current(s))return false;
+   if(s.basic){for(const part of batch){try{await basicPart(s,part);}catch(error){await publish(s,()=>{const row=part.pendingRow||addRow(s,[part],part.next,part.next);if(!part.pendingRow)s.loaded++;part.pendingRow=null;part.reached=true;part.done=true;unavailable(s,row,'error',error?.message);});}if(!current(s))return false;}}
+   else{try{await canonicalBatch(s,batch);}catch(error){await publish(s,()=>{const row=s.rows.at(-1);unavailable(s,row,'error',error?.message);for(const part of batch)part.done=true;});}}
+  }finally{await publish(s,()=>{s.loading=false;paint();});}
   return current(s);
  }
  function start(){
@@ -171,6 +174,6 @@ export function setupCompleteScoreReader({document=globalThis.document,getScore,
  };
  const cancel=event=>{event.preventDefault();close();},nativeClose=()=>{if(session)close();},restart=()=>{if(session)void start();};
  backdrop.addEventListener('wheel',event=>event.preventDefault(),{passive:false});backdrop.addEventListener('touchmove',event=>event.preventDefault(),{passive:false});
- back.addEventListener('click',()=>close());more.addEventListener('click',()=>void loadMore());mode.addEventListener('change',restart);meter.addEventListener('change',restart);dialog.addEventListener('cancel',cancel);dialog.addEventListener('close',nativeClose);document.addEventListener('keydown',keydown,true);localeUnsubscribe=i18n.subscribe?.(paint);paint();
+ back.addEventListener('click',()=>close());more.addEventListener('click',()=>void loadMore());mode.addEventListener('change',restart);meter.addEventListener('change',restart);dialog.addEventListener('cancel',cancel);dialog.addEventListener('close',nativeClose);document.addEventListener('keydown',keydown,true);localeUnsubscribe=i18n.subscribe?.(()=>{if(session)void publish(session,paint).catch(()=>{});else paint();});paint();
  return{open,close,scoreChanged,loadMore,isOpen:()=>Boolean(session),state,dispose(){if(disposed)return;close();disposed=true;localeUnsubscribe?.();document.removeEventListener('keydown',keydown,true);dialog.remove();backdrop.remove();}};
 }

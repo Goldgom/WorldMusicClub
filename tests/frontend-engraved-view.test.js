@@ -467,3 +467,24 @@ test('background row mode retains an explicit native missing-meter choice instea
  try{const stage=document.getElementById('workspace');stage.classList={contains:value=>value==='notation-on-lanes'};stage.style={removeProperty(){}};env.setScore(song.notation);env.calls[0].resolve({ok:true,json:async()=>data.missing});await new Promise(resolve=>setImmediate(resolve));assert.equal(loads,0);assert.match(env.elements.get('engraving-status').textContent,/no unambiguous opening meter/);assert.equal(env.view.followPosition(0).status,'choice');assert.equal(env.view.isActive(),true);}
  finally{env.close();}
 });
+
+test('adjacent native rows publish together after Android audio admission and discard a replaced source',async()=>{
+ const data=JSON.parse(readFileSync(new URL('./fixtures/basic-key-rendition-notation-tail.json',import.meta.url),'utf8')),descriptor=data.open.clean_package;
+ for(const replaceWhileQueued of [false,true]){
+  let song=prepareCleanSong(`native:song-${descriptor.content_sha256}`,descriptor,null),shown=false,parsed=0,audio;const painted=[];
+  const env=environment({isVisible:()=>shown,getCleanSong:()=>song,getPracticePart:()=>song.notation.parts[0].id,getMode:()=> 'practice',onBasicPage:page=>painted.push(page?.first_measure)});
+  try{
+   const stage=document.getElementById('workspace');stage.classList={contains:value=>value==='notation-on-lanes'};stage.style={removeProperty(){}};
+   env.setScore(song.notation);env.view.hide({remember:true});shown=true;env.view.surfaceChanged();
+   env.calls[0].resolve({ok:true,json:async()=>data.pages[0].response});await new Promise(resolve=>setImmediate(resolve));
+   assert.equal(env.calls.length,2);assert.equal(env.view.basicPage(),null,'The incomplete pair is not published');assert.deepEqual(painted,[]);
+   audio=await notationAudioAdmission(globalThis).acquireAudio();env.calls[1].resolve({ok:true,json:async()=>{parsed++;return data.pages[1].response;}});
+   await new Promise(resolve=>setImmediate(resolve));assert.equal(parsed,0);assert.deepEqual(painted,[]);
+   if(replaceWhileQueued){shown=false;song=prepareCleanSong(`native:song-${descriptor.content_sha256}`,descriptor,null);env.setScore(song.notation);}
+   audio.release();audio=null;await new Promise(resolve=>setImmediate(resolve));
+   if(replaceWhileQueued){assert.equal(parsed,0);assert.equal(env.view.basicPage(),null);assert.deepEqual(painted,[]);}
+   else{assert.equal(parsed,1);assert.deepEqual(painted,[0]);assert.deepEqual(env.view.basicRowBatches().map(batch=>batch.firstMeasure),[0,1]);}
+   assert.deepEqual(env.failures,[]);
+  }finally{audio?.release();env.close();}
+ }
+});

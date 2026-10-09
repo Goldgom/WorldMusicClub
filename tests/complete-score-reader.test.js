@@ -53,7 +53,7 @@ test('source snapshot exported by getExportScore is not the reduced practice sco
 
 test('source replacement synchronously hides/disposes and rejects a late export without painting',async()=>{
  const pending=deferred(),env=environment({fetch:()=>pending.promise});try{
-  const opening=env.reader.open(),signal=env.calls[0].options.signal;env.setScore({...structuredClone(fixture),id:'replacement'});
+  const opening=env.reader.open();await tick();const signal=env.calls[0].options.signal;env.setScore({...structuredClone(fixture),id:'replacement'});
   assert.equal(signal.aborted,true);assert.equal(env.reader.isOpen(),false);assert.equal(env.dialog.hidden,true);pending.resolve({ok:true,json:async()=>({xml:'obsolete',part_id_map:{piano:'P1'}})});await opening;assert.equal(env.renders.length,0);assert.equal(env.document.querySelectorAll('.complete-score-reader-section').length,0);assert.deepEqual(env.visibility,[true,false]);
  }finally{env.close();}
 });
@@ -125,7 +125,7 @@ test('locale changes only redraw retained labels, and close restores prior page 
 test('changing a reader-only display choice aborts old work without mutating the stage',async()=>{
  const {data,song}=nativeFixture(),pending=deferred(),pages=new Map([data.melodic,data.percussion,data.third_part].map(item=>[item.request.settings.part_id,item.response]));let first=true;
  const env=environment({score:song.notation,song,fetch:(path,options)=>{if(first){first=false;return pending.promise;}return Promise.resolve({ok:true,json:async()=>structuredClone(pages.get(JSON.parse(options.body).settings.part_id))});}});try{
-  const opening=env.reader.open(),obsolete=env.calls[0];const control=env.document.querySelectorAll('.complete-score-reader-controls select')[1];control.value='3/4';control.dispatchEvent(new env.window.Event('change'));assert.equal(obsolete.options.signal.aborted,true);pending.resolve({ok:true,json:async()=>structuredClone(data.melodic.response)});await opening;await tick();assert.equal(env.reader.state().inspectedAttacks,5);assert.equal(env.reader.state().loadedSections,3);assert.ok(env.calls.slice(1).every(call=>call.body.settings.display_meter.numerator===3));assert.equal(env.document.getElementById('stage').hasAttribute('inert'),true);
+  const opening=env.reader.open();await tick();const obsolete=env.calls[0];const control=env.document.querySelectorAll('.complete-score-reader-controls select')[1];control.value='3/4';control.dispatchEvent(new env.window.Event('change'));assert.equal(obsolete.options.signal.aborted,true);pending.resolve({ok:true,json:async()=>structuredClone(data.melodic.response)});await opening;await tick();assert.equal(env.reader.state().inspectedAttacks,5);assert.equal(env.reader.state().loadedSections,3);assert.ok(env.calls.slice(1).every(call=>call.body.settings.display_meter.numerator===3));assert.equal(env.document.getElementById('stage').hasAttribute('inert'),true);
  }finally{env.close();}
 });
 
@@ -163,4 +163,46 @@ test('complete native reader defers JSON parsing and page validation during audi
    else{assert.equal(parsed,1);assert.ok(validated>0);assert.equal(env.reader.state().loadedSections,1);assert.equal(env.renders.length,1);}
   }finally{lease?.release();env.close();}
  }
+});
+
+test('audio queued during native validation fences event-only publication and coverage until admitted',async()=>{
+ for(const closeWhileQueued of [false,true]){
+  const {data,song}=nativeFixture();let audioPromise=null,audio=null,queueAudio=false;
+  const env=environment({score:song.notation,song,maxParts:1,fetch:async(path,options)=>{
+   const id=JSON.parse(options.body).settings.part_id,response=structuredClone(id===data.melodic.request.settings.part_id?data.melodic.response:data.percussion.response);
+   if(queueAudio){const page=response.page;Object.defineProperty(response,'page',{get(){audioPromise ||= notationAudioAdmission(env.window).acquireAudio();return page;}});}
+   return{ok:true,json:async()=>response};
+  }});
+  try{
+   await env.reader.open();const before=env.reader.state();queueAudio=true;const loading=env.reader.loadMore();await tick();audio=await audioPromise;
+   assert.ok(audio);assert.equal(env.reader.state().loadedSections,before.loadedSections);assert.equal(env.reader.state().eventDetails,before.eventDetails);assert.equal(env.reader.state().inspectedAttacks,before.inspectedAttacks);
+   if(closeWhileQueued)env.reader.close();audio.release();audio=null;await loading;
+   if(closeWhileQueued){assert.equal(env.reader.state().status,'closed');assert.equal(env.document.querySelectorAll('.complete-score-reader-section').length,0);}
+   else{assert.equal(env.reader.state().loadedSections,before.loadedSections+1);assert.equal(env.reader.state().eventDetails,before.eventDetails+1);}
+  }finally{audio?.release();env.close();}
+ }
+});
+
+test('completed renderer waits for audio before publishing events and queued close disposes its result',async()=>{
+ for(const closeWhileQueued of [false,true]){
+  const {data,song}=nativeFixture();let audioPromise,audio,disposed=0;
+  const env=environment({score:song.notation,song,maxParts:1,fetch:async()=>({ok:true,json:async()=>data.melodic.response}),render:async()=>{audioPromise=notationAudioAdmission(env.window).acquireAudio();return{ok:true,dispose(){disposed++;}};}});
+  try{
+   const opening=env.reader.open();await tick();audio=await audioPromise;
+   assert.ok(audio);assert.equal(env.reader.state().inspectedAttacks,0);assert.equal(env.reader.state().eventDetails,0);assert.equal(env.reader.state().loading,true);
+   if(closeWhileQueued)env.reader.close();audio.release();audio=null;await opening;
+   if(closeWhileQueued){assert.equal(disposed,1);assert.equal(env.reader.state().status,'closed');}
+   else{assert.ok(env.reader.state().inspectedAttacks>0);assert.equal(env.reader.state().loading,false);}
+  }finally{audio?.release();env.close();}
+ }
+});
+
+test('retained reader rows defer locale and load-more repaint while audio owns admission',async()=>{
+ const score=structuredClone(fixture);score.measures=Array.from({length:17},(_,i)=>({...score.measures[0],number:i+1}));const env=environment({score});let audio;
+ try{
+  await env.reader.open();const section=env.document.querySelector('.complete-score-reader-section h3'),before=section.textContent,calls=env.calls.length;
+  audio=await notationAudioAdmission(env.window).acquireAudio();env.i18n.setLocale('zh-CN');const loading=env.reader.loadMore();await tick();
+  assert.equal(section.textContent,before);assert.equal(env.reader.state().loadedSections,1);assert.equal(env.calls.length,calls);
+  audio.release();audio=null;await loading;assert.match(section.textContent,/来源第/);assert.equal(env.reader.state().loadedSections,2);
+ }finally{audio?.release();env.close();}
 });

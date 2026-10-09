@@ -13,7 +13,7 @@ test('hosted source proof uses actual saved native admission and preserves rejec
 test('policy validator remains inside the complete frozen worklet dependency closure',async()=>{
  const source=await readFile(new URL('../scripts/hosted-worklet-assets.mjs',import.meta.url),'utf8');
  assert.ok(source.includes("'source-practice-eligibility.js'"));
- assert.ok(source.includes('seen.size<16'));assert.ok(source.includes('evidence.assets.length<=16'));
+ assert.ok(source.includes('seen.size<32'));assert.ok(source.includes('evidence.assets.length<=32'));
  for(const path of ['../scripts/verify-native-assistance-evidence.mjs','../scripts/verify-native-pitch-mod-evidence.mjs']){const text=await readFile(new URL(path,import.meta.url),'utf8');assert.ok(text.includes("'web/source-practice-eligibility.js'"));assert.ok(text.includes("'web/basic-practice-admission.js'"));assert.ok(text.includes("'crates/score-core/src/source_identity/eligibility.rs'"));}
 });
 
